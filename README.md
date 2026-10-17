@@ -251,6 +251,10 @@ Consumer workflows call these and only supply triggers, profiles, artifact patte
 - `reusable-mod-build.yml` – `build` (`gradle_task` overrides it; a multi-loader mod that also calls `reusable-production-gametests.yml` passes `build -x :fabric:runGameTest`, since Loom's `check` runs that suite and `runAllGameTests` runs it again)
 - `reusable-client-gametests.yml` – Fabric client GameTests and recordings (`:fabric:runProductionClientGameTest`, `:fabric:recordClientGameTest`)
 - `reusable-production-gametests.yml` – `runAllGameTests`, every development and production GameTest run, including integration GameTest suites, which fetch and build their extra mods in Gradle (`gradle_task` overrides it)
+  A consumer with its own exact-coverage sharding runner may set `test_runner: tools/run_production_shards.py`.
+  The workflow invokes that repository-local Python script with `build/test-lanes/ci` followed by
+  `--no-daemon` and `gradle_task` arguments, instead of invoking Gradle directly. The CI job's
+  existing memory admission remains authoritative; the script must not acquire a second heavy slot.
 - `reusable-neoforge-gametests.yml` – `:neoforge:runProductionServerGameTest` alone (`gradle_task` overrides it, for example with `:neoforge:runGameTest`)
 - `reusable-multiloader-release.yml` – GitHub, Modrinth and CurseForge release of both loader JARs
 

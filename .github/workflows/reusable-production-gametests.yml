@@ -18,6 +18,11 @@ on:
         required: false
         default: runAllGameTests
         type: string
+      test_runner:
+        description: Optional repository-local Python suite runner; receives an output directory followed by Gradle arguments
+        required: false
+        default: ''
+        type: string
       timeout_minutes:
         description: Time limit in minutes of each step that runs Gradle
         required: false
@@ -155,11 +160,17 @@ jobs:
         timeout-minutes: ${{ inputs.timeout_minutes }}
         env:
           REQUESTED_CLIENT_GAMETEST_PROFILE: ${{ inputs.client_gametest_profile }}
+          REQUESTED_TEST_RUNNER: ${{ inputs.test_runner }}
         run: |
           if [ -n "${REQUESTED_CLIENT_GAMETEST_PROFILE}" ]; then
             export CLIENT_GAMETEST_PROFILE="${REQUESTED_CLIENT_GAMETEST_PROFILE}"
           fi
-          ./gradlew --no-daemon ${{ inputs.gradle_task }}
+          if [ -n "${REQUESTED_TEST_RUNNER}" ]; then
+            python3 "${REQUESTED_TEST_RUNNER}" build/test-lanes/ci \
+              --no-daemon ${{ inputs.gradle_task }}
+          else
+            ./gradlew --no-daemon ${{ inputs.gradle_task }}
+          fi
 
       - name: store production GameTest reports
         if: failure()
@@ -172,6 +183,7 @@ jobs:
             **/build/test-results/
             **/build/run/*/logs/
             **/run/gametest/logs/
+            **/build/test-lanes/
 
       - name: remove git SSH key
         if: always()

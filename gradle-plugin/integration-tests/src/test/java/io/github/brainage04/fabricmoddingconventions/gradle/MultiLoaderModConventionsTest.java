@@ -11,6 +11,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -549,9 +550,11 @@ class MultiLoaderModConventionsTest {
     private GradleRunner runner(String... arguments) {
         // The published plugin is used rather than withPluginClasspath(): the test classpath also carries
         // fabric-mod-conventions' Fabric Loom, which shadows the Architectury Loom this plugin needs.
+        List<String> options = new ArrayList<>(List.of(arguments));
+        options.add("-Dorg.gradle.jvmargs=-Xmx1g");
         return GradleRunner.create()
                 .withProjectDir(projectDir.toFile())
-                .withArguments(arguments);
+                .withArguments(options);
     }
 
     private void writeFixture(String modSide, String configuration) throws IOException {
