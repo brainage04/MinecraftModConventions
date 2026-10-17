@@ -13,6 +13,7 @@ public abstract class MultiLoaderModConventionsExtension {
     private final Property<Boolean> neoForgeGameTests;
     private final Property<Boolean> publishing;
     private final Property<Boolean> devAuth;
+    private final Property<String> gameTestHeap;
     private final NamedDomainObjectContainer<MultiLoaderIntegrationGameTestSuite> integrationGameTests;
 
     @Inject
@@ -22,6 +23,7 @@ public abstract class MultiLoaderModConventionsExtension {
         neoForgeGameTests = objects.property(Boolean.class).convention(true);
         publishing = objects.property(Boolean.class).convention(true);
         devAuth = objects.property(Boolean.class);
+        gameTestHeap = objects.property(String.class).convention("4G");
         integrationGameTests = objects.domainObjectContainer(MultiLoaderIntegrationGameTestSuite.class);
     }
 
@@ -35,6 +37,11 @@ public abstract class MultiLoaderModConventionsExtension {
 
     public Property<Boolean> getNeoForgeGameTests() {
         return neoForgeGameTests;
+    }
+
+    /** Maximum heap per GameTest JVM, overridden for one invocation with {@code -Pgametest_heap}. */
+    public Property<String> getGameTestHeap() {
+        return gameTestHeap;
     }
 
     public Property<Boolean> getPublishing() {

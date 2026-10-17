@@ -142,6 +142,9 @@ class MultiLoaderModConventionsTest {
     @Test
     void quickGameTestsUseAnIsolatedFabricRunWithoutChangingMergeCoverage() throws IOException {
         writeFixture("server", """
+                multiLoaderModConventions {
+                    gameTestHeap = '6G'
+                }
                 tasks.register('verifyQuickRun') {
                     doLast {
                         def fabric = project(':fabric')
@@ -153,17 +156,21 @@ class MultiLoaderModConventionsTest {
                                 [':fabric:runQuickGameTest']
                         assert !tasks.runAllGameTests.taskDependencies.getDependencies(null)*.path
                                 .contains(':fabric:runQuickGameTest')
+                        def heap = '-Xmx' + providers.gradleProperty('expectedHeap').getOrElse('3G')
                         ['fabric', 'neoforge'].each { name ->
                             def loader = project(":$name")
-                            assert loader.loom.runs.gameTest.vmArgs.contains('-Xmx3G')
-                            assert loader.tasks.runProductionServerGameTest.jvmArgs.get().contains('-Xmx3G')
+                            assert loader.loom.runs.gameTest.vmArgs.contains(heap)
+                            assert loader.tasks.runProductionServerGameTest.jvmArgs.get().contains(heap)
                         }
-                        assert quick.vmArgs.contains('-Xmx3G')
+                        assert quick.vmArgs.contains(heap)
                     }
                 }
                 """);
         assertEquals(TaskOutcome.SUCCESS, runGradle("verifyQuickRun",
                 "-PquickGameTestFilter=fixturemod:movement_*", "-Pgametest_heap=3G")
+                .task(":verifyQuickRun").getOutcome());
+        assertEquals(TaskOutcome.SUCCESS, runGradle("verifyQuickRun",
+                "-PquickGameTestFilter=fixturemod:movement_*", "-PexpectedHeap=6G")
                 .task(":verifyQuickRun").getOutcome());
         List<String> quickPlan = runGradle("runQuickGameTests", "--dry-run").getOutput().lines()
                 .map(line -> line.split(" ")[0]).filter(path -> path.matches(":(fabric|neoforge):run\\w*GameTest")).toList();

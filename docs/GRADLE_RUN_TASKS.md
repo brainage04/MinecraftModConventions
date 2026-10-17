@@ -46,7 +46,8 @@ For merge gates, `--parallel -PparallelGameTests=true` permits two concurrent lo
 each retaining development-before-production order. It changes no task dependencies that select
 coverage and drops no environments or integration suites. Reserve memory for two game JVMs,
 Gradle and native overhead first. Without this explicit opt-in, `--parallel` alone keeps game
-runs sequential. All GameTest JVMs use `gametest_heap`, default `4G`.
+runs sequential. All GameTest JVMs use `multiLoaderModConventions.gameTestHeap`, default `4G`;
+`-Pgametest_heap=6G` overrides the configured heap for one invocation.
 
 Fabric server runs are left out for `mod_side=client` and with
 `fabricServerGameTests = false`; NeoForge runs are skipped with `neoForgeGameTests = false`.

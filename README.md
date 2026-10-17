@@ -97,8 +97,8 @@ order, including every integration suite and the optional Fabric client. At most
 loader executes at a time; no test, assertion or environment is removed. Gradle needs at least
 two workers. Do not enable this on an ordinary single-job memory reservation.
 
-All development and production GameTest JVMs use `gametest_heap` (default `4G`,
-overridable with `-Pgametest_heap=6G`). Budget two heaps plus Gradle, compilation and native-memory
+All development and production GameTest JVMs use `multiLoaderModConventions.gameTestHeap`
+(default `4G`, overridable with `-Pgametest_heap=6G`). Budget two heaps plus Gradle, compilation and native-memory
 headroom for parallel gates. A task flag does not reserve host memory or `heavy` slots: the caller
 must reserve that capacity first and still launch Gradle through the host's heavy-job manager.
 

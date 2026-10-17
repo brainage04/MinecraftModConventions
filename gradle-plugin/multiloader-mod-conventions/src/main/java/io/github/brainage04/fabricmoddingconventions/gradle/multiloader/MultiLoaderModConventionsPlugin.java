@@ -696,8 +696,7 @@ public final class MultiLoaderModConventionsPlugin implements Plugin<Project> {
             Project neoForge,
             MultiLoaderModConventionsExtension fleetExtension
     ) {
-        // Only tasks that span both loaders live at the root; single-loader tasks are run as
-        // :fabric:<task> or :neoforge:<task>.
+        // Loader runs stay qualified; root entry points select either quick iteration or the full gate.
         TaskProvider<Task> runAllGameTests = root.getTasks().register("runAllGameTests", task -> {
             task.setGroup("verification");
             task.setDescription("Runs every GameTest: the Fabric and NeoForge development server GameTests and"
@@ -706,7 +705,7 @@ public final class MultiLoaderModConventionsPlugin implements Plugin<Project> {
         });
         configureQuickGameTests(root, fabric, fleetExtension);
         for (Project loader : List.of(fabric, neoForge)) {
-            configureGameTestHeap(root, loader);
+            configureGameTestHeap(root, loader, fleetExtension);
         }
         // The Fabric production runs are registered in :fabric's afterEvaluate and the extension is final only
         // once every build script ran, so the runs are collected when all projects are evaluated.
@@ -768,18 +767,20 @@ public final class MultiLoaderModConventionsPlugin implements Plugin<Project> {
         });
     }
 
-    private static void configureGameTestHeap(Project root, Project loader) {
-        String heap = root.getProviders().gradleProperty("gametest_heap").getOrElse("4G");
+    private static void configureGameTestHeap(
+            Project root, Project loader, MultiLoaderModConventionsExtension extension
+    ) {
+        Provider<String> heap = root.getProviders().gradleProperty("gametest_heap").orElse(extension.getGameTestHeap());
         LoomGradleExtensionAPI loom = loader.getExtensions().getByType(LoomGradleExtensionAPI.class);
         loader.afterEvaluate(_ -> loom.getRuns().configureEach(run -> {
             if (run.getName().toLowerCase(java.util.Locale.ROOT).endsWith("gametest")) {
-                run.vmArg("-Xmx" + heap);
+                run.vmArg("-Xmx" + heap.get());
             }
         }));
         loader.getTasks().withType(net.fabricmc.loom.task.prod.AbstractProductionRunTask.class)
-                .configureEach(task -> task.getJvmArgs().add("-Xmx" + heap));
+                .configureEach(task -> task.getJvmArgs().add(heap.map(value -> "-Xmx" + value)));
         loader.getTasks().withType(NeoForgeServerGameTestProductionRunTask.class)
-                .configureEach(task -> task.getJvmArgs().add("-Xmx" + heap));
+                .configureEach(task -> task.getJvmArgs().add(heap.map(value -> "-Xmx" + value)));
     }
 
     /**
