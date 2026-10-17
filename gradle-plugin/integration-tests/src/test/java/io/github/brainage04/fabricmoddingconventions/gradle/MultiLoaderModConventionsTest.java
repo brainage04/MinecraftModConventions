@@ -152,10 +152,6 @@ class MultiLoaderModConventionsTest {
                         assert quick.runDir == 'build/run/quickGameTest'
                         assert quick.systemProperties.get()['fabric-api.gametest.filter'] == 'fixturemod:movement_*'
                         assert !fabric.loom.runs.gameTest.systemProperties.get().containsKey('fabric-api.gametest.filter')
-                        assert tasks.runQuickGameTests.taskDependencies.getDependencies(null)*.path ==
-                                [':fabric:runQuickGameTest']
-                        assert !tasks.runAllGameTests.taskDependencies.getDependencies(null)*.path
-                                .contains(':fabric:runQuickGameTest')
                         def heap = '-Xmx' + providers.gradleProperty('expectedHeap').getOrElse('3G')
                         ['fabric', 'neoforge'].each { name ->
                             def loader = project(":$name")
@@ -166,6 +162,15 @@ class MultiLoaderModConventionsTest {
                     }
                 }
                 """);
+        // The quick task resolves the GameTest runtime, including the version published by this test build.
+        write("fabric/build.gradle", """
+                repositories {
+                    exclusiveContent {
+                        forRepository { maven { url = uri('%s') } }
+                        filter { includeModule('io.github.brainage04', 'fabricmoddingconventions') }
+                    }
+                }
+                """.formatted(Path.of(System.getProperty("pluginTestRepository")).toUri()));
         assertEquals(TaskOutcome.SUCCESS, runGradle("verifyQuickRun",
                 "-PquickGameTestFilter=fixturemod:movement_*", "-Pgametest_heap=3G")
                 .task(":verifyQuickRun").getOutcome());
@@ -175,6 +180,11 @@ class MultiLoaderModConventionsTest {
         List<String> quickPlan = runGradle("runQuickGameTests", "--dry-run").getOutput().lines()
                 .map(line -> line.split(" ")[0]).filter(path -> path.matches(":(fabric|neoforge):run\\w*GameTest")).toList();
         assertEquals(List.of(":fabric:runQuickGameTest"), quickPlan);
+        assertEquals(
+                List.of(":fabric:runGameTest", ":neoforge:runGameTest", ":fabric:runProductionServerGameTest",
+                        ":fabric:runProductionClientGameTest", ":neoforge:runProductionServerGameTest"),
+                plannedGameTestRuns()
+        );
     }
 
     @Test
@@ -188,28 +198,27 @@ class MultiLoaderModConventionsTest {
                         }
                     }
                 }
-                tasks.register('verifyParallelRuns') {
-                    doLast {
-                        def runs = tasks.runAllGameTests.taskDependencies.getDependencies(null)
-                        assert runs*.path.toSet() == [
-                            ':fabric:runGameTest', ':neoforge:runGameTest',
-                            ':fabric:runCompatGameTest', ':neoforge:runCompatGameTest',
-                            ':fabric:runProductionServerGameTest', ':neoforge:runProductionServerGameTest',
-                            ':fabric:runProductionCompatGameTest', ':neoforge:runProductionCompatGameTest'
-                        ].toSet()
-                        runs.each { run ->
-                            def earlier = run.mustRunAfter.getDependencies(run)
-                            assert earlier.every { it.project == run.project }
-                            if (run.name.startsWith('runProduction')) {
-                                assert earlier*.path.contains("${run.project.path}:runGameTest".toString())
-                            }
+                gradle.projectsEvaluated {
+                    def runs = tasks.runAllGameTests.taskDependencies.getDependencies(null)
+                    assert runs*.path.toSet() == [
+                        ':fabric:runGameTest', ':neoforge:runGameTest',
+                        ':fabric:runCompatGameTest', ':neoforge:runCompatGameTest',
+                        ':fabric:runProductionServerGameTest', ':neoforge:runProductionServerGameTest',
+                        ':fabric:runProductionCompatGameTest', ':neoforge:runProductionCompatGameTest'
+                    ].toSet()
+                    runs.each { run ->
+                        def earlier = run.mustRunAfter.getDependencies(run)
+                        assert earlier.every { it.project == run.project }
+                        if (run.name.startsWith('runProduction')) {
+                            assert earlier*.path.contains("${run.project.path}:runGameTest".toString())
                         }
-                        def quick = project(':fabric').loom.runs.quickGameTest
-                        assert quick.systemProperties.get()['fabric-api.gametest.filter'] == 'fixturemod:compat_*'
                     }
+                    def quick = project(':fabric').loom.runs.quickGameTest
+                    assert quick.systemProperties.get()['fabric-api.gametest.filter'] == 'fixturemod:compat_*'
                 }
+                tasks.register('verifyParallelRuns')
                 """);
-        assertEquals(TaskOutcome.SUCCESS, runGradle("verifyParallelRuns", "--parallel",
+        assertEquals(TaskOutcome.UP_TO_DATE, runGradle("verifyParallelRuns", "--parallel",
                 "-PparallelGameTests=true", "-PquickGameTestSuite=compat")
                 .task(":verifyParallelRuns").getOutcome());
     }
