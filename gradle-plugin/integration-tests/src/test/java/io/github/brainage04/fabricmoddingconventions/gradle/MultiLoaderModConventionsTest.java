@@ -182,7 +182,7 @@ class MultiLoaderModConventionsTest {
         assertEquals(List.of(":fabric:runQuickGameTest"), quickPlan);
         assertEquals(
                 List.of(":fabric:runGameTest", ":neoforge:runGameTest", ":fabric:runProductionServerGameTest",
-                        ":neoforge:runProductionServerGameTest"),
+                        ":fabric:runProductionClientGameTest", ":neoforge:runProductionServerGameTest"),
                 plannedGameTestRuns()
         );
     }
