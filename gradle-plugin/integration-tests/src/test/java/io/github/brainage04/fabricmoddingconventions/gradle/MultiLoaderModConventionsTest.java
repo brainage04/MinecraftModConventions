@@ -32,6 +32,38 @@ class MultiLoaderModConventionsTest {
     Path projectDir;
 
     @Test
+    void commonAndFabricBuildNeedsNoNeoForgeModuleOrVersionAndRetainsProductionIntegration() throws IOException {
+        writeFixture("server", """
+                multiLoaderModConventions {
+                    fabricClientGameTests = false
+                    integrationGameTests { compat { filter = 'fixturemod:compat_*' } }
+                }
+                tasks.register('verifyFabricOnly') {
+                    doLast {
+                        assert findProject(':neoforge') == null
+                        assert !hasProperty('neoforge_version')
+                        assert project(':fabric').tasks.findByName('runProductionCompatGameTest') != null
+                        assert tasks.collectReleaseArtifacts.taskDependencies.getDependencies(null)*.path.toSet() ==
+                                [':fabric:jar'].toSet()
+                        assert tasks.build.taskDependencies.getDependencies(null)*.path.toSet() ==
+                                [':assemble', ':check', ':common:build', ':fabric:build', ':collectReleaseArtifacts'].toSet()
+                    }
+                }
+                """);
+        Path settings = projectDir.resolve("settings.gradle");
+        Files.writeString(settings, Files.readString(settings)
+                .replace("include 'common', 'fabric', 'neoforge'", "include 'common', 'fabric'"));
+        Path properties = projectDir.resolve("gradle.properties");
+        Files.writeString(properties, Files.readString(properties).replace("neoforge_version=26.2.0.88\n", ""));
+        assertEquals(TaskOutcome.SUCCESS, runGradle("verifyFabricOnly").task(":verifyFabricOnly").getOutcome());
+        assertEquals(
+                List.of(":fabric:runGameTest", ":fabric:runCompatGameTest",
+                        ":fabric:runProductionServerGameTest", ":fabric:runProductionCompatGameTest"),
+                plannedGameTestRuns()
+        );
+    }
+
+    @Test
     void clientModGetsDevAuthOnlyInTheDevRuntimeAndTheSharedStructureInBothGameTestOutputs() throws IOException {
         writeFixture("both", """
                 subprojects {

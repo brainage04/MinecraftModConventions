@@ -76,7 +76,7 @@ public final class MultiLoaderModConventionsPlugin implements Plugin<Project> {
 
         Project common = requiredSubproject(root, "common");
         Project fabric = requiredSubproject(root, "fabric");
-        Project neoForge = requiredSubproject(root, "neoforge");
+        Project neoForge = root.findProject(":neoforge");
         MultiLoaderModConventionsExtension extension = root.getExtensions().create(
                 "multiLoaderModConventions",
                 MultiLoaderModConventionsExtension.class,
@@ -85,11 +85,16 @@ public final class MultiLoaderModConventionsPlugin implements Plugin<Project> {
         extension.getDevAuth().convention(hasClientSide(root));
 
         root.getPluginManager().apply("base");
-        configureIdentity(root, common, fabric, neoForge);
+        configureIdentity(root, common, fabric);
+        if (neoForge != null) {
+            configureIdentity(root, neoForge);
+        }
         root.getPluginManager().apply(JAVA_QUALITY_PLUGIN);
         configureCommon(root, common);
         configureFabric(root, common, fabric, extension);
-        configureNeoForge(root, common, fabric, neoForge, extension);
+        if (neoForge != null) {
+            configureNeoForge(root, common, fabric, neoForge, extension);
+        }
         configureRootTasks(root, fabric, neoForge, extension);
     }
 
@@ -700,9 +705,8 @@ public final class MultiLoaderModConventionsPlugin implements Plugin<Project> {
         // :fabric:<task> or :neoforge:<task>.
         TaskProvider<Task> runAllGameTests = root.getTasks().register("runAllGameTests", task -> {
             task.setGroup("verification");
-            task.setDescription("Runs every GameTest: the Fabric and NeoForge development server GameTests and"
-                    + " integration GameTest suites, then the Fabric production server and client GameTests, the"
-                    + " NeoForge production server GameTests and the suites' production server runs.");
+            task.setDescription("Runs every configured loader's development and production GameTests,"
+                    + " including integration suites and the optional Fabric production client suite.");
         });
         // The Fabric production runs are registered in :fabric's afterEvaluate and the extension is final only
         // once every build script ran, so the runs are collected when all projects are evaluated.
@@ -735,13 +739,16 @@ public final class MultiLoaderModConventionsPlugin implements Plugin<Project> {
         boolean fabricServer = fleetExtension.getFabricServerGameTests().get()
                 && fabric.getTasks().getNames().contains(DEVELOPMENT_GAMETEST_TASK);
         List<IntegrationGameTestSuite> fabricSuites = fabricServer ? List.copyOf(integrationGameTestSuites(fabric)) : List.of();
-        List<IntegrationGameTestSuite> neoForgeSuites = List.copyOf(integrationGameTestSuites(neoForge));
+        List<IntegrationGameTestSuite> neoForgeSuites =
+                neoForge == null ? List.of() : List.copyOf(integrationGameTestSuites(neoForge));
         List<String> fabricRuns = new ArrayList<>();
         List<TaskProvider<? extends Task>> runs = new ArrayList<>();
         if (fabricServer) {
             runs.add(fabric.getTasks().named(DEVELOPMENT_GAMETEST_TASK));
         }
-        runs.add(neoForge.getTasks().named(DEVELOPMENT_GAMETEST_TASK));
+        if (neoForge != null) {
+            runs.add(neoForge.getTasks().named(DEVELOPMENT_GAMETEST_TASK));
+        }
         fabricSuites.forEach(suite -> runs.add(fabric.getTasks().named(suite.getRunTaskName())));
         neoForgeSuites.forEach(suite -> runs.add(neoForge.getTasks().named(suite.getRunTaskName())));
         if (fabric.getTasks().getNames().contains(PRODUCTION_SERVER_GAMETEST_TASK)) {
@@ -750,7 +757,9 @@ public final class MultiLoaderModConventionsPlugin implements Plugin<Project> {
         }
         fabric.getTasks().withType(ClientGameTestProductionRunTask.class).getNames()
                 .forEach(name -> runs.add(fabric.getTasks().named(name)));
-        runs.add(neoForge.getTasks().named(PRODUCTION_SERVER_GAMETEST_TASK));
+        if (neoForge != null) {
+            runs.add(neoForge.getTasks().named(PRODUCTION_SERVER_GAMETEST_TASK));
+        }
         fabricRuns.forEach(name -> runs.add(fabric.getTasks().named(name)));
         neoForgeSuites.forEach(suite -> runs.add(neoForge.getTasks().named(suite.getProductionRunTaskName())));
         return runs;
@@ -758,16 +767,18 @@ public final class MultiLoaderModConventionsPlugin implements Plugin<Project> {
 
     private static void configureReleaseArtifacts(Project root, Project fabric, Project neoForge) {
         TaskProvider<Jar> fabricJar = fabric.getTasks().named("jar", Jar.class);
-        TaskProvider<Jar> neoForgeJar = neoForge.getTasks().named("jar", Jar.class);
+        TaskProvider<Jar> neoForgeJar = neoForge == null ? null : neoForge.getTasks().named("jar", Jar.class);
         TaskProvider<Sync> collect = root.getTasks().register("collectReleaseArtifacts", Sync.class, task -> {
             task.setGroup("build");
-            task.dependsOn(fabricJar, neoForgeJar);
+            task.dependsOn(fabricJar);
             task.from(fabricJar.flatMap(Jar::getArchiveFile));
-            task.from(neoForgeJar.flatMap(Jar::getArchiveFile));
+            if (neoForgeJar != null) {
+                task.from(neoForgeJar.flatMap(Jar::getArchiveFile));
+            }
             task.into(root.getLayout().getBuildDirectory().dir("libs"));
         });
         root.getTasks().named("build").configure(task -> {
-            task.setDescription("Builds and tests every loader, then collects both production JARs.");
+            task.setDescription("Builds and tests each configured loader, then collects its production JAR.");
             root.getSubprojects().forEach(project -> task.dependsOn(project.getTasks().named("build")));
             task.dependsOn(collect);
         });
