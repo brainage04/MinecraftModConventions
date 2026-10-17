@@ -140,6 +140,74 @@ class MultiLoaderModConventionsTest {
     }
 
     @Test
+    void quickGameTestsUseAnIsolatedFabricRunWithoutChangingMergeCoverage() throws IOException {
+        writeFixture("server", """
+                tasks.register('verifyQuickRun') {
+                    doLast {
+                        def fabric = project(':fabric')
+                        def quick = fabric.loom.runs.quickGameTest
+                        assert quick.runDir == 'build/run/quickGameTest'
+                        assert quick.systemProperties.get()['fabric-api.gametest.filter'] == 'fixturemod:movement_*'
+                        assert !fabric.loom.runs.gameTest.systemProperties.get().containsKey('fabric-api.gametest.filter')
+                        assert tasks.runQuickGameTests.taskDependencies.getDependencies(null)*.path ==
+                                [':fabric:runQuickGameTest']
+                        assert !tasks.runAllGameTests.taskDependencies.getDependencies(null)*.path
+                                .contains(':fabric:runQuickGameTest')
+                        ['fabric', 'neoforge'].each { name ->
+                            def loader = project(":$name")
+                            assert loader.loom.runs.gameTest.vmArgs.contains('-Xmx3G')
+                            assert loader.tasks.runProductionServerGameTest.jvmArgs.get().contains('-Xmx3G')
+                        }
+                        assert quick.vmArgs.contains('-Xmx3G')
+                    }
+                }
+                """);
+        assertEquals(TaskOutcome.SUCCESS, runGradle("verifyQuickRun",
+                "-PquickGameTestFilter=fixturemod:movement_*", "-Pgametest_heap=3G")
+                .task(":verifyQuickRun").getOutcome());
+        List<String> quickPlan = runGradle("runQuickGameTests", "--dry-run").getOutput().lines()
+                .map(line -> line.split(" ")[0]).filter(path -> path.matches(":(fabric|neoforge):run\\w*GameTest")).toList();
+        assertEquals(List.of(":fabric:runQuickGameTest"), quickPlan);
+    }
+
+    @Test
+    void parallelGameTestsKeepTheSameRunsButOnlyOrderRunsWithinEachLoader() throws IOException {
+        writeFixture("server", """
+                multiLoaderModConventions {
+                    fabricClientGameTests = false
+                    integrationGameTests {
+                        compat {
+                            filter = 'fixturemod:compat_*'
+                        }
+                    }
+                }
+                tasks.register('verifyParallelRuns') {
+                    doLast {
+                        def runs = tasks.runAllGameTests.taskDependencies.getDependencies(null)
+                        assert runs*.path.toSet() == [
+                            ':fabric:runGameTest', ':neoforge:runGameTest',
+                            ':fabric:runCompatGameTest', ':neoforge:runCompatGameTest',
+                            ':fabric:runProductionServerGameTest', ':neoforge:runProductionServerGameTest',
+                            ':fabric:runProductionCompatGameTest', ':neoforge:runProductionCompatGameTest'
+                        ].toSet()
+                        runs.each { run ->
+                            def earlier = run.mustRunAfter.getDependencies(run)
+                            assert earlier.every { it.project == run.project }
+                            if (run.name.startsWith('runProduction')) {
+                                assert earlier*.path.contains("${run.project.path}:runGameTest".toString())
+                            }
+                        }
+                        def quick = project(':fabric').loom.runs.quickGameTest
+                        assert quick.systemProperties.get()['fabric-api.gametest.filter'] == 'fixturemod:compat_*'
+                    }
+                }
+                """);
+        assertEquals(TaskOutcome.SUCCESS, runGradle("verifyParallelRuns", "--parallel",
+                "-PparallelGameTests=true", "-PquickGameTestSuite=compat")
+                .task(":verifyParallelRuns").getOutcome());
+    }
+
+    @Test
     void fabricServerGameTestsDeleteOnlyTheirConfiguredWorldBeforeLaunch() throws IOException {
         writeFixture("server", """
                 gradle.projectsEvaluated {

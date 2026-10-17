@@ -1,6 +1,6 @@
 # Gradle run tasks
 
-The `run*` and `record*` tasks a multi-loader mod gets from `io.github.brainage04.multiloader-mod-conventions`, run from the mod's root. Anything that runs one loader lives in that loader's project and has the same name on both loaders; the root only has tasks that span both.
+The `run*` and `record*` tasks a multi-loader mod gets from `io.github.brainage04.multiloader-mod-conventions`, run from the mod's root. Loader-specific runs live in that loader's project. Root tasks aggregate the full gate or provide the `runQuickGameTests` iteration entry point.
 
 ## Development (dev environment, sources on the classpath)
 
@@ -32,9 +32,24 @@ Fabric server GameTests start with a fresh world on every invocation: `runGameTe
 
 | Task | What it runs |
 |---|---|
-| `runAllGameTests` | Every GameTest run, one at a time even with `--parallel`: `:fabric:runGameTest`, `:neoforge:runGameTest`, each integration GameTest suite's `:fabric:run<Name>GameTest` and `:neoforge:run<Name>GameTest`, `:fabric:runProductionServerGameTest`, `:fabric:runProductionClientGameTest` (when enabled), `:neoforge:runProductionServerGameTest`, then each suite's `:fabric:runProduction<Name>GameTest` and `:neoforge:runProduction<Name>GameTest`. The Fabric server runs, including the suites' Fabric runs, are left out for `mod_side=client` and with `fabricServerGameTests = false`; the NeoForge runs, including the suites', are skipped with `neoForgeGameTests = false`. |
+| `runAllGameTests` | Every ordinary and integration GameTest in Fabric development, NeoForge development, Fabric production and NeoForge production, plus the optional Fabric production client. Sequential by default. |
+| `runQuickGameTests` | Only `:fabric:runQuickGameTest`, in development, selected with `quickGameTestFilter` and optionally `quickGameTestSuite`. Not a merge gate. |
 
 Each run has its own run directory: `fabric/build/run/gameTest`, `neoforge/run/gametest`, `fabric/build/run/productionServerGameTest`, `fabric/build/run/clientGameTest` and `neoforge/build/run/productionServerGameTest`; a suite's runs use `<loader>/build/run/<name>GameTest` and `<loader>/build/run/production<Name>GameTest`.
+
+Use `runQuickGameTests '-PquickGameTestFilter=examplemod:movement_*'` while iterating.
+`-PquickGameTestSuite=compat` loads a named integration suite instead of the ordinary source set;
+its filter is the default unless overridden. Quick runs use `fabric/build/run/quickGameTest`
+and reset their own world without altering the ordinary gate's filter.
+
+For merge gates, `--parallel -PparallelGameTests=true` permits two concurrent loader lanes,
+each retaining development-before-production order. It changes no task dependencies that select
+coverage and drops no environments or integration suites. Reserve memory for two game JVMs,
+Gradle and native overhead first. Without this explicit opt-in, `--parallel` alone keeps game
+runs sequential. All GameTest JVMs use `gametest_heap`, default `4G`.
+
+Fabric server runs are left out for `mod_side=client` and with
+`fabricServerGameTests = false`; NeoForge runs are skipped with `neoForgeGameTests = false`.
 
 ## Tasks that do nothing
 

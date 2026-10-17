@@ -31,7 +31,7 @@ Requires subprojects `common`, `fabric` and `neoforge`, and these Gradle propert
 - Shared GameTests go in `common/src/gametest/java` and `common/src/gametest/resources`; both loaders compile and package them.
 - Both loaders' `gametest` source sets also get the structure `fabricmoddingconventions:empty`, 8x8x8 blocks of air (`minecraft:empty` is 1x1x1). Use it in test instances with `"structure": "fabricmoddingconventions:empty"`; it is never packaged into the release JARs.
 - The access widener is `<mod_id>.accesswidener` in `common` (or `fabric`); the NeoForge access transformer is `neoforge/src/main/resources/META-INF/accesstransformer.cfg`.
-- Tasks that run one loader live in that loader's project under the same name on both; the root only has tasks spanning both loaders. Loom's development `clientGameTest` run is not created (there is no `:fabric:runClientGameTest`); client GameTests run in Loom's production client.
+- Loader runs live in that loader's project under the same name on both. Root tasks aggregate both loaders or provide the `runQuickGameTests` iteration entry point. Loom's development `clientGameTest` run is not created (there is no `:fabric:runClientGameTest`); client GameTests run in Loom's production client.
 
   | Task | Runs |
   | --- | --- |
@@ -42,7 +42,7 @@ Requires subprojects `common`, `fabric` and `neoforge`, and these Gradle propert
   | `:neoforge:runProductionServerGameTest` | NeoForge server GameTests against the packaged mod, on a NeoForge server installed with the official installer |
   | `:fabric:runProductionClientGameTest` | Fabric client GameTests against the packaged mod, in Xvfb |
   | `:fabric:recordClientGameTest` | the production client GameTests, recorded to MP4 |
-  | `runAllGameTests` | every GameTest run, one at a time: `:fabric:runGameTest` and `:neoforge:runGameTest`, then each [integration GameTest suite](#integration-gametests)'s development runs, then the Fabric production server and client runs and `:neoforge:runProductionServerGameTest`, then each suite's production runs |
+  | `runAllGameTests` | every GameTest run, sequential by default: both development loaders, every integration suite, both production loaders and the optional Fabric production client; `--parallel -PparallelGameTests=true` runs the two loader lanes concurrently without dropping any runs |
   | `collectReleaseArtifacts` | copies both loader JARs to `build/libs` |
 
   With `fabricClientGameTests = false`, `:fabric:runProductionClientGameTest` and `:fabric:recordClientGameTest` do nothing; with `neoForgeGameTests = false`, neither do `:neoforge:runGameTest` and `:neoforge:runProductionServerGameTest` (no server is installed). `runAllGameTests` leaves out `:fabric:runGameTest` and `:fabric:runProductionServerGameTest` for `mod_side=client` and with `fabricServerGameTests = false`. `common` has no loader: Loom still lists `:common:runClient`, `:common:runServer` and `:common:runClientRenderDoc`, but they do nothing useful; run the loader tasks instead.
@@ -74,6 +74,33 @@ multiLoaderModConventions {
     devAuth = true                  // default: true unless mod_side=server
 }
 ```
+
+### Iteration and merge gates
+
+`runQuickGameTests` runs only Fabric development GameTests. Select affected scenarios with
+`-PquickGameTestFilter=examplemod:movement_*`; without a filter it runs the ordinary Fabric development
+suite. For tests needing extra mods, select the source set with `-PquickGameTestSuite=compat`.
+That defaults to the integration suite's filter; an explicit filter narrows it further. The quick run
+has its own `fabric/build/run/quickGameTest` directory and resets only its world. Its filter never
+changes the ordinary or production runs, and it is not a merge gate.
+
+```shell
+./gradlew --no-daemon runQuickGameTests '-PquickGameTestFilter=examplemod:movement_*'
+./gradlew --no-daemon runQuickGameTests -PquickGameTestSuite=compat
+./gradlew --no-daemon build runAllGameTests --continue
+```
+
+Reserve the full four-environment run for merge/release gates, not every edit. The default gate
+remains sequential. On a host with reserved capacity for two game JVMs, add
+`--parallel -PparallelGameTests=true`. Each loader retains its own development-before-production
+order, including every integration suite and the optional Fabric client. At most one run per
+loader executes at a time; no test, assertion or environment is removed. Gradle needs at least
+two workers. Do not enable this on an ordinary single-job memory reservation.
+
+All development and production GameTest JVMs use `gametest_heap` (default `4G`,
+overridable with `-Pgametest_heap=6G`). Budget two heaps plus Gradle, compilation and native-memory
+headroom for parallel gates. A task flag does not reserve host memory or `heavy` slots: the caller
+must reserve that capacity first and still launch Gradle through the host's heavy-job manager.
 
 ### Integration GameTests
 

@@ -704,20 +704,82 @@ public final class MultiLoaderModConventionsPlugin implements Plugin<Project> {
                     + " integration GameTest suites, then the Fabric production server and client GameTests, the"
                     + " NeoForge production server GameTests and the suites' production server runs.");
         });
+        configureQuickGameTests(root, fabric, fleetExtension);
+        for (Project loader : List.of(fabric, neoForge)) {
+            configureGameTestHeap(root, loader);
+        }
         // The Fabric production runs are registered in :fabric's afterEvaluate and the extension is final only
         // once every build script ran, so the runs are collected when all projects are evaluated.
         root.getGradle().projectsEvaluated(_ -> {
             List<TaskProvider<? extends Task>> runs = gameTestRuns(fabric, neoForge, fleetExtension);
             runAllGameTests.configure(task -> task.dependsOn(runs));
-            // Every run starts a Minecraft server or client; with --parallel they would otherwise launch side by
-            // side. Running them one at a time, development runs first, keeps a failing source-level test from
-            // waiting behind the production installs and runs.
+            // Parallel mode has one serial lane per loader, so at most two game JVMs run together.
+            // It requires --parallel and a memory reservation for both lanes; the safe default is one JVM.
+            boolean parallel = root.getProviders().gradleProperty("parallelGameTests")
+                    .map(Boolean::parseBoolean).getOrElse(false);
             for (int index = 1; index < runs.size(); index++) {
-                List<TaskProvider<? extends Task>> earlier = runs.subList(0, index);
-                runs.get(index).configure(task -> task.mustRunAfter(earlier));
+                TaskProvider<? extends Task> current = runs.get(index);
+                List<TaskProvider<? extends Task>> earlier = runs.subList(0, index).stream()
+                        .filter(previous -> !parallel || previous.get().getProject() == current.get().getProject())
+                        .toList();
+                current.configure(task -> task.mustRunAfter(earlier));
             }
         });
         configureReleaseArtifacts(root, fabric, neoForge);
+    }
+
+    private static void configureQuickGameTests(
+            Project root, Project fabric, MultiLoaderModConventionsExtension extension
+    ) {
+        root.getTasks().register("runQuickGameTests", task -> {
+            task.setGroup("verification");
+            task.setDescription("Runs affected Fabric development GameTests only; not a merge gate."
+                    + " Select with -PquickGameTestFilter and optionally -PquickGameTestSuite.");
+            task.dependsOn(":fabric:runQuickGameTest");
+        });
+        fabric.afterEvaluate(_ -> {
+            if (!fabric.getTasks().getNames().contains(DEVELOPMENT_GAMETEST_TASK)) {
+                fabric.getTasks().register("runQuickGameTest", task -> task.onlyIf(_ -> false));
+                return;
+            }
+            String suiteName = root.getProviders().gradleProperty("quickGameTestSuite").getOrElse("gametest");
+            IntegrationGameTestSuite suite = integrationGameTestSuites(fabric).stream()
+                    .filter(candidate -> candidate.getName().equals(suiteName)).findFirst().orElse(null);
+            if (!suiteName.equals("gametest") && suite == null) {
+                throw new GradleException("Unknown quickGameTestSuite '" + suiteName + "'.");
+            }
+            String filter = root.getProviders().gradleProperty("quickGameTestFilter")
+                    .getOrElse(suite == null ? requiredProperty(root, "mod_id") + ":*" : IntegrationGameTestsPlugin.filter(suite));
+            SourceSet sources = sourceSets(fabric).getByName(suiteName);
+            LoomGradleExtensionAPI loom = fabric.getExtensions().getByType(LoomGradleExtensionAPI.class);
+            loom.getRuns().create("quickGameTest", run -> {
+                run.inherit(loom.getRuns().getByName(suite == null ? "gameTest" : suite.getRunName()));
+                run.source(sources);
+                run.runDir("build/run/quickGameTest");
+                run.property("fabric-api.gametest.filter", filter);
+            });
+            fabric.getTasks().named("runQuickGameTest").configure(task -> {
+                task.setGroup("verification");
+                task.setDescription("Runs the selected Fabric development GameTests in an isolated world.");
+                task.dependsOn(sources.getRuntimeClasspath());
+                task.onlyIf(_ -> extension.getFabricServerGameTests().get());
+                task.doFirst("resetGameTestWorld", _ -> fabric.delete(fabric.file("build/run/quickGameTest/world")));
+            });
+        });
+    }
+
+    private static void configureGameTestHeap(Project root, Project loader) {
+        String heap = root.getProviders().gradleProperty("gametest_heap").getOrElse("4G");
+        LoomGradleExtensionAPI loom = loader.getExtensions().getByType(LoomGradleExtensionAPI.class);
+        loader.afterEvaluate(_ -> loom.getRuns().configureEach(run -> {
+            if (run.getName().toLowerCase(java.util.Locale.ROOT).endsWith("gametest")) {
+                run.vmArg("-Xmx" + heap);
+            }
+        }));
+        loader.getTasks().withType(net.fabricmc.loom.task.prod.AbstractProductionRunTask.class)
+                .configureEach(task -> task.getJvmArgs().add("-Xmx" + heap));
+        loader.getTasks().withType(NeoForgeServerGameTestProductionRunTask.class)
+                .configureEach(task -> task.getJvmArgs().add("-Xmx" + heap));
     }
 
     /**
