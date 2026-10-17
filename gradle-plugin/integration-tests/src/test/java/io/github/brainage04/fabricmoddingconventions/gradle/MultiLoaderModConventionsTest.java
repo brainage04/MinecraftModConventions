@@ -180,6 +180,11 @@ class MultiLoaderModConventionsTest {
         List<String> quickPlan = runGradle("runQuickGameTests", "--dry-run").getOutput().lines()
                 .map(line -> line.split(" ")[0]).filter(path -> path.matches(":(fabric|neoforge):run\\w*GameTest")).toList();
         assertEquals(List.of(":fabric:runQuickGameTest"), quickPlan);
+        assertEquals(
+                List.of(":fabric:runGameTest", ":neoforge:runGameTest", ":fabric:runProductionServerGameTest",
+                        ":neoforge:runProductionServerGameTest"),
+                plannedGameTestRuns()
+        );
     }
 
     @Test
@@ -213,7 +218,7 @@ class MultiLoaderModConventionsTest {
                 }
                 tasks.register('verifyParallelRuns')
                 """);
-        assertEquals(TaskOutcome.SUCCESS, runGradle("verifyParallelRuns", "--parallel",
+        assertEquals(TaskOutcome.UP_TO_DATE, runGradle("verifyParallelRuns", "--parallel",
                 "-PparallelGameTests=true", "-PquickGameTestSuite=compat")
                 .task(":verifyParallelRuns").getOutcome());
     }
