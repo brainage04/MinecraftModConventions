@@ -6,7 +6,7 @@ Shared Gradle plugins, GitHub workflows and client GameTest helpers for my Minec
 
 | Plugin (`io.github.brainage04.…`) | Apply to | Purpose |
 | --- | --- | --- |
-| `multiloader-mod-conventions` | root of a `common`/`fabric`/`neoforge` mod | **The standard entry point.** Configures all three modules with Architectury Loom and applies every plugin below except `fabric-mod-conventions` and `maven-central-publishing`. |
+| `multiloader-mod-conventions` | root of a `common`/`fabric` mod, optionally with `neoforge` | **The standard entry point.** Configures the included modules with Architectury Loom and applies every plugin below except `fabric-mod-conventions` and `maven-central-publishing`. |
 | `fabric-mod-conventions` | single-loader Fabric project | Fabric Loom, project identity, standard dependencies and repositories, Java settings, side-aware source layout, access widener, sources JAR, `fabric.mod.json` expansion, license in the JAR. |
 | `client-gametest-recorder` | Fabric project | `recordClientGameTest`: records client GameTests to MP4 in an isolated Xvfb display and audio sink. Adds the runtime helpers to the `gametest` source set. |
 | `production-gametests` | Fabric project | Creates the `gametest` source set and runs GameTests against the packaged mod through Loom's production client and server. |
@@ -26,7 +26,14 @@ plugins {
 }
 ```
 
-Requires subprojects `common`, `fabric` and `neoforge`, and these Gradle properties: `mod_id`, `mod_name`, `mod_version`, `maven_group`, `archives_base_name`, `java_version`, `minecraft_version`, `loader_version`, `fabric_api_version`, `neoforge_version`, `fabricmoddingconventions_version`. `mod_side` (`both`, `client` or `server`; default `both`) splits Fabric client sources for `both`, turns off Fabric production server GameTests for `client`, and sets the CurseForge environment.
+Requires subprojects `common` and `fabric`; `neoforge` is optional. Required Gradle properties are `mod_id`, `mod_name`, `mod_version`, `maven_group`, `archives_base_name`, `java_version`, `minecraft_version`, `loader_version`, `fabric_api_version` and `fabricmoddingconventions_version`. `neoforge_version` is required only when `:neoforge` exists. `mod_side` (`both`, `client` or `server`; default `both`) splits Fabric client sources for `both`, turns off Fabric production server GameTests for `client`, and sets the CurseForge environment.
+
+For a Fabric-only shared-source project use `include 'common', 'fabric'` in settings. Root
+`build`, `collectReleaseArtifacts` and `runAllGameTests` discover only the included loaders.
+Fabric development/production integration suites and optional production-client tests remain
+available; removing `:neoforge` does not remove those suites. A Fabric-only release omits
+`additional_artifact_pattern` from `reusable-multiloader-release.yml`, which skips both
+NeoForge publication jobs while retaining Fabric and GitHub publication.
 
 - Shared GameTests go in `common/src/gametest/java` and `common/src/gametest/resources`; both loaders compile and package them.
 - Both loaders' `gametest` source sets also get the structure `fabricmoddingconventions:empty`, 8x8x8 blocks of air (`minecraft:empty` is 1x1x1). Use it in test instances with `"structure": "fabricmoddingconventions:empty"`; it is never packaged into the release JARs.

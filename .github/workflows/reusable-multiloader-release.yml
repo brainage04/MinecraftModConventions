@@ -14,8 +14,9 @@ on:
         default: '25'
         type: string
       additional_artifact_pattern:
-        description: Glob for the NeoForge release JAR under build/libs
-        required: true
+        description: Optional glob for the NeoForge release JAR under build/libs; omit for Fabric-only projects
+        required: false
+        default: ''
         type: string
       release_name:
         description: GitHub release title
@@ -179,7 +180,7 @@ jobs:
     needs:
       - prepare
       - modrinth-fabric
-    if: inputs.publish_modrinth
+    if: inputs.publish_modrinth && inputs.additional_artifact_pattern != ''
     permissions:
       contents: read
     uses: brainage04/FabricModdingConventions/.github/workflows/reusable-publish-modrinth.yml@v2.4.26
@@ -223,7 +224,7 @@ jobs:
     needs:
       - prepare
       - curseforge-fabric
-    if: inputs.publish_curseforge
+    if: inputs.publish_curseforge && inputs.additional_artifact_pattern != ''
     permissions:
       contents: read
     uses: brainage04/FabricModdingConventions/.github/workflows/reusable-publish-curseforge.yml@v2.4.26
