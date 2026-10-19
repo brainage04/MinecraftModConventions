@@ -21,4 +21,5 @@ repositories {
 
 dependencies {
 	compileOnly "dev.architectury:architectury-loom:${rootProject.architectury_loom_version}"
+	implementation project(':gradle-plugin:production-gametests')
 }

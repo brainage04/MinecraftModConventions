@@ -11,5 +11,6 @@ public final class MinecraftModConventions implements ClientModInitializer {
     @Override
     public void onInitializeClient() {
         ClientGameTestRecordingHud.initialize();
+        ClientStartupSignal.initialize();
     }
 }

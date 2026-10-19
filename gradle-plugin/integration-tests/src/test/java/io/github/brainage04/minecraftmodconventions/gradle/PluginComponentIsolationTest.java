@@ -322,16 +322,12 @@ class PluginComponentIsolationTest {
     }
 
     @Test
-    void preparationTaskWritesDeterministicOptionsFromExtensionSettings() throws IOException {
-        writeLoomFixture(BASE_PLUGIN_ID + "'\n    id '" + RECORDER_PLUGIN_ID, """
+    void automatedClientsGetTheTestProfileAndIgnoreTheDevClientOptions() throws IOException {
+        writeLoomFixture(BASE_PLUGIN_ID + "'\n    id '" + RECORDER_PLUGIN_ID + "'\n    id '" + PRODUCTION_PLUGIN_ID, """
+                productionGameTests { includeFabricApiDependency = false }
+
                 clientGameTestRecorder {
                     recordingAudioDeviceProperty = 'fixtureRecordingAudioDevice'
-                    minecraftOptionsVersion = '9999'
-                    maxFps = '144'
-                    renderDistance = '12'
-                    simulationDistance = '8'
-                    guiScale = '3'
-                    fullscreen = 'false'
                     disableUnsecureChatToast = false
                     disableSocialInteractionsToast = false
                     disableRecipeToasts = false
@@ -350,16 +346,85 @@ class PluginComponentIsolationTest {
                     }
                 }
                 """);
+        Path devOptions = projectDir.resolve("launcher/options.txt");
+        Files.createDirectories(devOptions.getParent());
+        Files.writeString(devOptions, "guiScale:4\nrenderDistance:32\n");
 
         var result = runGradle(
                 "prepareClientGameTestRun",
+                "prepareProductionGameTestRuns",
                 "verifyRecorderNotificationSettings",
-                "-PfixtureRecordingAudioDevice=pipewire.monitor"
+                "-PfixtureRecordingAudioDevice=pipewire.monitor",
+                "-Pminecraftmodconventions.devClientOptions=" + devOptions
         );
 
         assertEquals(TaskOutcome.SUCCESS, result.task(":prepareClientGameTestRun").getOutcome());
         assertEquals(TaskOutcome.SUCCESS, result.task(":verifyRecorderNotificationSettings").getOutcome());
-        assertEquals(expectedOptions(), Files.readString(projectDir.resolve("build/run/clientGameTest/options.txt")));
+        assertEquals(testOptions(false), Files.readString(projectDir.resolve("build/run/clientGameTest/options.txt")));
+        assertEquals(testOptions(false),
+                Files.readString(projectDir.resolve("build/run/productionClientGameTest/options.txt")));
+    }
+
+    @Test
+    void recordedClientsGetTheShowcaseProfileOnTheRecorderSink() throws IOException {
+        writeLoomFixture(BASE_PLUGIN_ID + "'\n    id '" + RECORDER_PLUGIN_ID + "'\n    id '" + PRODUCTION_PLUGIN_ID, """
+                productionGameTests { includeFabricApiDependency = false }
+                """);
+
+        GradleRunner.create()
+                .withProjectDir(projectDir.toFile())
+                .withPluginClasspath()
+                .withEnvironment(java.util.Map.of(
+                        "GTR_RECORDING_MANAGED_XVFB", "true",
+                        "GTR_RECORDING_AUDIO_DEVICE", "gametest_recorder_fixture"
+                ))
+                .withArguments("prepareClientGameTestRun", "prepareProductionGameTestRuns")
+                .build();
+
+        String expected = testOptions(true)
+                .replace("fullscreen:false", "fullscreen:true")
+                .replace("renderDistance:5", "renderDistance:12")
+                .replace("graphicsPreset:\"fast\"", "graphicsPreset:\"fancy\"")
+                .replace("ao:false", "ao:true")
+                .replace("cutoutLeaves:false", "cutoutLeaves:true")
+                .replace("entityShadows:false", "entityShadows:true")
+                .replace("soundDevice:\"\"", "soundDevice:\"gametest_recorder_fixture\"")
+                .replace("soundCategory_master:0.0", "soundCategory_master:0.7")
+                .replaceAll("(soundCategory_(?!master|music)[a-z]+):0\\.0", "$1:1.0");
+        assertEquals(expected, Files.readString(projectDir.resolve("build/run/clientGameTest/options.txt")));
+        assertEquals(expected, Files.readString(projectDir.resolve("build/run/productionClientGameTest/options.txt")));
+    }
+
+    @Test
+    void bothClientLaunchesGetAStartupDeadline() throws IOException {
+        writeLoomFixture(BASE_PLUGIN_ID + "'\n    id '" + RECORDER_PLUGIN_ID + "'\n    id '" + PRODUCTION_PLUGIN_ID, """
+                productionGameTests { includeFabricApiDependency = false }
+
+                // Loom resolves the development run's classpath to list its JVM arguments; the runtime helper
+                // comes from this build's local repository.
+                repositories { maven { url = uri('%s') } }
+
+                tasks.register('verifyStartupDeadline') {
+                    doLast {
+                        def ready = '-Dminecraftmodconventions.clientReadyFile='
+                        assert tasks.runProductionClientGameTest.jvmArgs.get().contains(ready
+                                + file('build/minecraftmodconventions/client-ready/runProductionClientGameTest'))
+                        assert tasks.runClientGameTest.jvmArgs.contains(ready
+                                + file('build/minecraftmodconventions/client-ready/runClientGameTest'))
+                        assert clientGameTestRecorder.clientStartupTimeoutSeconds.get() == 42
+                        [tasks.runProductionClientGameTest, tasks.runClientGameTest].each {
+                            assert it.actions.size() == 1 : "${it.path} launches outside its deadline"
+                        }
+                    }
+                }
+                """.formatted(Path.of(System.getProperty("pluginTestRepository")).toUri()));
+        Path properties = projectDir.resolve("gradle.properties");
+        Files.writeString(properties, Files.readString(properties)
+                .replace("=fixture-version", "=" + System.getProperty("pluginTestVersion")));
+
+        var result = runGradle("verifyStartupDeadline", "-Pminecraftmodconventions.clientStartupTimeoutSeconds=42");
+
+        assertEquals(TaskOutcome.SUCCESS, result.task(":verifyStartupDeadline").getOutcome());
     }
 
     private BuildResult runGradle(String... arguments) {
@@ -405,38 +470,62 @@ class PluginComponentIsolationTest {
                 """.formatted(pluginIds, repositories, dependencies, configuration));
     }
 
-    private static String expectedOptions() {
-        return String.join(System.lineSeparator(),
-                "version:9999",
+    /** The test profile, written out literally so a change to it shows up here. */
+    private static String testOptions(boolean joinedFirstServer) {
+        return String.join("\n",
+                "version:4903",
+                "lang:en_us",
+                "fullscreen:false",
+                "overrideWidth:854",
+                "overrideHeight:480",
+                "guiScale:2",
+                "renderDistance:5",
+                "simulationDistance:5",
+                "maxFps:30",
+                "enableVsync:false",
+                "inactivityFpsLimit:\"minimized\"",
+                "graphicsPreset:\"fast\"",
                 "ao:false",
-                "autoJump:false",
+                "cutoutLeaves:false",
+                "entityShadows:false",
+                "improvedTransparency:false",
+                "renderClouds:\"false\"",
+                "particles:2",
                 "biomeBlendRadius:0",
                 "chunkSectionFadeInTime:0.0",
-                "enableVsync:false",
                 "entityDistanceScaling:0.5",
-                "entityShadows:false",
-                "fullscreen:false",
-                "graphicsPreset:\"fast\"",
-                "guiScale:3",
-                "improvedTransparency:false",
-                "inactivityFpsLimit:\"minimized\"",
-                "maxAnisotropyBit:1",
-                "maxFps:144",
-                "menuBackgroundBlurriness:0",
                 "mipmapLevels:0",
-                "joinedFirstServer:false",
+                "maxAnisotropyBit:0",
+                "menuBackgroundBlurriness:0",
+                "prioritizeChunkUpdates:0",
+                "weatherRadius:5",
+                "soundDevice:\"\"",
+                "soundCategory_master:0.0",
+                "soundCategory_music:0.0",
+                "soundCategory_record:0.0",
+                "soundCategory_weather:0.0",
+                "soundCategory_block:0.0",
+                "soundCategory_hostile:0.0",
+                "soundCategory_neutral:0.0",
+                "soundCategory_player:0.0",
+                "soundCategory_ambient:0.0",
+                "soundCategory_voice:0.0",
+                "soundCategory_ui:0.0",
                 "narrator:0",
                 "narratorHotkey:false",
-                "particles:2",
-                "prioritizeChunkUpdates:0",
-                "renderClouds:\"false\"",
-                "renderDistance:12",
-                "simulationDistance:8",
-                "soundDevice:\"pipewire.monitor\"",
-                "soundCategory_master:0.7",
-                "soundCategory_music:0.0",
+                "tutorialStep:none",
+                "onboardAccessibility:false",
+                "joinedFirstServer:" + joinedFirstServer,
+                "skipMultiplayerWarning:true",
+                "realmsNotifications:false",
+                "telemetryOptInExtra:false",
+                "musicToast:\"never\"",
+                "hideSplashTexts:true",
+                "showAutosaveIndicator:false",
+                "pauseOnLostFocus:false",
+                "autoJump:false",
                 "toggleSprint:false",
-                "weatherRadius:5",
+                "toggleCrouch:false",
                 ""
         );
     }

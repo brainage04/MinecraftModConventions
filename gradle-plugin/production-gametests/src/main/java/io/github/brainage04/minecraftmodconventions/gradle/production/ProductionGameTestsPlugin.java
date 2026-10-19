@@ -196,9 +196,15 @@ public final class ProductionGameTestsPlugin implements Plugin<Project> {
                 PrepareProductionGameTestRunsTask.class,
                 task -> {
                     task.setGroup("verification");
-                    task.setDescription("Prepares silent production client GameTests and accepts embedded server EULAs.");
+                    task.setDescription("Writes the production client's options and accepts embedded server EULAs.");
                     task.getClientEulaFile().convention(extension.getClientRunDir().file("eula.txt"));
                     task.getClientOptionsFile().convention(extension.getClientRunDir().file("options.txt"));
+                    task.getClientOptionsProfile().convention(ClientGameTestOptions.profile(
+                            project.getProviders(), ClientGameTestOptions.RECORDER_MANAGED_ENV));
+                    task.getClientSoundDevice().convention(project.getProviders()
+                            .environmentVariable(ClientGameTestOptions.RECORDER_AUDIO_DEVICE_ENV)
+                            .orElse(""));
+                    task.getDisableSocialInteractionsToast().convention(true);
                     task.getServerEulaFile().convention(extension.getServerRunDir().file("eula.txt"));
                 }
         );

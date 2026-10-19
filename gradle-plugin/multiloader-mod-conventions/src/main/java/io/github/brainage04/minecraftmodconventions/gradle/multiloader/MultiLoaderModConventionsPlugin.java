@@ -379,10 +379,6 @@ public final class MultiLoaderModConventionsPlugin implements Plugin<Project> {
             task.getRunTaskName().set("runProductionClientGameTest");
             task.onlyIf("Fabric client GameTests are enabled", spec -> fleetExtension.getFabricClientGameTests().get());
         });
-        fabric.getTasks().named("prepareClientGameTestRun").configure(task ->
-                task.mustRunAfter("prepareProductionGameTestRuns"));
-        fabric.getTasks().withType(ClientGameTestProductionRunTask.class)
-                .configureEach(task -> task.dependsOn("prepareClientGameTestRun"));
         // CI always calls :fabric:runProductionClientGameTest; with client GameTests off it has to exist and
         // do nothing. This runs after the production plugin's afterEvaluate, which registers the real task.
         fabric.afterEvaluate(_ -> {

@@ -1,5 +1,8 @@
 package io.github.brainage04.minecraftmodconventions.gradle.recorder;
 
+import io.github.brainage04.minecraftmodconventions.gradle.production.ClientGameTestOptions;
+import io.github.brainage04.minecraftmodconventions.gradle.production.ClientGameTestProductionRunTask;
+import io.github.brainage04.minecraftmodconventions.gradle.production.PrepareProductionGameTestRunsTask;
 import net.fabricmc.loom.api.LoomGradleExtensionAPI;
 import net.fabricmc.loom.task.AbstractRunTask;
 import org.gradle.api.GradleException;
@@ -12,6 +15,7 @@ import org.gradle.api.tasks.JavaExec;
 import org.gradle.api.tasks.TaskProvider;
 
 import java.io.File;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Locale;
 
@@ -31,11 +35,12 @@ public final class ClientGameTestRecorderPlugin implements Plugin<Project> {
                 "clientGameTestRecorder",
                 ClientGameTestRecorderExtension.class,
                 project.getObjects(),
-                project.getLayout()
+                project.getLayout(),
+                project.getProviders()
         );
         project.getPluginManager().withPlugin(
                 PRODUCTION_GAMETESTS_PLUGIN_ID,
-                _ -> addRuntimeHelperDependencies(project)
+                _ -> configureProductionGameTests(project, extension)
         );
         String recordingRunDirectory = project.getProviders()
                 .environmentVariable("GTR_RECORDING_RUN_DIR")
@@ -88,6 +93,45 @@ public final class ClientGameTestRecorderPlugin implements Plugin<Project> {
         return project.relativePath(runDirectory);
     }
 
+    /**
+     * With production-gametests, the runtime helper joins both client runs, so the production client gets the same
+     * options as the development one and both launches get a startup deadline.
+     */
+    private static void configureProductionGameTests(Project project, ClientGameTestRecorderExtension extension) {
+        addRuntimeHelperDependencies(project);
+        project.getTasks().withType(PrepareProductionGameTestRunsTask.class).configureEach(task -> {
+            task.getClientOptionsProfile().set(optionsProfile(project, extension));
+            task.getClientSoundDevice().set(recordingAudioDevice(project, extension));
+            task.getDisableSocialInteractionsToast().set(extension.getDisableSocialInteractionsToast());
+        });
+        project.getTasks().withType(ClientGameTestProductionRunTask.class).configureEach(task ->
+                ClientStartupDeadline.install(
+                        task,
+                        readyFile(project, task),
+                        extension.getClientStartupTimeoutSeconds(),
+                        task.getJvmArgs()::add
+                ));
+    }
+
+    private static Path readyFile(Project project, Task task) {
+        return project.getLayout().getBuildDirectory()
+                .file("minecraftmodconventions/client-ready/" + task.getName())
+                .get().getAsFile().toPath();
+    }
+
+    private static Provider<String> optionsProfile(Project project, ClientGameTestRecorderExtension extension) {
+        return extension.getManagedXvfbEnv()
+                .flatMap(name -> ClientGameTestOptions.profile(project.getProviders(), name));
+    }
+
+    private static Provider<String> recordingAudioDevice(Project project, ClientGameTestRecorderExtension extension) {
+        ProviderFactory providers = project.getProviders();
+        return extension.getRecordingAudioDeviceProperty()
+                .flatMap(providers::gradleProperty)
+                .orElse(extension.getRecordingAudioDeviceEnv().flatMap(providers::environmentVariable))
+                .orElse("");
+    }
+
     private static void addRuntimeHelperDependencies(Project project) {
         Object version = project.findProperty("minecraftmodconventions_version");
         if (version == null || version.toString().isBlank()) {
@@ -102,19 +146,8 @@ public final class ClientGameTestRecorderPlugin implements Plugin<Project> {
     }
 
     private static void configurePrepareTask(Project project, ClientGameTestRecorderExtension extension, PrepareClientGameTestRunTask task) {
-        ProviderFactory providers = project.getProviders();
-        Provider<String> audioDevice = extension.getRecordingAudioDeviceProperty()
-                .flatMap(providers::gradleProperty)
-                .orElse(extension.getRecordingAudioDeviceEnv().flatMap(providers::environmentVariable))
-                .orElse("");
-
-        task.getRecordingAudioDevice().convention(audioDevice);
-        task.getMinecraftOptionsVersion().convention(extension.getMinecraftOptionsVersion());
-        task.getMaxFps().convention(extension.getMaxFps());
-        task.getRenderDistance().convention(extension.getRenderDistance());
-        task.getSimulationDistance().convention(extension.getSimulationDistance());
-        task.getGuiScale().convention(extension.getGuiScale());
-        task.getFullscreen().convention(extension.getFullscreen());
+        task.getProfile().convention(optionsProfile(project, extension));
+        task.getRecordingAudioDevice().convention(recordingAudioDevice(project, extension));
         task.getDisableSocialInteractionsToast().convention(extension.getDisableSocialInteractionsToast());
         task.getOptionsFile().convention(extension.getRunDir().file("options.txt"));
     }
@@ -157,6 +190,14 @@ public final class ClientGameTestRecorderPlugin implements Plugin<Project> {
         String managedXvfbValue = project.getProviders().environmentVariable(extension.getManagedXvfbEnv().get()).getOrNull();
         if (truthy(managedXvfbValue)) {
             loomRunTask.getUseXvfb().set(false);
+        }
+        if (project.getPluginManager().hasPlugin(PRODUCTION_GAMETESTS_PLUGIN_ID)) {
+            ClientStartupDeadline.install(
+                    task,
+                    readyFile(project, task),
+                    extension.getClientStartupTimeoutSeconds(),
+                    javaExec::jvmArgs
+            );
         }
     }
 

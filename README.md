@@ -174,7 +174,44 @@ To give every dev client the same keybinds and video settings, set this in `~/.g
 minecraftmodconventions.devClientOptions=/path/to/options.txt
 ```
 
-The file is copied into the client run directory before every launch, overwriting changes made in-game.
+The file is copied into the client run directory before every `runClient` launch, overwriting changes made in-game. Automated client launches never use it.
+
+## Automated client launches
+
+Client GameTests (`runClientGameTest`), production client GameTests (`runProductionClientGameTest`) and recordings start from an `options.txt` written by the plugins before every launch (`prepareClientGameTestRun`, `prepareProductionGameTestRuns`), from one of two profiles that are the same for every mod. Settings the client saves during a run never reach the next one.
+
+| Option | `test` | `showcase` |
+| --- | --- | --- |
+| `version` | `4903` (26.2) | same |
+| `lang` | `en_us` | same |
+| `fullscreen` | `false` | `true` |
+| `overrideWidth`, `overrideHeight` | `854`, `480` | same |
+| `guiScale` | `2` | same |
+| `renderDistance` | `5` | `12` |
+| `simulationDistance` | `5` | same |
+| `maxFps`, `enableVsync`, `inactivityFpsLimit` | `30`, `false`, `"minimized"` | same |
+| `graphicsPreset` | `"fast"` | `"fancy"` |
+| `ao`, `cutoutLeaves`, `entityShadows` | `false` | `true` |
+| `improvedTransparency`, `renderClouds` | `false`, `"false"` | same |
+| `particles` | `2` (minimal) | same |
+| `biomeBlendRadius`, `chunkSectionFadeInTime`, `entityDistanceScaling` | `0`, `0.0`, `0.5` | same |
+| `mipmapLevels`, `maxAnisotropyBit`, `menuBackgroundBlurriness`, `prioritizeChunkUpdates`, `weatherRadius` | `0`, `0`, `0`, `0`, `5` | same |
+| `soundDevice` | `""` | the recorder's private sink |
+| `soundCategory_master` | `0.0` | `0.7` |
+| `soundCategory_music` | `0.0` | `0.0` |
+| other `soundCategory_*` (`record`, `weather`, `block`, `hostile`, `neutral`, `player`, `ambient`, `voice`, `ui`) | `0.0` | `1.0` |
+| `narrator`, `narratorHotkey` | `0`, `false` | same |
+| `tutorialStep`, `onboardAccessibility` | `none`, `false` | same |
+| `joinedFirstServer` | `true` (`clientGameTestRecorder.disableSocialInteractionsToast`) | same |
+| `skipMultiplayerWarning`, `realmsNotifications`, `telemetryOptInExtra` | `true`, `false`, `false` | same |
+| `musicToast`, `hideSplashTexts`, `showAutosaveIndicator` | `"never"`, `true`, `false` | same |
+| `pauseOnLostFocus` | `false` | same |
+| `autoJump`, `toggleSprint`, `toggleCrouch` | `false` | same |
+
+- `showcase` is used while `recordClientGameTest` drives the build (it sets `GTR_RECORDING_MANAGED_XVFB=true`), `test` otherwise. Its sound only reaches the recorder's private PulseAudio sink.
+- Client GameTests see the `overrideWidth` x `overrideHeight` window whatever the display size, so the GUI scale and layout are the same in every run.
+
+With `client-gametest-recorder` and `production-gametests` both applied, the runtime helper joins both client runs, and each launch has a startup deadline: the client must finish loading (the point where its GameTests start) within 300 seconds. Otherwise the task stops the client and every process it started (`xvfb-run` and its `Xvfb` included) and fails with a message naming them. Change the deadline with `clientGameTestRecorder.clientStartupTimeoutSeconds` or the Gradle property `minecraftmodconventions.clientStartupTimeoutSeconds`.
 
 ## Client GameTest recording
 
@@ -186,16 +223,16 @@ Needs `ffmpeg`/`ffprobe` (X11 capture, PulseAudio input, H.264/AAC), Xvfb with `
 
 ```gradle
 clientGameTestRecorder {
-    guiScale = "2"                          // default "1"
     disableUnsecureChatToast = true
     disableSocialInteractionsToast = true
     disableRecipeToasts = true
     disableAdvancementToasts = true
     disableAdvancementChatMessages = true
+    clientStartupTimeoutSeconds = 300
 }
 ```
 
-- These settings only apply to recording runs; the five `disable…` options default to `true`.
+- The five `disable…` options default to `true`; the toasts and chat messages they name stay hidden in every client GameTest run.
 - The recording HUD panel sits in the top-right corner, clear of chat in the bottom-left. `GTR_RECORDING_PROFILE=showcase` shows a title card there instead of the diagnostic overlay.
 - `GTR_RECORDING_PRE_PADDING_SECONDS` / `GTR_RECORDING_POST_PADDING_SECONDS`: `0`–`60`, default `0.5`.
 - Each recording writes metadata with tick and frame boundaries, effective padding and any capture gaps. A run fails if game audio is not routed to the recorder's sink or cannot be decoded.
