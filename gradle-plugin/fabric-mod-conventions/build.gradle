@@ -6,9 +6,9 @@ plugins {
 ext {
 	componentArchivesName = "fabric-mod-conventions-gradle"
 	componentPluginId = "io.github.brainage04.fabric-mod-conventions"
-	componentImplementationClass = "io.github.brainage04.fabricmoddingconventions.gradle.fabric.FabricModConventionsPlugin"
+	componentImplementationClass = "io.github.brainage04.minecraftmodconventions.gradle.fabric.FabricModConventionsPlugin"
 	componentDisplayName = "Fabric mod conventions Gradle plugin"
-	componentDescription = "Applies Fabric Loom as the shared foundation for Fabric modding convention components."
+	componentDescription = "Applies Fabric Loom as the shared foundation for the Minecraft mod convention components."
 }
 
 apply from: rootProject.file("gradle/plugin-component.gradle")

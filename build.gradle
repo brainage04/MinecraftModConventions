@@ -7,15 +7,15 @@ plugins {
 version = project.mod_version
 group = project.maven_group
 
-def githubRepositoryUrl = "https://github.com/brainage04/FabricModdingConventions"
-def pomDescription = "Reusable Fabric modding conventions, client GameTest recording, and production GameTest helpers for Minecraft mods."
+def githubRepositoryUrl = "https://github.com/brainage04/MinecraftModConventions"
+def pomDescription = "Reusable Minecraft mod conventions, client GameTest recording, and production GameTest helpers for Minecraft mods."
 
 base {
 	archivesName = project.archives_base_name
 }
 
 mavenCentralPublishing {
-	repository.set("brainage04/FabricModdingConventions")
+	repository.set("brainage04/MinecraftModConventions")
 	publicationName.set(project.mod_name)
 	description.set(pomDescription)
 }

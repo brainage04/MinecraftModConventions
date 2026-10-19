@@ -6,7 +6,7 @@ plugins {
 ext {
 	componentArchivesName = "maven-central-publishing-gradle"
 	componentPluginId = "io.github.brainage04.maven-central-publishing"
-	componentImplementationClass = "io.github.brainage04.fabricmoddingconventions.gradle.central.MavenCentralPublishingPlugin"
+	componentImplementationClass = "io.github.brainage04.minecraftmodconventions.gradle.central.MavenCentralPublishingPlugin"
 	componentDisplayName = "Maven Central publishing Gradle plugin"
 	componentDescription = "Configures Maven publication metadata, signing, and Sonatype Central Portal uploads."
 }

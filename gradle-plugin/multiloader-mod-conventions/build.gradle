@@ -6,7 +6,7 @@ plugins {
 ext {
 	componentArchivesName = "multiloader-mod-conventions-gradle"
 	componentPluginId = "io.github.brainage04.multiloader-mod-conventions"
-	componentImplementationClass = "io.github.brainage04.fabricmoddingconventions.gradle.multiloader.MultiLoaderModConventionsPlugin"
+	componentImplementationClass = "io.github.brainage04.minecraftmodconventions.gradle.multiloader.MultiLoaderModConventionsPlugin"
 	componentDisplayName = "Multi-loader mod conventions Gradle plugin"
 	componentDescription = "Configures the common, Fabric, and NeoForge modules used by the Minecraft mod fleet."
 }

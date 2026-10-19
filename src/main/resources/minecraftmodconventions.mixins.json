@@ -1,0 +1,13 @@
+{
+  "required": true,
+  "package": "io.github.brainage04.minecraftmodconventions.mixin",
+  "compatibilityLevel": "JAVA_25",
+  "client": [
+    "ClientAdvancementsMixin",
+    "ClientPacketListenerMixin",
+    "RecordingMinecraftMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

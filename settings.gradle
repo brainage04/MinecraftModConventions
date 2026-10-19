@@ -12,7 +12,7 @@ pluginManagement {
 	}
 }
 
-rootProject.name = "FabricModdingConventions"
+rootProject.name = "MinecraftModConventions"
 include(
 		"gradle-plugin:integration-tests",
 		"gradle-plugin:fabric-mod-conventions",

@@ -15,7 +15,7 @@ class RecordingAuditTest(unittest.TestCase):
             {"recording": {"enabled": True}},
             "id 'io.github.brainage04.multiloader-mod-conventions'",
             '"fabric-client-gametest": ["Example"]\nClientGameTestRecorder.startRecording()',
-            "uses: brainage04/FabricModdingConventions/.github/workflows/reusable-client-gametests.yml@v2.4.1",
+            "uses: brainage04/MinecraftModConventions/.github/workflows/reusable-client-gametests.yml@v2.4.1",
         )
 
         self.assertTrue(audit["ready"])

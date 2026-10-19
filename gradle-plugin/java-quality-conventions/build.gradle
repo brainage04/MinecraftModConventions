@@ -6,7 +6,7 @@ plugins {
 ext {
 	componentArchivesName = "java-quality-conventions-gradle"
 	componentPluginId = "io.github.brainage04.java-quality-conventions"
-	componentImplementationClass = "io.github.brainage04.fabricmoddingconventions.gradle.quality.JavaQualityConventionsPlugin"
+	componentImplementationClass = "io.github.brainage04.minecraftmodconventions.gradle.quality.JavaQualityConventionsPlugin"
 	componentDisplayName = "Java quality conventions Gradle plugin"
 	componentDescription = "Configures staged Spotless, Checkstyle, and javac lint policy for Java projects."
 }

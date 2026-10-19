@@ -6,7 +6,7 @@ plugins {
 ext {
 	componentArchivesName = "client-gametest-recorder-gradle"
 	componentPluginId = "io.github.brainage04.client-gametest-recorder"
-	componentImplementationClass = "io.github.brainage04.fabricmoddingconventions.gradle.recorder.ClientGameTestRecorderPlugin"
+	componentImplementationClass = "io.github.brainage04.minecraftmodconventions.gradle.recorder.ClientGameTestRecorderPlugin"
 	componentDisplayName = "Client GameTest recorder Gradle plugin"
 	componentDescription = "Configures client GameTest preparation and recording tasks for Fabric mods."
 }

@@ -6,7 +6,7 @@ plugins {
 ext {
 	componentArchivesName = "integration-gametests-gradle"
 	componentPluginId = "io.github.brainage04.integration-gametests"
-	componentImplementationClass = "io.github.brainage04.fabricmoddingconventions.gradle.integration.IntegrationGameTestsPlugin"
+	componentImplementationClass = "io.github.brainage04.minecraftmodconventions.gradle.integration.IntegrationGameTestsPlugin"
 	componentDisplayName = "Integration GameTests Gradle plugin"
 	componentDescription = "Runs named GameTest suites with extra mods loaded beside the mod under test."
 }

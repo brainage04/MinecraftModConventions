@@ -8,19 +8,19 @@
 		"brainage04"
 	],
 	"contact": {
-		"homepage": "https://github.com/brainage04/FabricModdingConventions",
-		"sources": "https://github.com/brainage04/FabricModdingConventions"
+		"homepage": "https://github.com/brainage04/MinecraftModConventions",
+		"sources": "https://github.com/brainage04/MinecraftModConventions"
 	},
 	"license": "MIT",
-	"icon": "assets/fabricmoddingconventions/icon.png",
+	"icon": "assets/minecraftmodconventions/icon.png",
 	"environment": "client",
 	"entrypoints": {
 		"client": [
-			"io.github.brainage04.fabricmoddingconventions.FabricModdingConventions"
+			"io.github.brainage04.minecraftmodconventions.MinecraftModConventions"
 		]
 	},
 	"mixins": [
-		"fabricmoddingconventions.mixins.json"
+		"minecraftmodconventions.mixins.json"
 	],
 	"depends": {
 		"fabricloader": ">=${loader_version}",

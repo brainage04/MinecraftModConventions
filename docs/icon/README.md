@@ -1,4 +1,4 @@
-# FabricModdingConventions icon
+# MinecraftModConventions icon
 
 ## What this is
 

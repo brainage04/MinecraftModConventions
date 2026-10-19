@@ -55,7 +55,7 @@ with-central-publishing ./gradlew --no-daemon :publishToMavenCentral
 
 The root task stages and signs three distinct Central release concerns in one deployment:
 
-1. the `io.github.brainage04:fabricmoddingconventions` runtime artifact used by mod and GameTest code;
+1. the `io.github.brainage04:minecraftmodconventions` runtime artifact used by mod and GameTest code;
 2. one Gradle plugin marker artifact for each published plugin ID;
 3. the matching implementation module for each plugin marker.
 

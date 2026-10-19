@@ -1,7 +1,7 @@
 {
   "entries": [
     {
-      "project": "FabricModdingConventions",
+      "project": "MinecraftModConventions",
       "label": "Owner-selected conventions hub",
       "path": "blender-ab/conventions2-selected-owner-layout.png",
       "method": "Headless Blender CLI, Cycles CPU, 2 threads, CPUWeight=20, shared quota<=3 cores; exact reference scene camera and shader with canonical client-jar block models",

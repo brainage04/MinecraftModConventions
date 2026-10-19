@@ -1,4 +1,4 @@
-# FabricModdingConventions todo
+# MinecraftModConventions todo
 
 Fleet-wide work for the conventions plugins and every Fabric/NeoForge mod that uses them. Work specific to one mod goes in that mod's `todo.md`. The Forge 1.8.9 projects (ToggleSprint, LegacyMinecraftModTemplate) are out of scope.
 

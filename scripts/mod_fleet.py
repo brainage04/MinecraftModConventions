@@ -28,7 +28,7 @@ RECORDER_CAPABLE_PLUGINS = (
     "io.github.brainage04.multiloader-mod-conventions",
 )
 REUSABLE_WORKFLOW_PATTERN = re.compile(
-    r"brainage04/FabricModdingConventions/\.github/workflows/[^@\s]+@v([0-9]+(?:\.[0-9]+)*)"
+    r"brainage04/MinecraftModConventions/\.github/workflows/[^@\s]+@v([0-9]+(?:\.[0-9]+)*)"
 )
 
 
@@ -185,7 +185,7 @@ def audit_repository(entry: dict[str, Any], workspace: Path, baseline: dict[str,
         "loaderVersion": values.get("loader_version", values.get("fabric_version")),
         "fabricApiVersion": values.get("fabric_api_version"),
         "javaVersion": values.get("java_version"),
-        "conventionsVersion": values.get("fabricmoddingconventions_version"),
+        "conventionsVersion": values.get("minecraftmodconventions_version"),
     }
     workflow_versions = sorted(set(REUSABLE_WORKFLOW_PATTERN.findall(workflow_text)))
 
@@ -204,15 +204,15 @@ def audit_repository(entry: dict[str, Any], workspace: Path, baseline: dict[str,
                 deviations.append(f"{actual_key} expected {expected}, found {found or '<missing>'}")
 
         if "io.github.brainage04." not in build_text:
-            deviations.append("No FabricModdingConventions plugin is applied")
-        if "FabricModdingConventionsGitHubReleases" in settings_text or "ivy {" in settings_text:
+            deviations.append("No MinecraftModConventions plugin is applied")
+        if "MinecraftModConventionsGitHubReleases" in settings_text or "ivy {" in settings_text:
             deviations.append("Settings still declare a GitHub-release Ivy repository (plugins are on Maven Central)")
         if "mavenCentral()" not in settings_text:
             deviations.append("Settings omit Maven Central from pluginManagement")
-        if "includeBuild(\"../FabricModdingConventions\")" not in settings_text and "includeBuild('../FabricModdingConventions')" not in settings_text:
-            deviations.append("Settings omit the local FabricModdingConventions composite build")
+        if "includeBuild(\"../MinecraftModConventions\")" not in settings_text and "includeBuild('../MinecraftModConventions')" not in settings_text:
+            deviations.append("Settings omit the local MinecraftModConventions composite build")
         if not workflow_versions:
-            deviations.append("No reusable FabricModdingConventions workflow is referenced")
+            deviations.append("No reusable MinecraftModConventions workflow is referenced")
         elif workflow_versions != [baseline["conventionsVersion"]]:
             deviations.append(
                 "Reusable workflow versions expected v%s, found %s"

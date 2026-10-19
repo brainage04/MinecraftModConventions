@@ -6,7 +6,7 @@ plugins {
 ext {
 	componentArchivesName = "workspace-dependencies-gradle"
 	componentPluginId = "io.github.brainage04.workspace-dependencies"
-	componentImplementationClass = "io.github.brainage04.fabricmoddingconventions.gradle.workspace.WorkspaceDependenciesPlugin"
+	componentImplementationClass = "io.github.brainage04.minecraftmodconventions.gradle.workspace.WorkspaceDependenciesPlugin"
 	componentDisplayName = "Workspace dependencies Gradle plugin"
 	componentDescription = "Configures local-first sibling Maven repositories with Maven Central fallback."
 }

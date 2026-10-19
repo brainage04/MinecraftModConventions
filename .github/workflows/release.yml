@@ -12,7 +12,7 @@ jobs:
   prepare:
     permissions:
       contents: write
-    uses: brainage04/FabricModdingConventions/.github/workflows/reusable-release-prepare.yml@v2.3.4
+    uses: ./.github/workflows/reusable-release-prepare.yml
     with:
       resolve_release_notes_with_gradle: false
     secrets:
@@ -22,12 +22,12 @@ jobs:
     needs: prepare
     permissions:
       contents: write
-    uses: brainage04/FabricModdingConventions/.github/workflows/reusable-publish-github.yml@v2.3.4
+    uses: ./.github/workflows/reusable-publish-github.yml
     with:
       artifact_file: ${{ needs.prepare.outputs.artifact_file }}
       release_body: ${{ needs.prepare.outputs.release_body }}
       publish_with_gradle: false
-      release_name: ${{ format('FabricModdingConventions {0}', github.ref_name) }}
+      release_name: ${{ format('MinecraftModConventions {0}', github.ref_name) }}
     secrets:
       release_token: ${{ secrets.GITHUB_TOKEN }}
 

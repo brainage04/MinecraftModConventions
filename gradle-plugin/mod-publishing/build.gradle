@@ -6,7 +6,7 @@ plugins {
 ext {
 	componentArchivesName = "mod-publishing-gradle"
 	componentPluginId = "io.github.brainage04.mod-publishing"
-	componentImplementationClass = "io.github.brainage04.fabricmoddingconventions.gradle.modpublishing.ModPublishingPlugin"
+	componentImplementationClass = "io.github.brainage04.minecraftmodconventions.gradle.modpublishing.ModPublishingPlugin"
 	componentDisplayName = "Fabric mod distribution publishing Gradle plugin"
 	componentDescription = "Publishes one validated Fabric mod artifact to GitHub, Modrinth, and CurseForge."
 }

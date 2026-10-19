@@ -6,7 +6,7 @@ plugins {
 ext {
 	componentArchivesName = "production-gametests-gradle"
 	componentPluginId = "io.github.brainage04.production-gametests"
-	componentImplementationClass = "io.github.brainage04.fabricmoddingconventions.gradle.production.ProductionGameTestsPlugin"
+	componentImplementationClass = "io.github.brainage04.minecraftmodconventions.gradle.production.ProductionGameTestsPlugin"
 	componentDisplayName = "Production GameTests Gradle plugin"
 	componentDescription = "Configures opt-in Fabric Loom production GameTest tasks."
 }

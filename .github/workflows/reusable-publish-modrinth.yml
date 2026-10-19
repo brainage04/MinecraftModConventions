@@ -106,7 +106,7 @@ jobs:
         shell: bash
         run: |
           # Self-hosted runners keep their work tree between jobs; a leftover sibling such as
-          # ../FabricModdingConventions would be picked up by settings.gradle's includeBuild.
+          # ../MinecraftModConventions would be picked up by settings.gradle's includeBuild.
           checkout="$(basename "${GITHUB_WORKSPACE}")"
           find "${GITHUB_WORKSPACE}/.." -mindepth 1 -maxdepth 1 ! -name "${checkout}" -exec rm -rf -- {} +
 

@@ -6,7 +6,7 @@ base {
 }
 
 mavenCentralPublishing {
-	repository.set("brainage04/FabricModdingConventions")
+	repository.set("brainage04/MinecraftModConventions")
 	publicationName.set(componentDisplayName)
 	description.set(componentDescription)
 	localRepository.set(rootProject.layout.buildDirectory.dir("local-repo"))
@@ -38,8 +38,8 @@ tasks.named("test") {
 }
 
 gradlePlugin {
-	website = "https://github.com/brainage04/FabricModdingConventions"
-	vcsUrl = "https://github.com/brainage04/FabricModdingConventions.git"
+	website = "https://github.com/brainage04/MinecraftModConventions"
+	vcsUrl = "https://github.com/brainage04/MinecraftModConventions.git"
 	plugins {
 		component {
 			id = componentPluginId
