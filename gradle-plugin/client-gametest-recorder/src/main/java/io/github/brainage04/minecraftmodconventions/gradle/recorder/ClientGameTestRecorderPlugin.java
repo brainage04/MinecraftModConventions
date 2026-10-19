@@ -100,7 +100,6 @@ public final class ClientGameTestRecorderPlugin implements Plugin<Project> {
     private static void configureProductionGameTests(Project project, ClientGameTestRecorderExtension extension) {
         addRuntimeHelperDependencies(project);
         project.getTasks().withType(PrepareProductionGameTestRunsTask.class).configureEach(task -> {
-            task.getClientOptionsProfile().set(optionsProfile(project, extension));
             task.getClientSoundDevice().set(recordingAudioDevice(project, extension));
             task.getDisableSocialInteractionsToast().set(extension.getDisableSocialInteractionsToast());
         });
@@ -117,11 +116,6 @@ public final class ClientGameTestRecorderPlugin implements Plugin<Project> {
         return project.getLayout().getBuildDirectory()
                 .file("minecraftmodconventions/client-ready/" + task.getName())
                 .get().getAsFile().toPath();
-    }
-
-    private static Provider<String> optionsProfile(Project project, ClientGameTestRecorderExtension extension) {
-        return extension.getManagedXvfbEnv()
-                .flatMap(name -> ClientGameTestOptions.profile(project.getProviders(), name));
     }
 
     private static Provider<String> recordingAudioDevice(Project project, ClientGameTestRecorderExtension extension) {
@@ -146,8 +140,8 @@ public final class ClientGameTestRecorderPlugin implements Plugin<Project> {
     }
 
     private static void configurePrepareTask(Project project, ClientGameTestRecorderExtension extension, PrepareClientGameTestRunTask task) {
-        task.getProfile().convention(optionsProfile(project, extension));
         task.getRecordingAudioDevice().convention(recordingAudioDevice(project, extension));
+        task.getProfile().convention(ClientGameTestOptions.profile(task.getRecordingAudioDevice()));
         task.getDisableSocialInteractionsToast().convention(extension.getDisableSocialInteractionsToast());
         task.getOptionsFile().convention(extension.getRunDir().file("options.txt"));
     }

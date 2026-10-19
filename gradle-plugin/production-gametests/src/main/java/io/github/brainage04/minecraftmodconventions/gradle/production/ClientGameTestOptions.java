@@ -2,7 +2,6 @@ package io.github.brainage04.minecraftmodconventions.gradle.production;
 
 import org.gradle.api.GradleException;
 import org.gradle.api.provider.Provider;
-import org.gradle.api.provider.ProviderFactory;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -21,9 +20,7 @@ import java.util.stream.Collectors;
  * is written again before every launch, so settings the client saves during a run never carry over to the next one.
  */
 public final class ClientGameTestOptions {
-    /** Environment variable the recorder sets for the Gradle build it drives; it selects {@link Profile#SHOWCASE}. */
-    public static final String RECORDER_MANAGED_ENV = "GTR_RECORDING_MANAGED_XVFB";
-    /** Environment variable naming the recorder's private PulseAudio sink. */
+    /** Environment variable naming the recorder's private PulseAudio sink; the recorder sets it for its build. */
     public static final String RECORDER_AUDIO_DEVICE_ENV = "GTR_RECORDING_AUDIO_DEVICE";
     /**
      * The options format version: Minecraft 26.2's data version. A client of a later Minecraft version upgrades
@@ -57,10 +54,14 @@ public final class ClientGameTestOptions {
     private ClientGameTestOptions() {
     }
 
-    /** {@code showcase} while the client GameTest recorder drives the build, otherwise {@code test}. */
-    public static Provider<String> profile(ProviderFactory providers, String recorderManagedEnv) {
-        return providers.environmentVariable(recorderManagedEnv)
-                .map(value -> truthy(value) ? Profile.SHOWCASE.id() : Profile.TEST.id())
+    /**
+     * {@code showcase} when the client GameTest recorder has given the run its private audio sink, otherwise
+     * {@code test}. Only the recorder sets a sink, so other runs, including ones that bring their own display, stay
+     * on the test profile.
+     */
+    public static Provider<String> profile(Provider<String> recordingAudioDevice) {
+        return recordingAudioDevice
+                .map(device -> device.isBlank() ? Profile.TEST.id() : Profile.SHOWCASE.id())
                 .orElse(Profile.TEST.id());
     }
 
@@ -146,9 +147,5 @@ public final class ClientGameTestOptions {
             case "music" -> "0.0";
             default -> "1.0";
         };
-    }
-
-    private static boolean truthy(String value) {
-        return List.of("1", "true", "yes", "on").contains(value.strip().toLowerCase(Locale.ROOT));
     }
 }

@@ -327,7 +327,6 @@ class PluginComponentIsolationTest {
                 productionGameTests { includeFabricApiDependency = false }
 
                 clientGameTestRecorder {
-                    recordingAudioDeviceProperty = 'fixtureRecordingAudioDevice'
                     disableUnsecureChatToast = false
                     disableSocialInteractionsToast = false
                     disableRecipeToasts = false
@@ -350,13 +349,18 @@ class PluginComponentIsolationTest {
         Files.createDirectories(devOptions.getParent());
         Files.writeString(devOptions, "guiScale:4\nrenderDistance:32\n");
 
-        var result = runGradle(
-                "prepareClientGameTestRun",
-                "prepareProductionGameTestRuns",
-                "verifyRecorderNotificationSettings",
-                "-PfixtureRecordingAudioDevice=pipewire.monitor",
-                "-Pminecraftmodconventions.devClientOptions=" + devOptions
-        );
+        // A run that brings its own display but no recorder sink, as some CI jobs do, stays on the test profile.
+        var result = GradleRunner.create()
+                .withProjectDir(projectDir.toFile())
+                .withPluginClasspath()
+                .withEnvironment(java.util.Map.of("GTR_RECORDING_MANAGED_XVFB", "true"))
+                .withArguments(
+                        "prepareClientGameTestRun",
+                        "prepareProductionGameTestRuns",
+                        "verifyRecorderNotificationSettings",
+                        "-Pminecraftmodconventions.devClientOptions=" + devOptions
+                )
+                .build();
 
         assertEquals(TaskOutcome.SUCCESS, result.task(":prepareClientGameTestRun").getOutcome());
         assertEquals(TaskOutcome.SUCCESS, result.task(":verifyRecorderNotificationSettings").getOutcome());

@@ -208,7 +208,7 @@ Client GameTests (`runClientGameTest`), production client GameTests (`runProduct
 | `pauseOnLostFocus` | `false` | same |
 | `autoJump`, `toggleSprint`, `toggleCrouch` | `false` | same |
 
-- `showcase` is used while `recordClientGameTest` drives the build (it sets `GTR_RECORDING_MANAGED_XVFB=true`), `test` otherwise. Its sound only reaches the recorder's private PulseAudio sink.
+- `showcase` is used when the recorder gives the run its private PulseAudio sink (`recordClientGameTest` passes it as `GTR_RECORDING_AUDIO_DEVICE`), `test` otherwise, including runs that only bring their own display (`GTR_RECORDING_MANAGED_XVFB=true`). Its sound only reaches that sink.
 - Client GameTests see the `overrideWidth` x `overrideHeight` window whatever the display size, so the GUI scale and layout are the same in every run.
 
 With `client-gametest-recorder` and `production-gametests` both applied, the runtime helper joins both client runs, and each launch has a startup deadline: the client must finish loading (the point where its GameTests start) within 300 seconds. Otherwise the task stops the client and every process it started (`xvfb-run` and its `Xvfb` included) and fails with a message naming them. Change the deadline with `clientGameTestRecorder.clientStartupTimeoutSeconds` or the Gradle property `minecraftmodconventions.clientStartupTimeoutSeconds`.
