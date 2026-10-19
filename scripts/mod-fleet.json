@@ -6,7 +6,7 @@
     "loaderVersion": "0.19.3",
     "fabricApiVersion": "0.156.0+26.2",
     "javaVersion": "25",
-    "conventionsVersion": "2.4.27"
+    "conventionsVersion": "3.0.0"
   },
   "ignoredRepositories": {
     "ToggleSprint": "Forge-only 1.8.9 mod",
