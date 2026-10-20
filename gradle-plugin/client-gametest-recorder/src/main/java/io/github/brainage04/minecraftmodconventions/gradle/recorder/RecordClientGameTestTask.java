@@ -35,6 +35,14 @@ import java.util.stream.Stream;
 
 @DisableCachingByDefault(because = "The task controls external Minecraft, Xvfb, PulseAudio, and ffmpeg processes.")
 public abstract class RecordClientGameTestTask extends DefaultTask {
+    /**
+     * Encoded packets the muxer may hold while a write to the raw capture blocks. ffmpeg's default of 8
+     * (with the queues upstream, about 0.6 s of capture) lets a write that waits on a busy
+     * disk's filesystem journal stop x11grab, which leaves a frame gap as long as the remaining wait. At about
+     * 50 packets and 0.5 MB per second, 4096 packets cover over a minute of blocked writes in about 40 MB.
+     */
+    static final int MUX_QUEUE_PACKETS = 4096;
+
     @Internal
     public abstract DirectoryProperty getProjectDirectory();
 
@@ -206,16 +214,8 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
             if (recordingStartObserved) {
                 getLogger().lifecycle("Recording virtual display {} to {}", xvfbDisplay, output.getAbsolutePath());
                 String videoSize = videoSizeFromXvfbScreen(xvfbScreen);
-                // Passthrough alone still rounds timestamps into the encoder's default 1/fps timebase.
-                List<String> ffmpegCommand = List.of(
-                        "ffmpeg", "-y", "-copyts", "-stats_period", "0.05", "-progress", progress.getAbsolutePath(),
-                        "-f", "x11grab", "-framerate", fps, "-video_size", videoSize, "-draw_mouse", "0", "-i", xvfbDisplay + ".0",
-                        "-f", "pulse", "-thread_queue_size", "1024", "-i", audioSource,
-                        "-map", "0:v:0", "-map", "1:a:0", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
-                        "-pix_fmt", "yuv420p", "-fps_mode", "passthrough", "-enc_time_base:v", "demux", "-c:a", "pcm_s16le",
-                        "-stats_mux_pre:a:0", audioProgress.getAbsolutePath(),
-                        "-stats_mux_pre_fmt:a:0", "{pts} {tb}", rawCapture.getAbsolutePath()
-                );
+                List<String> ffmpegCommand = captureCommand(fps, videoSize, xvfbDisplay, audioSource,
+                        progress.getAbsolutePath(), audioProgress.getAbsolutePath(), rawCapture.getAbsolutePath());
                 ProcessBuilder ffmpegBuilder = new ProcessBuilder(ffmpegCommand);
                 ffmpegBuilder.directory(projectDir);
                 ffmpegBuilder.redirectErrorStream(true);
@@ -463,6 +463,21 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
             failures.add("Client GameTest run directory was not found: " + runDirectory);
         }
         return failures;
+    }
+
+    static List<String> captureCommand(String fps, String videoSize, String display, String audioSource,
+            String progress, String audioProgress, String rawCapture) {
+        // Passthrough alone still rounds timestamps into the encoder's default 1/fps timebase.
+        return List.of(
+                "ffmpeg", "-y", "-copyts", "-stats_period", "0.05", "-progress", progress,
+                "-f", "x11grab", "-framerate", fps, "-video_size", videoSize, "-draw_mouse", "0", "-i", display + ".0",
+                "-f", "pulse", "-thread_queue_size", "1024", "-i", audioSource,
+                "-map", "0:v:0", "-map", "1:a:0", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+                "-pix_fmt", "yuv420p", "-fps_mode", "passthrough", "-enc_time_base:v", "demux", "-c:a", "pcm_s16le",
+                "-stats_mux_pre:a:0", audioProgress,
+                "-stats_mux_pre_fmt:a:0", "{pts} {tb}",
+                "-thread_queue_size", Integer.toString(MUX_QUEUE_PACKETS), rawCapture
+        );
     }
 
     private void requireTools(Collection<String> names) {
