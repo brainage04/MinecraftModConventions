@@ -1,10 +1,15 @@
 package io.github.brainage04.minecraftmodconventions.gradle.recorder;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class RecordClientGameTestTaskTest {
@@ -38,5 +43,31 @@ class RecordClientGameTestTaskTest {
         // A one-second journal wait (about 50 packets) already froze x11grab with ffmpeg's default of 8;
         // the worst observed wait was about 12 s.
         assertTrue(packets >= 50 * 60, "muxer queue must absorb at least a minute of blocked writes: " + packets);
+    }
+
+    @Test
+    void limitedJobCgroupIsProtectedUpToItsLimitAndRestored(@TempDir Path root) throws IOException {
+        Path procSelfCgroup = Files.writeString(root.resolve("cgroup"), "0::/heavy.slice/heavy-1-42.scope\n");
+        Path cgroup = Files.createDirectories(root.resolve("fs/heavy.slice/heavy-1-42.scope"));
+        Files.writeString(cgroup.resolve("memory.max"), "9663676416\n");
+        Files.writeString(cgroup.resolve("memory.low"), "0\n");
+
+        assertEquals(cgroup, RecordClientGameTestTask.ownCgroup(procSelfCgroup, root.resolve("fs")));
+        String previous = RecordClientGameTestTask.protectMemory(cgroup);
+        assertEquals("0", previous);
+        assertEquals("9663676416", Files.readString(cgroup.resolve("memory.low")));
+
+        RecordClientGameTestTask.restoreMemoryLow(cgroup, previous);
+        assertEquals("0", Files.readString(cgroup.resolve("memory.low")));
+    }
+
+    @Test
+    void unlimitedCgroupIsLeftAlone(@TempDir Path cgroup) throws IOException {
+        Files.writeString(cgroup.resolve("memory.max"), "max\n");
+        Files.writeString(cgroup.resolve("memory.low"), "0\n");
+
+        assertNull(RecordClientGameTestTask.protectMemory(cgroup));
+        assertEquals("0\n", Files.readString(cgroup.resolve("memory.low")));
+        assertNull(RecordClientGameTestTask.protectMemory(cgroup.resolve("missing")));
     }
 }

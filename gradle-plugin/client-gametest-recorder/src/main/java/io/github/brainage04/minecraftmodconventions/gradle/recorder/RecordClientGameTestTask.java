@@ -131,6 +131,11 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
         deleteIfExists(boundaries.toPath());
         deleteIfExists(progress.toPath());
 
+        Path memoryCgroup = ownCgroup(Path.of("/proc/self/cgroup"), Path.of("/sys/fs/cgroup"));
+        String previousMemoryLow = memoryCgroup == null ? null : protectMemory(memoryCgroup);
+        if (previousMemoryLow != null) {
+            getLogger().lifecycle("Protecting the recording job's memory up to its limit from sibling reclaim ({}).", memoryCgroup);
+        }
         try {
             if (xvfbDisplay.isBlank()) {
                 xvfbDisplay = findFreeXvfbDisplay();
@@ -311,6 +316,9 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
             deleteIfExists(stopSignal.toPath());
             deleteIfExists(completeSignal.toPath());
             deleteIfExists(alsoftConfig.toPath());
+            if (previousMemoryLow != null) {
+                restoreMemoryLow(memoryCgroup, previousMemoryLow);
+            }
         }
 
         if (recordingStopObserved && rawCapture.isFile()) {
@@ -478,6 +486,52 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
                 "-stats_mux_pre_fmt:a:0", "{pts} {tb}",
                 "-thread_queue_size", Integer.toString(MUX_QUEUE_PACKETS), rawCapture
         );
+    }
+
+    /** The unified-hierarchy cgroup directory of this process, or null outside cgroup v2. */
+    static Path ownCgroup(Path procSelfCgroup, Path cgroupRoot) {
+        try {
+            for (String line : Files.readAllLines(procSelfCgroup, StandardCharsets.UTF_8)) {
+                if (line.startsWith("0::/")) {
+                    return cgroupRoot.resolve(line.substring(4));
+                }
+            }
+        } catch (IOException exception) {
+            return null;
+        }
+        return null;
+    }
+
+    /**
+     * When the job runs in a cgroup of its own with a memory limit (a job runner's slot), asks the kernel to
+     * reclaim from sibling jobs first by setting {@code memory.low} to that limit. When the parent hits its
+     * limit it otherwise evicts the capture's own libraries and the game's files from the page cache, and
+     * every thread of ffmpeg then waits on a busy disk to read them back: x11grab stops for seconds. A cgroup
+     * without a limit may be shared with unrelated processes and is left alone.
+     *
+     * @return the previous {@code memory.low} to restore, or null when nothing was changed
+     */
+    static String protectMemory(Path cgroup) {
+        try {
+            String limit = Files.readString(cgroup.resolve("memory.max"), StandardCharsets.UTF_8).strip();
+            if (!limit.matches("[0-9]+")) {
+                return null;
+            }
+            Path low = cgroup.resolve("memory.low");
+            String previous = Files.readString(low, StandardCharsets.UTF_8).strip();
+            Files.writeString(low, limit, StandardCharsets.UTF_8);
+            return previous;
+        } catch (IOException exception) {
+            return null;
+        }
+    }
+
+    static void restoreMemoryLow(Path cgroup, String previous) {
+        try {
+            Files.writeString(cgroup.resolve("memory.low"), previous, StandardCharsets.UTF_8);
+        } catch (IOException exception) {
+            // The job's cgroup is gone with its last process; there is nothing left to restore.
+        }
     }
 
     private void requireTools(Collection<String> names) {

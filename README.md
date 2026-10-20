@@ -237,6 +237,7 @@ clientGameTestRecorder {
 - `GTR_RECORDING_PRE_PADDING_SECONDS` / `GTR_RECORDING_POST_PADDING_SECONDS`: `0`–`60`, default `0.5`.
 - Each recording writes metadata with tick and frame boundaries, effective padding and any capture gaps. A run fails if game audio is not routed to the recorder's sink or cannot be decoded.
 - The raw capture's muxer queues up to 4096 encoded packets (over a minute of capture), so a write that waits on a busy disk does not stop the screen grab and leave a frame gap.
+- When the job runs in a cgroup of its own with a memory limit (a job runner's slot, such as a systemd scope), the recording sets that cgroup's `memory.low` to the limit for the run, so the kernel reclaims sibling jobs first instead of evicting ffmpeg's and the game's files, whose reads from a busy disk stall the capture. A cgroup without a limit is left alone.
 
 ### Dedicated-server harness
 
