@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -66,12 +67,12 @@ def validate(root: Path, files: list[str]) -> list[str]:
         }:
             return
         # A loader may use its own lane and common main/gametest resources, never the other loader.
-        module = lane.split("/")[0]
+        module = "" if lane.startswith("src/") else lane.split("/")[0]
         candidates = {
             lane,
             "common/src/main/resources",
             "common/src/gametest/resources",
-            f"{module}/src/main/resources",
+            str(Path(module) / "src/main/resources"),
         }
         if not any((candidate, kind, identifier) in resources for candidate in candidates):
             errors.append(f"{name}: unresolved {kind} reference {identifier} in {lane}")
@@ -91,4 +92,33 @@ def validate(root: Path, files: list[str]) -> list[str]:
                 errors.append(f"{name}: required_successes exceeds max_attempts")
         else:
             environment_refs(name, lane, document)
+    tables = [name for name in files if Path(name).name == "gametests.txt"]
+    if tables:
+        try:
+            properties = (root / "gradle.properties").read_text()
+        except OSError as error:
+            errors.append(f"gradle.properties: cannot resolve table namespace: {error}")
+            return errors
+        namespace_match = re.search(
+            r"(?m)^[ \t]*mod_id[ \t]*=[ \t]*([a-z0-9_.-]+)[ \t]*$", properties
+        )
+        if namespace_match is None:
+            errors.append("gradle.properties: missing valid mod_id for gametests.txt references")
+            return errors
+        project_namespace = namespace_match.group(1)
+        for name in tables:
+            lane = str(Path(name).parent / "resources")
+            for line_number, line in enumerate((root / name).read_text().splitlines(), 1):
+                words = line.partition("#")[0].split()
+                if not words:
+                    continue
+                structures = [
+                    word.removeprefix("structure=")
+                    for word in words[2:]
+                    if word.startswith("structure=")
+                ] or ["minecraftmodconventions:empty"]
+                for structure in structures:
+                    if ":" not in structure:
+                        structure = project_namespace + ":" + structure
+                    reference(f"{name}:{line_number}", lane, "structure", structure)
     return errors

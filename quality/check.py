@@ -116,6 +116,7 @@ def main() -> int:
         "exit": bool(errors),
         "findings": len(errors),
         "files": sum("/test_instance/" in p or "/test_environment/" in p for p in files),
+        "tables": sum(Path(p).name == "gametests.txt" for p in files),
     }
     manifest = root / "quality-tests.json"
     if manifest.exists():

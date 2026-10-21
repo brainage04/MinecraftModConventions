@@ -45,6 +45,51 @@ class DescriptorContractTest(unittest.TestCase):
             self.validate_instance(environment={"type": "minecraft:all_of", "environments": []})
         )
 
+    def validate_table(self, structure, module="common", resource_module="common"):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "gradle.properties").write_text("mod_id=example\n")
+            table = f"{module}/src/gametest/gametests.txt"
+            template = f"{resource_module}/src/main/resources/data/example/structure/present.nbt"
+            for name in (table, template):
+                (root / name).parent.mkdir(parents=True, exist_ok=True)
+            (root / template).write_bytes(b"")
+            option = "" if structure is None else " structure=" + structure
+            (root / table).write_text(
+                "# generated default or explicit template\ncase 20" + option + "\n"
+            )
+            return validate(root, [table, template, "gradle.properties"])
+
+    def test_table_accepts_project_templates_and_published_empty(self):
+        for structure in (None, "present", "example:present", "minecraftmodconventions:empty"):
+            with self.subTest(structure=structure):
+                self.assertEqual([], self.validate_table(structure))
+
+    def test_table_rejects_unknown_external_structures(self):
+        for structure in (
+            "unknownmod:present",
+            "fabricmoddingconventions:empty",
+            "minecraftmodconventions:not_published",
+        ):
+            with self.subTest(structure=structure):
+                errors = self.validate_table(structure)
+                self.assertTrue(
+                    any("gametests.txt:2: unresolved structure" in error for error in errors)
+                )
+
+    def test_table_rejects_unknown_project_paths(self):
+        for structure in ("missing", "example:missing"):
+            with self.subTest(structure=structure):
+                self.assertTrue(self.validate_table(structure))
+
+    def test_table_does_not_borrow_other_loader_resources(self):
+        self.assertTrue(
+            self.validate_table("example:present", module="fabric", resource_module="neoforge")
+        )
+
+    def test_retained_json_rejects_unknown_structure_namespaces(self):
+        self.assertTrue(self.validate_instance(structure="unknownmod:present"))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -368,6 +368,8 @@ PIT keeps Minecraft API dependencies but omits Fabric's JUnit session hook, so i
 runs pure policies without starting the conflicting Knot loader.
 `qualityNightly` combines ordinary tests, PIT, Jazzer and the secondary reports without GameTest/server tasks.
 Consumer `quality.yml` workflows schedule it nightly and expose `workflow_dispatch`.
+Nightly campaigns do not depend on a green fast-lint baseline; normal shared builds retain the
+default-on fast gate. Consumer nightly calls explicitly skip that gate so analyzer reports survive.
 MMC bootstraps its unpublished plugin with `:gradle-plugin:java-quality-conventions:pluginUnderTestMetadata`,
 then applies it using `-I quality/self-check.init.gradle`. This path neither publishes Maven artifacts
 nor depends on a pre-existing 3.1.0 release. Its nightly workflow scopes mutation/fuzzing to the
@@ -394,6 +396,9 @@ The versioned descriptor schemas follow the MC 26.2 `TestData`, `FunctionGameTes
 `TestEnvironmentDefinition` codecs, including `all_of.definitions`. Their actual codecs have no
 dimension/size field, so invented fields are rejected. The loader rejects duplicate JSON keys,
 checks signed-int tick bounds and cross-checks environment/structure availability by loader lane.
+The same reference pass checks `structure=` in every `gametests.txt`, defaults omitted templates to
+MMC's empty structure, and qualifies local template paths with the root `mod_id`. Unknown external
+namespaces and missing same-project templates fail with the table line, without starting Gradle.
 `minecraft:default` and MMC's packaged empty structure are explicit external resources. Runtime
 function registration, generated resource availability and registry-dependent values still need
 the existing native GameTests; JSON validation does not claim to execute those registrations.
