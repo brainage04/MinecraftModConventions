@@ -8,7 +8,7 @@ import org.gradle.api.GradleException;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class MinecraftVersionRangeFuzzTest {
-    @ValueSource(strings = {"26.2", "26.2.1", "26.3-pre1", "26w14a", "1.21.8"})
+    @ValueSource(strings = {"26.2", "26.2.1", "26.3-pre1", "26w14a", "1.21.8", "26.2147483648"})
     @FuzzTest(maxDuration = "60s")
     void supportedVersionsPreserveTheirLowerBound(@NotNull String input) {
         if (input.length() > 256) return;
