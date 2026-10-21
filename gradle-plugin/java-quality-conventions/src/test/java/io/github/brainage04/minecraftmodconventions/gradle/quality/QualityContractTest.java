@@ -92,4 +92,71 @@ class QualityContractTest {
     void unannotatedBoundariesAreNotPretendedNonNull() throws IOException {
         fixture("class Policy { String value() { return null; } }", "compileJava").build();
     }
+
+    @Test
+    void additionalRulesReportBeforeEnforcementAndAllowCommentedCatches() throws IOException {
+        String source =
+                """
+                class Policy {
+                    void run(boolean ready) {
+                        if (ready) System.gc();
+                        try { System.gc(); } catch (RuntimeException ignored) {}
+                        try { System.gc(); } catch (RuntimeException ignored) {
+                            // A deliberate, documented no-op.
+                        }
+                    }
+                }
+                """;
+        fixture(source, "checkstyleAdditional").build();
+        String report =
+                Files.readString(
+                        directory.resolve("build/reports/checkstyle/checkstyleAdditional.xml"));
+        assertTrue(report.contains("NeedBracesCheck"));
+        assertTrue(report.split("EmptyCatchBlockCheck", -1).length == 2);
+        fixture(source, "checkstyleAdditional", "-PqualityCheckstyleAdditionalEnforce=true")
+                .buildAndFail();
+    }
+
+    @Test
+    void magicNumbersUseOnlyMainAndRetainRequestedExemptions() throws IOException {
+        var runner =
+                fixture(
+                        """
+                @interface Marker { int value() default 91; }
+                @Marker(91)
+                class Policy {
+                    static final int CONSTANT = 42;
+                    public int hashCode() { return 31; }
+                    int value() { return 77; }
+                }
+                """,
+                        "checkstyleMagicNumbers",
+                        "-PqualityCheckstyleAdditionalEnforce=true");
+        var gameTest = directory.resolve("src/gametest/java/GameTestNumbers.java");
+        Files.createDirectories(gameTest.getParent());
+        Files.writeString(gameTest, "class GameTestNumbers { int value() { return 97; } }");
+        runner.build();
+        String report =
+                Files.readString(
+                        directory.resolve("build/reports/checkstyle/checkstyleMagicNumbers.xml"));
+        assertTrue(report.split("MagicNumberCheck", -1).length == 2);
+        assertTrue(!report.contains("GameTestNumbers"));
+    }
+
+    @Test
+    void importBoundaryDistinguishesServerAndClientProduction() throws IOException {
+        String source = "package example; import net.minecraft.client.Minecraft; class Policy {}";
+        fixture(source, "checkstyleImports", "-Pmod_side=server").build();
+        assertTrue(
+                Files.readString(
+                                directory.resolve("build/reports/checkstyle/checkstyleImports.xml"))
+                        .contains("ImportControlCheck"));
+        var client = fixture(source, "checkstyleImports", "-Pmod_side=client");
+        Files.writeString(
+                directory.resolve("build.gradle"),
+                "\ntasks.named('checkstyleImports') { println('IMPORT_SOURCES=' + source.files) }\n",
+                java.nio.file.StandardOpenOption.APPEND);
+        var result = client.build();
+        assertTrue(result.getOutput().contains("IMPORT_SOURCES=[]"), result.getOutput());
+    }
 }

@@ -28,7 +28,8 @@ jobs:
             :gradle-plugin:multiloader-mod-conventions:test \
             :gradle-plugin:multiloader-mod-conventions:pitest \
             :gradle-plugin:multiloader-mod-conventions:jazzerFuzz \
-            spotbugsReport pmdReport cpdReport
+            spotbugsReport pmdReport cpdReport \
+            checkstyleAdditional checkstyleImports checkstyleMagicNumbers
       - uses: actions/upload-artifact@v7
         if: always()
         with:

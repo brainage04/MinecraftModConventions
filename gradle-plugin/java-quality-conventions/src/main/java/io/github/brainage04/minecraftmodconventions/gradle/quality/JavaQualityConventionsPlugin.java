@@ -59,7 +59,10 @@ public final class JavaQualityConventionsPlugin implements Plugin<Project> {
                     nightly.configure(task -> task.dependsOn(
                             project.getTasks().named("test"), project.getTasks().named("pitest"),
                             project.getTasks().named("jazzerFuzz"), project.getTasks().named("spotbugsReport"),
-                            project.getTasks().named("pmdReport"), project.getTasks().named("cpdReport")));
+                            project.getTasks().named("pmdReport"), project.getTasks().named("cpdReport"),
+                            project.getTasks().named("checkstyleAdditional"),
+                            project.getTasks().named("checkstyleImports"),
+                            project.getTasks().named("checkstyleMagicNumbers")));
                 }
         ));
     }
@@ -100,6 +103,7 @@ public final class JavaQualityConventionsPlugin implements Plugin<Project> {
             task.getMaxHeapSize().set("2G");
             task.onlyIf(spec -> checkstyleEnabled.get());
         });
+        CheckstyleReports.configure(project);
         project.getTasks().matching(task ->
                         task.getName().startsWith("spotless") && task.getName().endsWith("Check"))
                 .configureEach(task -> task.onlyIf(spec -> formatting.get()));

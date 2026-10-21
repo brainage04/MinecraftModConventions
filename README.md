@@ -351,6 +351,22 @@ The old `strictQuality` property is removed. Independent Gradle properties are:
   identity comparisons need review, not mechanical replacement with `equals`.
 - `qualityWerror=false`: javac warnings do not block normal builds until the warning baseline is cleared.
 
+The additional approved Checkstyle rules start in report mode on normal `check` and
+`qualityNightly`. `checkstyleAdditional` covers owned Java, including test sources:
+MissingSwitchDefault, EmptyCatchBlock (comments allowed), StringLiteralEquality,
+ModifiedControlVariable, InnerAssignment, MultipleVariableDeclarations, NeedBraces,
+MissingOverride, UpperEll, OneTopLevelClass, HideUtilityClassConstructor and IllegalImport.
+IllegalImport rejects `sun`, `jdk.internal` and `com.sun.org`, not the supported `com.sun.source` API.
+`checkstyleImports` rejects imports of Minecraft/Fabric/NeoForge client APIs, Blaze3D and LWJGL in
+production `common`/`protocol` projects, `mod_side=server`/`both` builds, and Gradle plugins.
+Other projects check only their explicit `server`/`common` source directories; client-only
+main code is not misclassified as server code.
+Set `qualityCheckstyleAdditionalEnforce=true` only after these reports are clean.
+`checkstyleMagicNumbers` remains report-only even then. It checks `src/main/java` only,
+never GameTest/test sources, and ignores `hashCode`, annotations and annotation defaults,
+the common small values -1/0/1/2, and final constant definitions.
+All three tasks write their own XML/HTML reports under `build/reports/checkstyle`.
+
 NullAway 0.14.2 is an error only inside explicitly `@NullMarked` scopes. The initial classes are
 BM's `util.CountdownSounds`, SB's `bot.EloSkill`, Companion's `Cosmetic`, PD's `util.StringUtils`
 and MMC's `gradle.multiloader.MinecraftVersionRange`.
