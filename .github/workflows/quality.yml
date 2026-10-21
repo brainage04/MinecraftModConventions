@@ -1,0 +1,43 @@
+name: nightly quality
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '53 16 * * *'
+permissions:
+  contents: read
+jobs:
+  fast-quality:
+    uses: ./.github/workflows/reusable-quality.yml
+    with:
+      conventions_ref: ${{ github.sha }}
+  policies:
+    needs: fast-quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          java-version: '25'
+          distribution: microsoft
+      - uses: gradle/actions/setup-gradle@v5
+      - name: Bootstrap without publishing
+        run: ./gradlew --no-daemon :gradle-plugin:java-quality-conventions:pluginUnderTestMetadata
+      - name: Mutate and fuzz the owned config policy; write secondary reports
+        run: |
+          ./gradlew --no-daemon -I quality/self-check.init.gradle --continue \
+            :gradle-plugin:multiloader-mod-conventions:test \
+            :gradle-plugin:multiloader-mod-conventions:pitest \
+            :gradle-plugin:multiloader-mod-conventions:jazzerFuzz \
+            spotbugsReport pmdReport cpdReport
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: quality-campaigns
+          include-hidden-files: true
+          path: |
+            **/build/reports/
+            **/build/test-results/
+            **/.cifuzz-corpus/
+            **/crash-*
+            **/build/*jqwik-database

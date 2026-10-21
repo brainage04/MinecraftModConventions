@@ -8,11 +8,13 @@ ext {
 	componentPluginId = "io.github.brainage04.java-quality-conventions"
 	componentImplementationClass = "io.github.brainage04.minecraftmodconventions.gradle.quality.JavaQualityConventionsPlugin"
 	componentDisplayName = "Java quality conventions Gradle plugin"
-	componentDescription = "Configures staged Spotless, Checkstyle, and javac lint policy for Java projects."
+	componentDescription = "Independent formatting, correctness analysis and bounded quality testing for Java projects."
 }
 
 apply from: rootProject.file("gradle/plugin-component.gradle")
 
 dependencies {
 	implementation "com.diffplug.spotless:spotless-plugin-gradle:8.9.0"
+	implementation "net.ltgt.errorprone:net.ltgt.errorprone.gradle.plugin:5.1.1"
+	testImplementation gradleTestKit()
 }

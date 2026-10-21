@@ -45,3 +45,7 @@ replay_*.log
 .env
 
 .codex
+
+# Python quality runtime caches
+__pycache__/
+*.py[cod]

@@ -12,7 +12,7 @@ Shared Gradle plugins, GitHub workflows and client GameTest helpers for my Minec
 | `production-gametests` | Fabric project | Creates the `gametest` source set and runs GameTests against the packaged mod through Loom's production client and server. |
 | `integration-gametests` | Fabric or NeoForge Loom project with a `gametest` source set | Named GameTest suites that run with extra mods (Maven artifacts or pinned Git commits) loaded, in their own source set and runs. |
 | `workspace-dependencies` | any project | Prefers sibling checkouts' `build/local-repo` over Maven Central, and can share one dev-client `options.txt`. |
-| `java-quality-conventions` | root project | Spotless (google-java-format, AOSP), Checkstyle and javac lint; enforced only with `-PstrictQuality=true`. |
+| `java-quality-conventions` | root project | Independent formatting, correctness checks, ordinary properties, bounded fuzzing and report-only analyzers. |
 | `mod-publishing` | Fabric/NeoForge project | Opt-in GitHub, Modrinth and CurseForge release tasks around the Mod Publish Plugin. |
 | `maven-central-publishing` | libraries only | POM metadata, signing and Central Portal upload. |
 
@@ -336,3 +336,74 @@ Self-hosted runners keep their work tree between jobs, so every reusable workflo
 ```
 
 `record` writes to a timestamped `~/Downloads/minecraft-mod-gametest-recordings-*` directory; `--output <dir> --resume` reruns only the repositories that failed. For a new Minecraft release, pass `--minecraft-version`, `--loader-version`, `--fabric-api-version`, `--java-version` and `--conventions-version` to `audit`, then update the manifest.
+
+## Quality policy in 3.1.0
+
+Land this version after the current release and its formatting-only cleanup. Nothing is ratcheted.
+The old `strictQuality` property is removed. Independent Gradle properties are:
+
+- `qualityFormatting=true`: Spotless 8.9.0 with google-java-format 1.36.1 AOSP.
+- `qualityCheckstyle=true`: Checkstyle 13.9.0, the existing seven rules, all Java source sets.
+  Large shared GameTest trees use a 2 GiB worker heap; baseline runs within a 6 GiB job use `--max-workers=1`.
+- `qualityErrorProne=true`: Error Prone 2.50.0 through Gradle plugin 5.1.1 on production compilation.
+  CollectionIncompatibleType, EqualsIncompatibleType, ReferenceEquality, ReturnValueIgnored,
+  CheckReturnValue and DeadException emit warnings for initial triage. In particular, Minecraft
+  identity comparisons need review, not mechanical replacement with `equals`.
+- `qualityWerror=false`: javac warnings do not block normal builds until the warning baseline is cleared.
+
+NullAway 0.14.2 is an error only inside explicitly `@NullMarked` scopes. The initial classes are
+BM's `util.CountdownSounds`, SB's `bot.EloSkill`, Companion's `Cosmetic`, PD's `util.StringUtils`
+and MMC's `gradle.multiloader.MinecraftVersionRange`.
+The small owned `io.github.brainage04.brainage_combat.protocol` package is also explicitly
+`@NullMarked` at package scope. No broad Minecraft-facing package is marked by implication.
+Unannotated Minecraft, lifecycle and mixin boundaries are not implicitly declared non-null.
+Existing annotation processors are retained through the Error Prone configuration.
+
+Ordinary `test` uses JUnit 5.14.4 / Platform 1.14.4, jqwik 1.10.2 and Jazzer 0.30.0.
+It runs bounded policy properties and saved Jazzer regression arguments with `JAZZER_FUZZ` empty.
+`jazzerFuzz` enables a 60-second campaign per owned target; inputs and allocations are independently
+bounded by each harness. `pitest` mutates only `qualityMutationTargets` (root) or
+`qualityMutationTargets.<project>` and writes XML/HTML outcomes, with no global score threshold.
+PIT keeps Minecraft API dependencies but omits Fabric's JUnit session hook, so its instrumentation
+runs pure policies without starting the conflicting Knot loader.
+`qualityNightly` combines ordinary tests, PIT, Jazzer and the secondary reports without GameTest/server tasks.
+Consumer `quality.yml` workflows schedule it nightly and expose `workflow_dispatch`.
+MMC bootstraps its unpublished plugin with `:gradle-plugin:java-quality-conventions:pluginUnderTestMetadata`,
+then applies it using `-I quality/self-check.init.gradle`. This path neither publishes Maven artifacts
+nor depends on a pre-existing 3.1.0 release. Its nightly workflow scopes mutation/fuzzing to the
+version-range configuration parser; ordinary policy fixtures run through embedded TestKit.
+
+`spotbugsReport` (4.10.5), `pmdReport` and `cpdReport` (PMD 7.28.0, Java 25) are explicit report-only
+tasks, not dependencies of `check`. Findings do not fail these tasks; tool execution errors still do.
+PMD selects unused private fields/methods and unused assignments; CPD uses a 100-token floor.
+Reports live under each Java project's `build/reports`.
+
+The reusable build's `check_scripts` now defaults to true and runs the separate fast workflow.
+`quality/install.sh DESTINATION` installs pinned Ruff, mypy, JSON Schema, Hypothesis, pytest,
+ShellCheck, shfmt and actionlint. CI pins Python 3.13.9 and Node 22.20.0. Then run
+`python quality/check.py --root /path/to/consumer` with the installed `bin` and `venv/bin` on PATH.
+Owned files come from Git, including extensionless shell shebangs and all `tools/` directories.
+Generated Gradle wrappers are included in shell checks and also retain wrapper-validation.
+Ruff lint and format checks are independent reports; no check rewrites sources or map assets.
+Offline tests are explicitly listed in each consumer's `quality-tests.json`. Tests that start real
+Gradle/JVMs or local servers are excluded. Launcher tests with fake executables and temporary locks
+remain included, as do the non-server capacity test classes; map-asset generators are not tests.
+Install the renderer's locked npm dependencies with `npm ci --ignore-scripts` before its Node tests.
+
+The versioned descriptor schemas follow the MC 26.2 `TestData`, `FunctionGameTestInstance` and
+`TestEnvironmentDefinition` codecs, including `all_of.definitions`. Their actual codecs have no
+dimension/size field, so invented fields are rejected. The loader rejects duplicate JSON keys,
+checks signed-int tick bounds and cross-checks environment/structure availability by loader lane.
+`minecraft:default` and MMC's packaged empty structure are explicit external resources. Runtime
+function registration, generated resource availability and registry-dependent values still need
+the existing native GameTests; JSON validation does not claim to execute those registrations.
+
+For unpublished consumer testing, pass
+`-PqualityConventionsCheckout=../MinecraftModConventions` in private sibling worktrees.
+The composite substitutes MMC's runtime artifact as well as its plugins without any publication.
+To check MMC against its own implementation, first build
+`:gradle-plugin:java-quality-conventions:pluginUnderTestMetadata`, then pass
+`-I quality/self-check.init.gradle` to the desired analyzer tasks. This avoids a self-publishing cycle.
+The quality component's `test` contains isolated acceptance fixtures and requires no Maven publication.
+Run all JVM commands under the workspace's `heavy` admission policy.
+

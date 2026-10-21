@@ -1,0 +1,17 @@
+{
+  "offline": [
+    {
+      "cwd": "quality",
+      "command": ["{python}", "-m", "unittest", "test_descriptors"]
+    },
+    {
+      "cwd": "scripts",
+      "command": [
+        "{python}",
+        "-m",
+        "unittest",
+        "test_mod_fleet"
+      ]
+    }
+  ]
+}

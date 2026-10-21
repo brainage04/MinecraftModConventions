@@ -24,9 +24,9 @@ on:
         default: 20
         type: number
       check_scripts:
-        description: Run shellcheck and shfmt against repository scripts
+        description: Run pinned Python, shell, workflow, descriptor and offline regression checks
         required: false
-        default: false
+        default: true
         type: boolean
       run_template_smoke:
         description: Run the generated-template smoke matrix
@@ -57,7 +57,13 @@ permissions:
   contents: read
 
 jobs:
+  fast-quality:
+    if: inputs.check_scripts
+    uses: ./.github/workflows/reusable-quality.yml
+
   build:
+    needs: fast-quality
+    if: ${{ !cancelled() && !failure() }}
     runs-on: ${{ fromJSON(inputs.runner) }}
     # The job's own limit also covers the time a self-hosted runner holds the job before it runs anything, for example
     # waiting for capacity in a job-started hook; the steps that run Gradle have timeout_minutes each.
@@ -112,34 +118,11 @@ jobs:
           } >> "${GITHUB_ENV}"
 
       - name: install workflow tools
-        if: inputs.check_scripts || inputs.run_template_smoke
+        if: inputs.run_template_smoke
         run: |
           sudo apt-get update
-          sudo apt-get install -y curl jq ripgrep shellcheck shfmt tar
+          sudo apt-get install -y curl jq ripgrep tar
 
-      - name: install actionlint
-        if: inputs.check_scripts
-        env:
-          ACTIONLINT_VERSION: '1.7.12'
-        run: |
-          curl -sSLo /tmp/actionlint.tar.gz "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
-          tar -xzf /tmp/actionlint.tar.gz -C /tmp actionlint
-          sudo install -m 0755 /tmp/actionlint /usr/local/bin/actionlint
-
-      - name: check scripts and workflows
-        if: inputs.check_scripts
-        shell: bash
-        run: |
-          shopt -s nullglob
-          scripts=(.github/scripts/*.sh)
-          if [ -f init.sh ]; then
-            scripts+=(init.sh)
-          fi
-          if [ "${#scripts[@]}" -gt 0 ]; then
-            shellcheck "${scripts[@]}"
-            shfmt -d -i 2 -ci "${scripts[@]}"
-          fi
-          actionlint
 
       - name: validate gradle wrapper
         uses: gradle/actions/wrapper-validation@v5
@@ -207,14 +190,18 @@ jobs:
         run: bash .github/scripts/smoke_template_generation.sh
 
       - name: store reports
-        if: failure()
+        if: always()
         uses: actions/upload-artifact@v7
         with:
+          include-hidden-files: true
           retention-days: 3
           name: reports
           path: |
             **/build/reports/
             **/build/test-results/
+            **/.cifuzz-corpus/
+            **/crash-*
+            **/build/*jqwik-database
 
       - name: capture build artifacts
         uses: actions/upload-artifact@v7

@@ -5,7 +5,12 @@ on:
   workflow_dispatch:
 
 jobs:
+  fast-quality:
+    uses: ./.github/workflows/reusable-quality.yml
+    with:
+      conventions_ref: ${{ github.sha }}
   build:
+    needs: fast-quality
     runs-on: ubuntu-24.04
     steps:
       - name: checkout repository
@@ -26,8 +31,11 @@ jobs:
       - name: make gradle wrapper executable
         run: chmod +x ./gradlew
 
-      - name: build
-        run: ./gradlew build
+      - name: bootstrap local quality plugin without publication
+        run: ./gradlew --no-daemon :gradle-plugin:java-quality-conventions:pluginUnderTestMetadata
+
+      - name: build with local quality policy
+        run: ./gradlew --no-daemon -I quality/self-check.init.gradle build
 
       - name: store reports
         if: failure()

@@ -19,6 +19,7 @@ import java.util.regex.Pattern;
  *     minor version to limit to and fails the build.</li>
  * </ul>
  */
+@org.jspecify.annotations.NullMarked
 public final class MinecraftVersionRange {
     /** Placeholder name expanded in {@code neoforge.mods.toml}. */
     public static final String PROPERTY = "minecraft_version_range";

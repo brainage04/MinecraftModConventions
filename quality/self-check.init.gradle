@@ -1,0 +1,19 @@
+// Bootstrap from this checkout's compiled plugin, never from Maven or a publication.
+// First run :gradle-plugin:java-quality-conventions:pluginUnderTestMetadata.
+initscript {
+    def metadata = new Properties()
+    def path = new File(gradle.startParameter.currentDir,
+            'gradle-plugin/java-quality-conventions/build/pluginUnderTestMetadata/plugin-under-test-metadata.properties')
+    if (!path.isFile()) {
+        throw new GradleException('Build :gradle-plugin:java-quality-conventions:pluginUnderTestMetadata first')
+    }
+    path.withInputStream { metadata.load(it) }
+    dependencies {
+        classpath files(metadata.getProperty('implementation-classpath').split(File.pathSeparator))
+    }
+}
+gradle.beforeProject { project ->
+    if (project == project.rootProject) {
+        project.pluginManager.apply(io.github.brainage04.minecraftmodconventions.gradle.quality.JavaQualityConventionsPlugin)
+    }
+}

@@ -1,0 +1,46 @@
+name: fast quality
+on:
+  workflow_call:
+    inputs:
+      conventions_ref:
+        description: Pinned conventions revision; MMC checks its own commit before releasing a tag
+        type: string
+        required: false
+        default: v3.1.0
+permissions:
+  contents: read
+jobs:
+  scripts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          path: source
+      - uses: actions/checkout@v5
+        with:
+          repository: brainage04/MinecraftModConventions
+          ref: ${{ inputs.conventions_ref }}
+          path: conventions
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13.9'
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.20.0'
+      - name: Install pinned tools
+        run: bash conventions/quality/install.sh "$RUNNER_TEMP/quality"
+      - name: Install locked offline renderer dependencies
+        if: hashFiles('source/tools/maps/render/package-lock.json') != ''
+        run: npm ci --ignore-scripts --prefix source/tools/maps/render
+      - name: Check owned tooling and offline regressions
+        env:
+          QUALITY_TOOLS: ${{ runner.temp }}/quality
+        run: |
+          export PATH="$QUALITY_TOOLS/bin:$QUALITY_TOOLS/venv/bin:$PATH"
+          python conventions/quality/check.py --root source
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: fast-quality
+          path: source/build/reports/fast-quality

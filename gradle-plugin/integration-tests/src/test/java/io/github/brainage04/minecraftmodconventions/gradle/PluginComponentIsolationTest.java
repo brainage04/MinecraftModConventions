@@ -278,14 +278,16 @@ class PluginComponentIsolationTest {
     }
 
     @Test
-    void qualityChecksAreStagedByDefault() throws IOException {
+    void qualityChecksAreIndependentAndOnByDefault() throws IOException {
         writeFixture(QUALITY_PLUGIN_ID, false, "apply plugin: 'java'\nrepositories { mavenCentral() }");
         Path source = projectDir.resolve("src/main/java/BadlyFormatted.java");
         Files.createDirectories(source.getParent());
         Files.writeString(source, "final class BadlyFormatted{}");
 
-        var result = runGradle("check");
-
+        var failure = GradleRunner.create().withProjectDir(projectDir.toFile())
+                .withPluginClasspath().withArguments("spotlessJavaCheck").buildAndFail();
+        assertEquals(TaskOutcome.FAILED, failure.task(":spotlessJavaCheck").getOutcome());
+        var result = runGradle("check", "-PqualityFormatting=false", "-PqualityCheckstyle=false");
         assertEquals(TaskOutcome.SKIPPED, result.task(":spotlessJavaCheck").getOutcome());
         assertEquals(TaskOutcome.SKIPPED, result.task(":checkstyleMain").getOutcome());
     }

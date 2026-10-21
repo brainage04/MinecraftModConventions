@@ -1,0 +1,228 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "MC 26.2 FunctionGameTestInstance and TestData codecs. These codecs have no dimension or size field.",
+  "type": "object",
+  "properties": {
+    "type": {
+      "const": "minecraft:function"
+    },
+    "function": {
+      "type": "string",
+      "pattern": "^(?:[a-z0-9_.-]+:)?[a-z0-9/._-]+$"
+    },
+    "environment": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "https://brainage04.github.io/MinecraftModConventions/quality/26.2/environment.schema.json",
+      "$comment": "MC 26.2 TestEnvironmentDefinition codecs; javap baseline recorded in quality63 report.",
+      "oneOf": [
+        {
+          "type": "string",
+          "pattern": "^(?:[a-z0-9_.-]+:)?[a-z0-9/._-]+$"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "minecraft:all_of"
+            },
+            "definitions": {
+              "type": "array",
+              "items": {
+                "$ref": "#"
+              }
+            }
+          },
+          "required": [
+            "type",
+            "definitions"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "minecraft:clock_time"
+            },
+            "clock": {
+              "type": "string",
+              "pattern": "^(?:[a-z0-9_.-]+:)?[a-z0-9/._-]+$"
+            },
+            "time": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            }
+          },
+          "required": [
+            "type",
+            "clock",
+            "time"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "minecraft:game_rules"
+            },
+            "rules": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string",
+                "pattern": "^(?:[a-z0-9_.-]+:)?[a-z0-9/._-]+$"
+              },
+              "additionalProperties": {
+                "type": [
+                  "boolean",
+                  "integer"
+                ]
+              }
+            }
+          },
+          "required": [
+            "type",
+            "rules"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "minecraft:difficulty"
+            },
+            "difficulty": {
+              "enum": [
+                "peaceful",
+                "easy",
+                "normal",
+                "hard"
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "difficulty"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "minecraft:function"
+            },
+            "setup": {
+              "type": "string",
+              "pattern": "^(?:[a-z0-9_.-]+:)?[a-z0-9/._-]+$"
+            },
+            "teardown": {
+              "type": "string",
+              "pattern": "^(?:[a-z0-9_.-]+:)?[a-z0-9/._-]+$"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "minecraft:timeline_attributes"
+            },
+            "timelines": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^(?:[a-z0-9_.-]+:)?[a-z0-9/._-]+$"
+              }
+            }
+          },
+          "required": [
+            "type",
+            "timelines"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "minecraft:weather"
+            },
+            "weather": {
+              "enum": [
+                "clear",
+                "rain",
+                "thunder"
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "weather"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "structure": {
+      "type": "string",
+      "pattern": "^(?:[a-z0-9_.-]+:)?[a-z0-9/._-]+$"
+    },
+    "max_ticks": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2147483647
+    },
+    "setup_ticks": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 2147483647
+    },
+    "required": {
+      "type": "boolean"
+    },
+    "rotation": {
+      "enum": [
+        "none",
+        "clockwise_90",
+        "180",
+        "counterclockwise_90"
+      ]
+    },
+    "manual_only": {
+      "type": "boolean"
+    },
+    "max_attempts": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2147483647
+    },
+    "required_successes": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2147483647
+    },
+    "sky_access": {
+      "type": "boolean"
+    },
+    "padding": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 128
+    }
+  },
+  "required": [
+    "type",
+    "function",
+    "environment",
+    "structure",
+    "max_ticks"
+  ],
+  "additionalProperties": false
+}
