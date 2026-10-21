@@ -31,6 +31,20 @@ class MinecraftVersionRangeTest {
     }
 
     @Test
+    void overflowingMinorVersionsFailWithTheOffendingValue() {
+        for (String version : new String[] {"26.2147483648", "26.2147483647", "3.2" + "7".repeat(119)}) {
+            GradleException exception = assertThrows(GradleException.class, () -> MinecraftVersionRange.of(version));
+            assertTrue(exception.getMessage().contains("'" + version + "'"), exception.getMessage());
+            assertTrue(exception.getMessage().contains("exclusive upper bound"), exception.getMessage());
+        }
+    }
+
+    @Test
+    void largestSupportedMinorRetainsItsExclusiveUpperBound() {
+        assertEquals("[26.2147483646,26.2147483647)", MinecraftVersionRange.of("26.2147483646"));
+    }
+
+    @Test
     void versionsWithoutAMinorVersionFailWithTheOffendingValue() {
         for (String version : new String[] {"26w14a", "26", "26.2.0.1", "26.2.", "", " 26.2"}) {
             GradleException exception = assertThrows(GradleException.class, () -> MinecraftVersionRange.of(version));

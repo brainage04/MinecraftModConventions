@@ -35,7 +35,14 @@ public final class MinecraftVersionRange {
             throw new GradleException("Cannot derive " + PROPERTY + " from minecraft_version '" + minecraftVersion
                     + "': expected MAJOR.MINOR or MAJOR.MINOR.PATCH, optionally with a -pre/-rc suffix.");
         }
-        int nextMinor = Math.addExact(Integer.parseInt(matcher.group(2)), 1);
+        final int nextMinor;
+        try {
+            nextMinor = Math.addExact(Integer.parseInt(matcher.group(2)), 1);
+        } catch (NumberFormatException | ArithmeticException invalidMinor) {
+            throw new GradleException("Cannot derive " + PROPERTY + " from minecraft_version '" + minecraftVersion
+                    + "': minor version must be between 0 and 2147483646 to form its exclusive upper bound.",
+                    invalidMinor);
+        }
         return "[" + minecraftVersion + "," + matcher.group(1) + "." + nextMinor + ")";
     }
 }
