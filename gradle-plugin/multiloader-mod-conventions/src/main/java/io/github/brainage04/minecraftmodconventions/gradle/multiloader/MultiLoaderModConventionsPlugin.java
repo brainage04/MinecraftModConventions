@@ -384,13 +384,6 @@ public final class MultiLoaderModConventionsPlugin implements Plugin<Project> {
                         : fleetExtension.getFabricServerGameTests()
         );
         production.getClientRunDir().set(recorder.getRunDir());
-        Provider<Boolean> recorderManaged = fabric.getProviders().environmentVariable("GTR_RECORDING_MANAGED_XVFB")
-                .map(Boolean::parseBoolean)
-                .orElse(false);
-        // The recorder provides its own display and routes game audio to an isolated sink.
-        production.getClientUseXvfb().convention(recorderManaged.map(managed -> !managed));
-        production.getClientSilenceAudio().convention(recorderManaged.map(managed -> !managed));
-
         fabric.getTasks().named("recordClientGameTest", RecordClientGameTestTask.class).configure(task -> {
             task.getRunTaskName().set("runProductionClientGameTest");
             task.onlyIf("Fabric client GameTests are enabled", spec -> fleetExtension.getFabricClientGameTests().get());

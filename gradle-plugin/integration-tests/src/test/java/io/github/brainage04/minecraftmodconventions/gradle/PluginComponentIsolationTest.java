@@ -372,6 +372,15 @@ class PluginComponentIsolationTest {
     void recordedClientsGetTheShowcaseProfileOnTheRecorderSink() throws IOException {
         writeLoomFixture(BASE_PLUGIN_ID + "'\n    id '" + RECORDER_PLUGIN_ID + "'\n    id '" + PRODUCTION_PLUGIN_ID, """
                 productionGameTests { includeFabricApiDependency = false }
+
+                // Without multiloader-mod-conventions, the recorder alone must hand the production client its
+                // display and audio sink: no Xvfb of its own, no OpenAL null driver.
+                tasks.register('verifyRecorderLaunch') {
+                    doLast {
+                        assert !tasks.runProductionClientGameTest.useXVFB.get()
+                        assert !tasks.runProductionClientGameTest.silenceAudio.get()
+                    }
+                }
                 """);
 
         GradleRunner.create()
@@ -381,7 +390,7 @@ class PluginComponentIsolationTest {
                         "GTR_RECORDING_MANAGED_XVFB", "true",
                         "GTR_RECORDING_AUDIO_DEVICE", "gametest_recorder_fixture"
                 ))
-                .withArguments("prepareClientGameTestRun", "prepareProductionGameTestRuns")
+                .withArguments("prepareClientGameTestRun", "prepareProductionGameTestRuns", "verifyRecorderLaunch")
                 .build();
 
         String expected = testOptions(true)

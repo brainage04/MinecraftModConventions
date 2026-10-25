@@ -4,6 +4,7 @@ import io.github.brainage04.minecraftmodconventions.gradle.production.ClientGame
 import io.github.brainage04.minecraftmodconventions.gradle.production.ClientGameTestProductionRunTask;
 import io.github.brainage04.minecraftmodconventions.gradle.production.ClientLaunchEnvironment;
 import io.github.brainage04.minecraftmodconventions.gradle.production.PrepareProductionGameTestRunsTask;
+import io.github.brainage04.minecraftmodconventions.gradle.production.ProductionGameTestExtension;
 import net.fabricmc.loom.api.LoomGradleExtensionAPI;
 import net.fabricmc.loom.task.AbstractRunTask;
 import org.gradle.api.GradleException;
@@ -96,10 +97,17 @@ public final class ClientGameTestRecorderPlugin implements Plugin<Project> {
 
     /**
      * With production-gametests, the runtime helper joins both client runs, so the production client gets the same
-     * options as the development one and both launches get a startup deadline.
+     * options as the development one and both launches get a startup deadline. Under the recorder, the production
+     * client uses the recorder's display and audio sink instead of its own Xvfb and OpenAL's null driver.
      */
     private static void configureProductionGameTests(Project project, ClientGameTestRecorderExtension extension) {
         addRuntimeHelperDependencies(project);
+        Provider<Boolean> recorderManaged = project.getProviders().environmentVariable("GTR_RECORDING_MANAGED_XVFB")
+                .map(Boolean::parseBoolean)
+                .orElse(false);
+        ProductionGameTestExtension production = project.getExtensions().getByType(ProductionGameTestExtension.class);
+        production.getClientUseXvfb().convention(recorderManaged.map(managed -> !managed));
+        production.getClientSilenceAudio().convention(recorderManaged.map(managed -> !managed));
         project.getTasks().withType(PrepareProductionGameTestRunsTask.class).configureEach(task -> {
             task.getClientSoundDevice().set(recordingAudioDevice(project, extension));
             task.getDisableSocialInteractionsToast().set(extension.getDisableSocialInteractionsToast());

@@ -268,7 +268,7 @@ productionGameTests {
 }
 ```
 
-Loom's production runs do not inherit the dev classpath, so extra mods and libraries must be listed here; Fabric API is added automatically. Tasks: `productionGameTestJar`, `runProductionClientGameTest` (Xvfb by default), `runProductionServerGameTest`, and in single-loader builds `runAllProductionGameTests` (multi-loader builds use the root `runAllGameTests`). `includeClient`, `includeServer`, `clientUseXvfb`, `clientJvmArgs` and `serverProgramArgs` override the defaults.
+Loom's production runs do not inherit the dev classpath, so extra mods and libraries must be listed here; Fabric API is added automatically. Tasks: `productionGameTestJar`, `runProductionClientGameTest` (Xvfb by default), `runProductionServerGameTest`, and in single-loader builds `runAllProductionGameTests` (multi-loader builds use the root `runAllGameTests`). `includeClient`, `includeServer`, `clientUseXvfb`, `clientSilenceAudio`, `clientJvmArgs` and `serverProgramArgs` override the defaults. Under `recordClientGameTest`, `client-gametest-recorder` turns `clientUseXvfb` and `clientSilenceAudio` off, so the production client uses the recorder's display and audio sink.
 
 ## Publishing
 
