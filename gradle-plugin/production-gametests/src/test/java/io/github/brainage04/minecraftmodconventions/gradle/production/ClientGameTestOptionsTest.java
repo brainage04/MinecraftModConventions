@@ -12,8 +12,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 class ClientGameTestOptionsTest {
     @Test
     void showcaseIsTheTestProfileWithViewGraphicsAndSoundChanges() {
-        Map<String, String> test = ClientGameTestOptions.options(ClientGameTestOptions.Profile.TEST, "sink", true);
-        Map<String, String> showcase = ClientGameTestOptions.options(ClientGameTestOptions.Profile.SHOWCASE, "sink", true);
+        Map<String, String> test = ClientGameTestOptions.options(ClientGameTestOptions.Profile.TEST, "sink", true, "1920x1080");
+        Map<String, String> showcase = ClientGameTestOptions.options(ClientGameTestOptions.Profile.SHOWCASE, "sink", true, "1920x1080");
 
         assertEquals(test.keySet().stream().toList(), showcase.keySet().stream().toList());
         Map<String, String> changed = new TreeMap<>();
@@ -23,7 +23,8 @@ class ClientGameTestOptionsTest {
             }
         });
         Map<String, String> expected = new TreeMap<>(Map.ofEntries(
-                Map.entry("fullscreen", "true"),
+                Map.entry("overrideWidth", "1920"),
+                Map.entry("overrideHeight", "1080"),
                 Map.entry("renderDistance", "12"),
                 Map.entry("graphicsPreset", "\"fancy\""),
                 Map.entry("ao", "true"),
@@ -46,7 +47,7 @@ class ClientGameTestOptionsTest {
 
     @Test
     void theTestProfileIsSilentWhateverTheSoundDevice() {
-        Map<String, String> test = ClientGameTestOptions.options(ClientGameTestOptions.Profile.TEST, "sink", true);
+        Map<String, String> test = ClientGameTestOptions.options(ClientGameTestOptions.Profile.TEST, "sink", true, "1920x1080");
 
         assertEquals("\"\"", test.get("soundDevice"));
         test.forEach((key, value) -> {

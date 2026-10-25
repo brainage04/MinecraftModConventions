@@ -385,7 +385,8 @@ class PluginComponentIsolationTest {
                 .build();
 
         String expected = testOptions(true)
-                .replace("fullscreen:false", "fullscreen:true")
+                .replace("overrideWidth:854", "overrideWidth:1920")
+                .replace("overrideHeight:480", "overrideHeight:1080")
                 .replace("renderDistance:5", "renderDistance:12")
                 .replace("graphicsPreset:\"fast\"", "graphicsPreset:\"fancy\"")
                 .replace("ao:false", "ao:true")
@@ -498,7 +499,7 @@ class PluginComponentIsolationTest {
                 "chunkSectionFadeInTime:0.0",
                 "entityDistanceScaling:0.5",
                 "mipmapLevels:0",
-                "maxAnisotropyBit:0",
+                "maxAnisotropyBit:1",
                 "menuBackgroundBlurriness:0",
                 "prioritizeChunkUpdates:0",
                 "weatherRadius:5",

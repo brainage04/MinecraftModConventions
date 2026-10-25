@@ -12,6 +12,11 @@ import org.gradle.work.DisableCachingByDefault;
 /** Writes a client GameTest run's {@code options.txt} from a {@link ClientGameTestOptions} profile. */
 @DisableCachingByDefault(because = "The task is cheap and writes a local Minecraft options file.")
 public abstract class PrepareClientGameTestRunTask extends DefaultTask {
+    public PrepareClientGameTestRunTask() {
+        // Also for instances a build script registers itself (a NeoForge client GameTest run).
+        getShowcaseWindow().convention(ClientGameTestOptions.showcaseWindow(getProject().getProviders()));
+    }
+
     /** {@code test} or {@code showcase}; see {@link ClientGameTestOptions.Profile}. */
     @Input
     public abstract Property<String> getProfile();
@@ -19,6 +24,10 @@ public abstract class PrepareClientGameTestRunTask extends DefaultTask {
     /** The OpenAL device of the {@code showcase} profile: the recorder's private sink. */
     @Input
     public abstract Property<String> getRecordingAudioDevice();
+
+    /** The {@code showcase} window, {@code WIDTHxHEIGHT}: the recorder's whole display. */
+    @Input
+    public abstract Property<String> getShowcaseWindow();
 
     @Input
     public abstract Property<Boolean> getDisableSocialInteractionsToast();
@@ -32,7 +41,8 @@ public abstract class PrepareClientGameTestRunTask extends DefaultTask {
                 getOptionsFile().get().getAsFile().toPath(),
                 ClientGameTestOptions.Profile.named(getProfile().get()),
                 getRecordingAudioDevice().get(),
-                getDisableSocialInteractionsToast().get()
+                getDisableSocialInteractionsToast().get(),
+                getShowcaseWindow().get()
         );
     }
 }

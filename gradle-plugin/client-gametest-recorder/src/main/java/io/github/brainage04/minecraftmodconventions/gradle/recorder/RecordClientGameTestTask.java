@@ -1,5 +1,6 @@
 package io.github.brainage04.minecraftmodconventions.gradle.recorder;
 
+import io.github.brainage04.minecraftmodconventions.gradle.production.ClientGameTestOptions;
 import io.github.brainage04.minecraftmodconventions.gradle.production.ClientLaunchEnvironment;
 import org.gradle.api.DefaultTask;
 import org.gradle.api.GradleException;
@@ -69,7 +70,7 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
         File runDir = getRunDirectory().get().getAsFile();
         String fps = env("GTR_RECORDING_FPS", "30");
         int startWaitSeconds = parsePositiveInt(env("GTR_RECORDING_START_WAIT_SECONDS", "90"), "GTR_RECORDING_START_WAIT_SECONDS");
-        String xvfbScreen = env("GTR_RECORDING_XVFB_SCREEN", "1920x1080x24");
+        String xvfbScreen = env(ClientGameTestOptions.RECORDER_SCREEN_ENV, ClientGameTestOptions.DEFAULT_RECORDER_SCREEN);
         double prePadding = parsePadding(env("GTR_RECORDING_PRE_PADDING_SECONDS", "0.5"));
         double postPadding = parsePadding(env("GTR_RECORDING_POST_PADDING_SECONDS", "0.5"));
         int frameRate = parsePositiveInt(fps, "GTR_RECORDING_FPS");
@@ -172,6 +173,8 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
             processEnvironment.putAll(System.getenv());
             processEnvironment.put("DISPLAY", xvfbDisplay);
             ClientLaunchEnvironment.useX11(processEnvironment);
+            // The showcase window covers this whole display (see ClientGameTestOptions).
+            processEnvironment.put(ClientGameTestOptions.RECORDER_SCREEN_ENV, xvfbScreen);
             processEnvironment.put("ALSOFT_CONF", alsoftConfig.getAbsolutePath());
             processEnvironment.put("ALSOFT_DRIVERS", "pulse");
             processEnvironment.put("ALSOFT_PULSE_DEFAULT", audioSinkName);

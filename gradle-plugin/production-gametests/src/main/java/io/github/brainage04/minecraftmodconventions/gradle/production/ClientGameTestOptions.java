@@ -2,6 +2,7 @@ package io.github.brainage04.minecraftmodconventions.gradle.production;
 
 import org.gradle.api.GradleException;
 import org.gradle.api.provider.Provider;
+import org.gradle.api.provider.ProviderFactory;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -22,6 +23,10 @@ import java.util.stream.Collectors;
 public final class ClientGameTestOptions {
     /** Environment variable naming the recorder's private PulseAudio sink; the recorder sets it for its build. */
     public static final String RECORDER_AUDIO_DEVICE_ENV = "GTR_RECORDING_AUDIO_DEVICE";
+    /** Environment variable with the recorder's Xvfb screen ({@code WIDTHxHEIGHTxDEPTH}); the recorder sets it. */
+    public static final String RECORDER_SCREEN_ENV = "GTR_RECORDING_XVFB_SCREEN";
+    /** The recorder's screen when {@value #RECORDER_SCREEN_ENV} is not set. */
+    public static final String DEFAULT_RECORDER_SCREEN = "1920x1080x24";
     /**
      * The options format version: Minecraft 26.3's data version. A client of a later Minecraft version upgrades
      * the file with its own data fixers.
@@ -66,19 +71,41 @@ public final class ClientGameTestOptions {
     }
 
     /**
-     * The options of a profile in file order. {@code soundDevice} is only used by {@link Profile#SHOWCASE}: the
-     * test profile is silent and keeps the default device. {@code joinedFirstServer} suppresses the social
-     * interactions toast.
+     * The showcase window, {@code WIDTHxHEIGHT}: the whole recorder display, from {@value #RECORDER_SCREEN_ENV}.
      */
-    public static Map<String, String> options(Profile profile, String soundDevice, boolean joinedFirstServer) {
+    public static Provider<String> showcaseWindow(ProviderFactory providers) {
+        return providers.environmentVariable(RECORDER_SCREEN_ENV)
+                .filter(screen -> !screen.isBlank())
+                .orElse(DEFAULT_RECORDER_SCREEN)
+                .map(ClientGameTestOptions::windowOfScreen);
+    }
+
+    static String windowOfScreen(String screen) {
+        String[] parts = screen.split("x");
+        if (parts.length < 2 || !parts[0].matches("[0-9]+") || !parts[1].matches("[0-9]+")) {
+            throw new GradleException("Expected " + RECORDER_SCREEN_ENV + " to look like 1920x1080x24, not " + screen);
+        }
+        return parts[0] + "x" + parts[1];
+    }
+
+    /**
+     * The options of a profile in file order. {@code soundDevice} and {@code showcaseWindow} ({@code WIDTHxHEIGHT})
+     * are only used by {@link Profile#SHOWCASE}: the test profile is silent, keeps the default device and has an
+     * 854x480 window. {@code joinedFirstServer} suppresses the social interactions toast.
+     */
+    public static Map<String, String> options(
+            Profile profile, String soundDevice, boolean joinedFirstServer, String showcaseWindow) {
         boolean showcase = profile == Profile.SHOWCASE;
+        String[] window = (showcase ? showcaseWindow : "854x480").split("x");
         Map<String, String> options = new LinkedHashMap<>();
         options.put("version", OPTIONS_VERSION);
         options.put("lang", "en_us");
-        // Window: GameTests see this size whatever the display; the recorder fills its display with it.
-        options.put("fullscreen", Boolean.toString(showcase));
-        options.put("overrideWidth", "854");
-        options.put("overrideHeight", "480");
+        // Window: GameTests see this size whatever the display. A showcase window covers the recorder's whole
+        // display at its top left; it is not fullscreen, because SDL3 (26.3) cannot make a window fullscreen
+        // without a window manager, which Xvfb does not have.
+        options.put("fullscreen", "false");
+        options.put("overrideWidth", window[0]);
+        options.put("overrideHeight", window[1]);
         options.put("guiScale", "2");
         // Performance: a fixed frame cap, and no throttling when no input arrives (GameTest input does not count).
         options.put("renderDistance", showcase ? "12" : "5");
@@ -98,7 +125,8 @@ public final class ClientGameTestOptions {
         options.put("chunkSectionFadeInTime", "0.0");
         options.put("entityDistanceScaling", "0.5");
         options.put("mipmapLevels", "0");
-        options.put("maxAnisotropyBit", "0");
+        // The lowest valid value (1 to 3); it only matters with anisotropic texture filtering, which stays off.
+        options.put("maxAnisotropyBit", "1");
         options.put("menuBackgroundBlurriness", "0");
         options.put("prioritizeChunkUpdates", "0");
         options.put("weatherRadius", "5");
@@ -127,8 +155,9 @@ public final class ClientGameTestOptions {
         return options;
     }
 
-    public static void write(Path file, Profile profile, String soundDevice, boolean joinedFirstServer) {
-        String contents = options(profile, soundDevice, joinedFirstServer).entrySet().stream()
+    public static void write(
+            Path file, Profile profile, String soundDevice, boolean joinedFirstServer, String showcaseWindow) {
+        String contents = options(profile, soundDevice, joinedFirstServer, showcaseWindow).entrySet().stream()
                 .map(entry -> entry.getKey() + ":" + entry.getValue())
                 .collect(Collectors.joining("\n", "", "\n"));
         try {

@@ -184,8 +184,8 @@ Client GameTests (`runClientGameTest`), production client GameTests (`runProduct
 | --- | --- | --- |
 | `version` | `5023` (26.3) | same |
 | `lang` | `en_us` | same |
-| `fullscreen` | `false` | `true` |
-| `overrideWidth`, `overrideHeight` | `854`, `480` | same |
+| `fullscreen` | `false` | `false` (SDL3 cannot go fullscreen on Xvfb, which has no window manager) |
+| `overrideWidth`, `overrideHeight` | `854`, `480` | the recorder display, `1920`, `1080` by default (`GTR_RECORDING_XVFB_SCREEN`) |
 | `guiScale` | `2` | same |
 | `renderDistance` | `5` | `12` |
 | `simulationDistance` | `5` | same |
@@ -195,7 +195,7 @@ Client GameTests (`runClientGameTest`), production client GameTests (`runProduct
 | `improvedTransparency`, `renderClouds` | `false`, `"false"` | same |
 | `particles` | `2` (minimal) | same |
 | `biomeBlendRadius`, `chunkSectionFadeInTime`, `entityDistanceScaling` | `0`, `0.0`, `0.5` | same |
-| `mipmapLevels`, `maxAnisotropyBit`, `menuBackgroundBlurriness`, `prioritizeChunkUpdates`, `weatherRadius` | `0`, `0`, `0`, `0`, `5` | same |
+| `mipmapLevels`, `maxAnisotropyBit`, `menuBackgroundBlurriness`, `prioritizeChunkUpdates`, `weatherRadius` | `0`, `1`, `0`, `0`, `5` | same |
 | `soundDevice` | `""` | the recorder's private sink |
 | `soundCategory_master` | `0.0` | `0.7` |
 | `soundCategory_music` | `0.0` | `0.0` |
@@ -209,7 +209,7 @@ Client GameTests (`runClientGameTest`), production client GameTests (`runProduct
 | `autoJump`, `toggleSprint`, `toggleCrouch` | `false` | same |
 
 - `showcase` is used when the recorder gives the run its private PulseAudio sink (`recordClientGameTest` passes it as `GTR_RECORDING_AUDIO_DEVICE`), `test` otherwise, including runs that only bring their own display (`GTR_RECORDING_MANAGED_XVFB=true`). Its sound only reaches that sink.
-- Client GameTests see the `overrideWidth` x `overrideHeight` window whatever the display size, so the GUI scale and layout are the same in every run.
+- Client GameTests see the `overrideWidth` x `overrideHeight` window whatever the display size, so the GUI scale and layout are the same in every run of a profile. A `showcase` window covers the whole recorder display.
 
 With `client-gametest-recorder` and `production-gametests` both applied, the runtime helper joins both client runs, and each launch has a startup deadline: the client must finish loading (the point where its GameTests start) within 300 seconds. Otherwise the task stops the client and every process it started (`xvfb-run` and its `Xvfb` included) and fails with a message naming them. Change the deadline with `clientGameTestRecorder.clientStartupTimeoutSeconds` or the Gradle property `minecraftmodconventions.clientStartupTimeoutSeconds`.
 

@@ -37,6 +37,10 @@ public abstract class PrepareProductionGameTestRunsTask extends DefaultTask {
     @Input
     public abstract Property<String> getClientSoundDevice();
 
+    /** The {@code showcase} window, {@code WIDTHxHEIGHT}: the recorder's whole display. */
+    @Input
+    public abstract Property<String> getClientShowcaseWindow();
+
     @Input
     public abstract Property<Boolean> getDisableSocialInteractionsToast();
 
@@ -47,7 +51,8 @@ public abstract class PrepareProductionGameTestRunsTask extends DefaultTask {
                 getClientOptionsFile().get().getAsFile().toPath(),
                 ClientGameTestOptions.Profile.named(getClientOptionsProfile().get()),
                 getClientSoundDevice().get(),
-                getDisableSocialInteractionsToast().get()
+                getDisableSocialInteractionsToast().get(),
+                getClientShowcaseWindow().get()
         );
         writeEula(getServerEulaFile().get().getAsFile().toPath());
     }
