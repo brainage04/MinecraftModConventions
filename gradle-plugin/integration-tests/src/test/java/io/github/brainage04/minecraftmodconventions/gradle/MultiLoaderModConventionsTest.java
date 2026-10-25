@@ -55,7 +55,7 @@ class MultiLoaderModConventionsTest {
         Files.writeString(settings, Files.readString(settings)
                 .replace("include 'common', 'fabric', 'neoforge'", "include 'common', 'fabric'"));
         Path properties = projectDir.resolve("gradle.properties");
-        Files.writeString(properties, Files.readString(properties).replace("neoforge_version=26.2.0.88\n", ""));
+        Files.writeString(properties, Files.readString(properties).replace("neoforge_version=26.3.0.99\n", ""));
         assertEquals(TaskOutcome.SUCCESS, runGradle("verifyFabricOnly").task(":verifyFabricOnly").getOutcome());
         assertEquals(
                 List.of(":fabric:runGameTest", ":fabric:runCompatGameTest",
@@ -585,10 +585,10 @@ class MultiLoaderModConventionsTest {
                 mod_version=1.2.3
                 maven_group=io.github.brainage04.fixture
                 archives_base_name=fixturemod
-                minecraft_version=26.2
-                loader_version=0.19.3
-                fabric_api_version=0.156.0+26.2
-                neoforge_version=26.2.0.88
+                minecraft_version=26.3
+                loader_version=0.19.5
+                fabric_api_version=0.165.0+26.3
+                neoforge_version=26.3.0.99
                 minecraftmodconventions_version=%s
                 java_version=25
                 """.formatted(modSide, VERSION));

@@ -23,10 +23,10 @@ public final class ClientGameTestOptions {
     /** Environment variable naming the recorder's private PulseAudio sink; the recorder sets it for its build. */
     public static final String RECORDER_AUDIO_DEVICE_ENV = "GTR_RECORDING_AUDIO_DEVICE";
     /**
-     * The options format version: Minecraft 26.2's data version. A client of a later Minecraft version upgrades
+     * The options format version: Minecraft 26.3's data version. A client of a later Minecraft version upgrades
      * the file with its own data fixers.
      */
-    public static final String OPTIONS_VERSION = "4903";
+    public static final String OPTIONS_VERSION = "5023";
     private static final List<String> SOUND_CATEGORIES = List.of(
             "master", "music", "record", "weather", "block", "hostile", "neutral", "player", "ambient", "voice", "ui"
     );

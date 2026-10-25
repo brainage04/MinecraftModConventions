@@ -182,7 +182,7 @@ Client GameTests (`runClientGameTest`), production client GameTests (`runProduct
 
 | Option | `test` | `showcase` |
 | --- | --- | --- |
-| `version` | `4903` (26.2) | same |
+| `version` | `5023` (26.3) | same |
 | `lang` | `en_us` | same |
 | `fullscreen` | `false` | `true` |
 | `overrideWidth`, `overrideHeight` | `854`, `480` | same |
@@ -212,6 +212,8 @@ Client GameTests (`runClientGameTest`), production client GameTests (`runProduct
 - Client GameTests see the `overrideWidth` x `overrideHeight` window whatever the display size, so the GUI scale and layout are the same in every run.
 
 With `client-gametest-recorder` and `production-gametests` both applied, the runtime helper joins both client runs, and each launch has a startup deadline: the client must finish loading (the point where its GameTests start) within 300 seconds. Otherwise the task stops the client and every process it started (`xvfb-run` and its `Xvfb` included) and fails with a message naming them. Change the deadline with `clientGameTestRecorder.clientStartupTimeoutSeconds` or the Gradle property `minecraftmodconventions.clientStartupTimeoutSeconds`.
+
+A launch that ends before the client finished loading fails as well, whatever its exit code: a client that cannot open its window (no display, or no working graphics driver under Xvfb) exits without running any GameTest.
 
 ## Client GameTest recording
 

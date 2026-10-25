@@ -23,7 +23,9 @@ import java.util.stream.Collectors;
  * Bounds how long an automated client launch may take to finish loading. The launched client gets the system
  * property {@value #READY_FILE_PROPERTY}; the runtime helper writes that file once the client has finished loading
  * and its GameTests can start. If the file does not appear in time, every process the launch started (the client,
- * and {@code xvfb-run} with its {@code Xvfb}) is stopped and the task fails with a message saying so.
+ * and {@code xvfb-run} with its {@code Xvfb}) is stopped and the task fails with a message saying so. A launch that
+ * ends without the file fails too: a client that cannot open its window (no display, or no working graphics driver)
+ * exits without running any GameTest, and its exit code alone does not show that.
  */
 public final class ClientStartupDeadline {
     /** System property naming the file the runtime helper writes once the client has finished loading. */
@@ -82,6 +84,9 @@ public final class ClientStartupDeadline {
             if (launchFailure != null) {
                 throw launchFailure;
             }
+            if (!deadline.loaded()) {
+                throw deadline.neverLoaded();
+            }
         });
     }
 
@@ -103,6 +108,16 @@ public final class ClientStartupDeadline {
 
     boolean expired() {
         return expired;
+    }
+
+    boolean loaded() {
+        return Files.exists(readyFile);
+    }
+
+    GradleException neverLoaded() {
+        return new GradleException(taskPath + ": the client exited before it finished loading, so none of its "
+                + "GameTests ran. It most likely could not open its window (check DISPLAY or Xvfb and the graphics "
+                + "driver); the client's own log (logs/latest.log in its run directory) says why.");
     }
 
     /** Ends the watch; if the deadline has already expired, waits until the launch's processes are stopped. */

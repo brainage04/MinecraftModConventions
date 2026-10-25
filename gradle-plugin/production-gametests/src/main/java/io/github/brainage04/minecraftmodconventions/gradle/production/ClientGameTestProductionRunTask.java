@@ -30,6 +30,7 @@ public abstract class ClientGameTestProductionRunTask extends ClientProductionRu
     @Override
     protected void configureCommand(ExecSpec exec) {
         super.configureCommand(exec);
+        ClientLaunchEnvironment.useX11(exec);
         if (getSilenceAudio().get()) {
             exec.environment("ALSOFT_DRIVERS", "null");
         }

@@ -223,8 +223,7 @@ class PluginComponentIsolationTest {
                     doLast {
                         assert sourceSets.compat.java.srcDirs.contains(file('src/compat/java'))
                         assert configurations.compatMods.transitive == false
-                        // Fabric Loom keeps run properties as JVM arguments; Architectury Loom as system properties.
-                        assert loom.runs.compatGameTest.vmArgs.contains('-Dfabric-api.gametest.filter=fixturemod:compat_*')
+                        assert loom.runs.compatGameTest.systemProperties.get()['fabric-api.gametest.filter'] == 'fixturemod:compat_*'
                         assert tasks.runCompatGameTest.actions.first().displayName.endsWith('resetGameTestWorld')
                         def production = tasks.runProductionCompatGameTest
                         assert production.jvmArgs.get().contains('-Dfabric-api.gametest.filter=fixturemod:compat_*')
@@ -454,9 +453,9 @@ class PluginComponentIsolationTest {
                 mod_version=1.2.3
                 maven_group=io.github.brainage04.fixture
                 archives_base_name=fixturemod
-                minecraft_version=26.2
-                loader_version=0.19.3
-                fabric_api_version=0.155.0+26.2
+                minecraft_version=26.3
+                loader_version=0.19.5
+                fabric_api_version=0.165.0+26.3
                 minecraftmodconventions_version=fixture-version
                 java_version=25
                 """
@@ -477,7 +476,7 @@ class PluginComponentIsolationTest {
     /** The test profile, written out literally so a change to it shows up here. */
     private static String testOptions(boolean joinedFirstServer) {
         return String.join("\n",
-                "version:4903",
+                "version:5023",
                 "lang:en_us",
                 "fullscreen:false",
                 "overrideWidth:854",

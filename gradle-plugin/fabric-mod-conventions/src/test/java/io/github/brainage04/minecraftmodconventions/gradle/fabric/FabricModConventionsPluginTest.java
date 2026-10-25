@@ -60,16 +60,16 @@ class FabricModConventionsPluginTest {
                         assert loom.mods.findByName('fixturemod') != null
                         assert loom.accessWidenerPath.get().asFile.name == 'fixturemod.accesswidener'
                         assert configurations.minecraft.dependencies.any {
-                            it.group == 'com.mojang' && it.name == 'minecraft' && it.version == '26.2'
+                            it.group == 'com.mojang' && it.name == 'minecraft' && it.version == '26.3'
                         }
                         assert configurations.implementation.dependencies.any {
-                            it.group == 'net.fabricmc' && it.name == 'fabric-loader' && it.version == '0.19.3'
+                            it.group == 'net.fabricmc' && it.name == 'fabric-loader' && it.version == '0.19.5'
                         }
                         assert configurations.implementation.dependencies.any {
-                            it.group == 'net.fabricmc.fabric-api' && it.name == 'fabric-api' && it.version == '0.155.0+26.2'
+                            it.group == 'net.fabricmc.fabric-api' && it.name == 'fabric-api' && it.version == '0.165.0+26.3'
                         }
                         assert configurations.testImplementation.dependencies.any {
-                            it.group == 'net.fabricmc' && it.name == 'fabric-loader-junit' && it.version == '0.19.3'
+                            it.group == 'net.fabricmc' && it.name == 'fabric-loader-junit' && it.version == '0.19.5'
                         }
                         assert tasks.named('test').get().systemProperties['fabric.side'] == 'server'
                         assert java.sourceCompatibility == JavaVersion.VERSION_25
@@ -119,8 +119,8 @@ class FabricModConventionsPluginTest {
                 }
 
                 dependencies {
-                    minecraft 'com.mojang:minecraft:26.2'
-                    implementation 'net.fabricmc:fabric-loader:0.19.3'
+                    minecraft 'com.mojang:minecraft:26.3'
+                    implementation 'net.fabricmc:fabric-loader:0.19.5'
                 }
 
                 fabricModConventions {
@@ -203,9 +203,9 @@ class FabricModConventionsPluginTest {
                 mod_version=1.2.3
                 maven_group=io.github.brainage04.fixturemod
                 archives_base_name=fixturemod
-                loader_version=0.19.3
-                minecraft_version=26.2
-                fabric_api_version=0.155.0+26.2
+                loader_version=0.19.5
+                minecraft_version=26.3
+                fabric_api_version=0.165.0+26.3
                 java_version=%s
                 fixture_dependency_version=9.8.7
                 """.formatted(javaVersion));

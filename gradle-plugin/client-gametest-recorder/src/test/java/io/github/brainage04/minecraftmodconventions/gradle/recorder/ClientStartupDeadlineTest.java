@@ -1,6 +1,10 @@
 package io.github.brainage04.minecraftmodconventions.gradle.recorder;
 
+import org.gradle.api.GradleException;
+import org.gradle.api.Project;
+import org.gradle.api.Task;
 import org.gradle.api.logging.Logging;
+import org.gradle.testfixtures.ProjectBuilder;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -14,6 +18,7 @@ import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
@@ -76,6 +81,31 @@ class ClientStartupDeadlineTest {
         } finally {
             launch.destroyForcibly();
         }
+    }
+
+    @Test
+    void aLaunchThatEndsBeforeTheClientLoadedFailsAndOneThatLoadedPasses() {
+        Project project = ProjectBuilder.builder().withProjectDir(directory.toFile()).build();
+        Path ready = directory.resolve("ready");
+        Task neverLoads = project.getTasks().create("neverLoads");
+        ClientStartupDeadline.install(neverLoads, ready, project.provider(() -> 60), _ -> { });
+        GradleException failure = assertThrows(GradleException.class, () -> run(neverLoads));
+        assertTrue(failure.getMessage().contains("exited before it finished loading"), failure.getMessage());
+
+        Task loads = project.getTasks().create("loads");
+        loads.doLast(_ -> {
+            try {
+                Files.writeString(ready, "loaded");
+            } catch (IOException exception) {
+                throw new java.io.UncheckedIOException(exception);
+            }
+        });
+        ClientStartupDeadline.install(loads, ready, project.provider(() -> 60), _ -> { });
+        run(loads);
+    }
+
+    private static void run(Task task) {
+        task.getActions().forEach(action -> action.execute(task));
     }
 
     private static Process start(String... command) throws IOException {

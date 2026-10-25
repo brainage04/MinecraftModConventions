@@ -20,12 +20,12 @@ public abstract class RecordingMinecraftMixin {
         ClientGameTestRecordingSession.afterWorldTick();
     }
 
-    @Inject(method = "renderFrame", at = @At(value = "INVOKE", target = "Lcom/mojang/blaze3d/systems/GpuSurface;present()V"))
+    @Inject(method = "renderFrame", at = @At(value = "INVOKE", target = "Lcom/mojang/renderpearl/api/device/GpuSurface;present()V"))
     private void recordingBeforePresent(CallbackInfo ci) {
         ClientGameTestRecordingSession.beforePresent(((Minecraft) (Object) this).level != null);
     }
 
-    @Inject(method = "renderFrame", at = @At(value = "INVOKE", target = "Lcom/mojang/blaze3d/systems/GpuSurface;present()V", shift = At.Shift.AFTER))
+    @Inject(method = "renderFrame", at = @At(value = "INVOKE", target = "Lcom/mojang/renderpearl/api/device/GpuSurface;present()V", shift = At.Shift.AFTER))
     private void recordingAfterPresent(CallbackInfo ci) {
         ClientGameTestRecordingSession.afterPresent(((Minecraft) (Object) this).level != null);
     }

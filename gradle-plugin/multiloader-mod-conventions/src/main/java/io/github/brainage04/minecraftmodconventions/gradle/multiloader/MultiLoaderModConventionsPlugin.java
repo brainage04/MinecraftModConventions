@@ -4,12 +4,14 @@ import io.github.brainage04.minecraftmodconventions.gradle.integration.Integrati
 import io.github.brainage04.minecraftmodconventions.gradle.integration.IntegrationGameTestsPlugin;
 import io.github.brainage04.minecraftmodconventions.gradle.modpublishing.ModPublishingExtension;
 import io.github.brainage04.minecraftmodconventions.gradle.production.ClientGameTestProductionRunTask;
+import io.github.brainage04.minecraftmodconventions.gradle.production.ClientLaunchEnvironment;
 import io.github.brainage04.minecraftmodconventions.gradle.production.ProductionGameTestExtension;
 import io.github.brainage04.minecraftmodconventions.gradle.production.ProductionGameTestsPlugin;
 import io.github.brainage04.minecraftmodconventions.gradle.recorder.ClientGameTestRecorderExtension;
 import io.github.brainage04.minecraftmodconventions.gradle.recorder.RecordClientGameTestTask;
 import io.github.brainage04.minecraftmodconventions.gradle.workspace.WorkspaceDependenciesExtension;
 import net.fabricmc.loom.api.LoomGradleExtensionAPI;
+import net.fabricmc.loom.task.AbstractRunTask;
 import org.gradle.api.NamedDomainObjectContainer;
 import org.gradle.api.file.DuplicatesStrategy;
 import org.gradle.api.GradleException;
@@ -212,6 +214,7 @@ public final class MultiLoaderModConventionsPlugin implements Plugin<Project> {
             loom.getMods().getByName("main").sourceSet(fabricClient);
         }
         configureDefaultRunDirectories(loom);
+        useX11ForRuns(fabric);
         // Fabric reuses its dedicated-server world; NeoForge's GameTest entrypoint already replaces its test world.
         fabric.getTasks().matching(task -> task.getName().equals(DEVELOPMENT_GAMETEST_TASK))
                 .configureEach(task -> task.doFirst("resetGameTestWorld", _ ->
@@ -344,6 +347,16 @@ public final class MultiLoaderModConventionsPlugin implements Plugin<Project> {
                 .configureEach(run -> run.setRunDir("run/server"));
     }
 
+    /**
+     * Every Loom run of the loader, including runs a mod's own build script adds (a NeoForge client GameTest or a
+     * recording session), opens its window through SDL's X11 driver; see {@link ClientLaunchEnvironment}. Applied
+     * when the run starts, after the build script has set its environment.
+     */
+    private static void useX11ForRuns(Project loader) {
+        loader.getTasks().withType(AbstractRunTask.class).configureEach(task -> task.doFirst(
+                "useX11", running -> ClientLaunchEnvironment.useX11((AbstractRunTask) running)));
+    }
+
     private static void configureFabricTests(Project root, Project fabric) {
         String side = property(root, "mod_side", "both");
         fabric.getTasks().withType(Test.class).configureEach(task -> {
@@ -460,6 +473,7 @@ public final class MultiLoaderModConventionsPlugin implements Plugin<Project> {
             run.runDir("run/gametest");
         });
         configureDefaultRunDirectories(loom);
+        useX11ForRuns(neoForge);
 
         Configuration commonConfiguration = resolvableConfiguration(neoForge, "common");
         extendIfPresent(neoForge, "compileClasspath", commonConfiguration);

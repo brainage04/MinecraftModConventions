@@ -2,6 +2,7 @@ package io.github.brainage04.minecraftmodconventions.gradle.recorder;
 
 import io.github.brainage04.minecraftmodconventions.gradle.production.ClientGameTestOptions;
 import io.github.brainage04.minecraftmodconventions.gradle.production.ClientGameTestProductionRunTask;
+import io.github.brainage04.minecraftmodconventions.gradle.production.ClientLaunchEnvironment;
 import io.github.brainage04.minecraftmodconventions.gradle.production.PrepareProductionGameTestRunsTask;
 import net.fabricmc.loom.api.LoomGradleExtensionAPI;
 import net.fabricmc.loom.task.AbstractRunTask;
@@ -174,6 +175,7 @@ public final class ClientGameTestRecorderPlugin implements Plugin<Project> {
                 .filter(value -> !value.isBlank())
                 .getOrElse("null");
         javaExec.environment("ALSOFT_DRIVERS", openAlDrivers);
+        ClientLaunchEnvironment.useX11(javaExec);
         for (String name : List.of("ALSOFT_CONF", "ALSOFT_PULSE_DEFAULT", "PULSE_SINK", "PULSE_SERVER", "PULSE_PROP")) {
             String value = project.getProviders().environmentVariable(name).getOrNull();
             if (value != null && !value.isBlank()) {

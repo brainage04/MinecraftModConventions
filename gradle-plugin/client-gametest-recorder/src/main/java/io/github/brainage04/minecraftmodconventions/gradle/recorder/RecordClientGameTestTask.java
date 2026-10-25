@@ -1,5 +1,6 @@
 package io.github.brainage04.minecraftmodconventions.gradle.recorder;
 
+import io.github.brainage04.minecraftmodconventions.gradle.production.ClientLaunchEnvironment;
 import org.gradle.api.DefaultTask;
 import org.gradle.api.GradleException;
 import org.gradle.api.file.DirectoryProperty;
@@ -170,6 +171,7 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
             processEnvironment.clear();
             processEnvironment.putAll(System.getenv());
             processEnvironment.put("DISPLAY", xvfbDisplay);
+            ClientLaunchEnvironment.useX11(processEnvironment);
             processEnvironment.put("ALSOFT_CONF", alsoftConfig.getAbsolutePath());
             processEnvironment.put("ALSOFT_DRIVERS", "pulse");
             processEnvironment.put("ALSOFT_PULSE_DEFAULT", audioSinkName);
