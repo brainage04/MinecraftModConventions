@@ -18,8 +18,8 @@ import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /** Starts real process trees that stand in for a client launch and lets the deadline run out on them. */
@@ -102,6 +102,32 @@ class ClientStartupDeadlineTest {
         });
         ClientStartupDeadline.install(loads, ready, project.provider(() -> 60), _ -> { });
         run(loads);
+    }
+
+    @Test
+    void aCrashBeforeLoadingIsExplainedAndACrashAfterLoadingKeepsItsOwnFailure() {
+        Project project = ProjectBuilder.builder().withProjectDir(directory.toFile()).build();
+        Path ready = directory.resolve("ready");
+        RuntimeException exitValue = new RuntimeException("Process finished with non-zero exit value 1");
+
+        Task crashesBeforeLoading = project.getTasks().create("crashesBeforeLoading");
+        crashesBeforeLoading.doLast(_ -> { throw exitValue; });
+        ClientStartupDeadline.install(crashesBeforeLoading, ready, project.provider(() -> 60), _ -> { });
+        GradleException failure = assertThrows(GradleException.class, () -> run(crashesBeforeLoading));
+        assertTrue(failure.getMessage().contains("exited before it finished loading"), failure.getMessage());
+        assertSame(exitValue, failure.getCause());
+
+        Task crashesAfterLoading = project.getTasks().create("crashesAfterLoading");
+        crashesAfterLoading.doLast(_ -> {
+            try {
+                Files.writeString(ready, "loaded");
+            } catch (IOException exception) {
+                throw new java.io.UncheckedIOException(exception);
+            }
+            throw exitValue;
+        });
+        ClientStartupDeadline.install(crashesAfterLoading, ready, project.provider(() -> 60), _ -> { });
+        assertSame(exitValue, assertThrows(RuntimeException.class, () -> run(crashesAfterLoading)));
     }
 
     private static void run(Task task) {

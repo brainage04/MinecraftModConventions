@@ -3,6 +3,7 @@ package io.github.brainage04.minecraftmodconventions.gradle.production;
 import org.gradle.api.GradleException;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 
@@ -62,5 +63,25 @@ class ClientGameTestOptionsTest {
         assertEquals(ClientGameTestOptions.Profile.TEST, ClientGameTestOptions.Profile.named("test"));
         assertEquals(ClientGameTestOptions.Profile.SHOWCASE, ClientGameTestOptions.Profile.named("showcase"));
         assertThrows(GradleException.class, () -> ClientGameTestOptions.Profile.named("fancy"));
+    }
+
+    @Test
+    void theShowcaseWindowCoversTheRecorderScreenWithOrWithoutDepth() {
+        Map<String, String> hd = ClientGameTestOptions.options(ClientGameTestOptions.Profile.SHOWCASE, "sink", true, "1280x720x24");
+        Map<String, String> qhd = ClientGameTestOptions.options(ClientGameTestOptions.Profile.SHOWCASE, "sink", true, "2560x1440");
+
+        assertEquals(List.of("1280", "720"), List.of(hd.get("overrideWidth"), hd.get("overrideHeight")));
+        assertEquals(List.of("2560", "1440"), List.of(qhd.get("overrideWidth"), qhd.get("overrideHeight")));
+        assertEquals("false", hd.get("fullscreen"));
+    }
+
+    @Test
+    void aBadRecorderScreenFailsOnlyTheShowcaseProfile() {
+        for (String screen : new String[] {"wide", "0x0x24", "1920"}) {
+            assertThrows(GradleException.class,
+                    () -> ClientGameTestOptions.options(ClientGameTestOptions.Profile.SHOWCASE, "sink", true, screen), screen);
+            Map<String, String> test = ClientGameTestOptions.options(ClientGameTestOptions.Profile.TEST, "", true, screen);
+            assertEquals(List.of("854", "480"), List.of(test.get("overrideWidth"), test.get("overrideHeight")), screen);
+        }
     }
 }

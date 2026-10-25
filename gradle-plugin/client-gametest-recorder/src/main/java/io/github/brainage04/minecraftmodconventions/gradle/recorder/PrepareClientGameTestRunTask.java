@@ -14,7 +14,7 @@ import org.gradle.work.DisableCachingByDefault;
 public abstract class PrepareClientGameTestRunTask extends DefaultTask {
     public PrepareClientGameTestRunTask() {
         // Also for instances a build script registers itself (a NeoForge client GameTest run).
-        getShowcaseWindow().convention(ClientGameTestOptions.showcaseWindow(getProject().getProviders()));
+        getRecorderScreen().convention(ClientGameTestOptions.recorderScreen(getProject().getProviders()));
     }
 
     /** {@code test} or {@code showcase}; see {@link ClientGameTestOptions.Profile}. */
@@ -25,9 +25,9 @@ public abstract class PrepareClientGameTestRunTask extends DefaultTask {
     @Input
     public abstract Property<String> getRecordingAudioDevice();
 
-    /** The {@code showcase} window, {@code WIDTHxHEIGHT}: the recorder's whole display. */
+    /** The recorder's screen, which a {@code showcase} window covers; see {@link ClientGameTestOptions#recorderScreen}. */
     @Input
-    public abstract Property<String> getShowcaseWindow();
+    public abstract Property<String> getRecorderScreen();
 
     @Input
     public abstract Property<Boolean> getDisableSocialInteractionsToast();
@@ -42,7 +42,7 @@ public abstract class PrepareClientGameTestRunTask extends DefaultTask {
                 ClientGameTestOptions.Profile.named(getProfile().get()),
                 getRecordingAudioDevice().get(),
                 getDisableSocialInteractionsToast().get(),
-                getShowcaseWindow().get()
+                getRecorderScreen().get()
         );
     }
 }

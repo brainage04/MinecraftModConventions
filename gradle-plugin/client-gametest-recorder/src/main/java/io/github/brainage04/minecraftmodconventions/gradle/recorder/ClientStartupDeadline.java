@@ -81,11 +81,11 @@ public final class ClientStartupDeadline {
             if (deadline.expired()) {
                 throw deadline.failure(launchFailure);
             }
+            if (!deadline.loaded()) {
+                throw deadline.neverLoaded(launchFailure);
+            }
             if (launchFailure != null) {
                 throw launchFailure;
-            }
-            if (!deadline.loaded()) {
-                throw deadline.neverLoaded();
             }
         });
     }
@@ -114,10 +114,11 @@ public final class ClientStartupDeadline {
         return Files.exists(readyFile);
     }
 
-    GradleException neverLoaded() {
+    /** The failure of a launch that ended before the client loaded; {@code cause} is the launch's own failure. */
+    GradleException neverLoaded(Throwable cause) {
         return new GradleException(taskPath + ": the client exited before it finished loading, so none of its "
                 + "GameTests ran. It most likely could not open its window (check DISPLAY or Xvfb and the graphics "
-                + "driver); the client's own log (logs/latest.log in its run directory) says why.");
+                + "driver); the client's own log (logs/latest.log in its run directory) says why.", cause);
     }
 
     /** Ends the watch; if the deadline has already expired, waits until the launch's processes are stopped. */

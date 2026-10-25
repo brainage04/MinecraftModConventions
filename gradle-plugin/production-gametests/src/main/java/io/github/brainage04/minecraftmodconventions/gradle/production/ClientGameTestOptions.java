@@ -71,32 +71,33 @@ public final class ClientGameTestOptions {
     }
 
     /**
-     * The showcase window, {@code WIDTHxHEIGHT}: the whole recorder display, from {@value #RECORDER_SCREEN_ENV}.
+     * The recorder's screen ({@code WIDTHxHEIGHT[xDEPTH]}) from {@value #RECORDER_SCREEN_ENV}; a showcase window
+     * covers it. Only the showcase profile reads it, so a test run never fails on an odd value.
      */
-    public static Provider<String> showcaseWindow(ProviderFactory providers) {
+    public static Provider<String> recorderScreen(ProviderFactory providers) {
         return providers.environmentVariable(RECORDER_SCREEN_ENV)
                 .filter(screen -> !screen.isBlank())
-                .orElse(DEFAULT_RECORDER_SCREEN)
-                .map(ClientGameTestOptions::windowOfScreen);
+                .orElse(DEFAULT_RECORDER_SCREEN);
     }
 
-    static String windowOfScreen(String screen) {
+    /** The width and height of a recorder screen such as {@code 1920x1080x24}. */
+    static String[] windowOfScreen(String screen) {
         String[] parts = screen.split("x");
-        if (parts.length < 2 || !parts[0].matches("[0-9]+") || !parts[1].matches("[0-9]+")) {
+        if (parts.length < 2 || !parts[0].matches("[1-9][0-9]*") || !parts[1].matches("[1-9][0-9]*")) {
             throw new GradleException("Expected " + RECORDER_SCREEN_ENV + " to look like 1920x1080x24, not " + screen);
         }
-        return parts[0] + "x" + parts[1];
+        return new String[] {parts[0], parts[1]};
     }
 
     /**
-     * The options of a profile in file order. {@code soundDevice} and {@code showcaseWindow} ({@code WIDTHxHEIGHT})
-     * are only used by {@link Profile#SHOWCASE}: the test profile is silent, keeps the default device and has an
-     * 854x480 window. {@code joinedFirstServer} suppresses the social interactions toast.
+     * The options of a profile in file order. {@code soundDevice} and {@code recorderScreen} (see
+     * {@link #recorderScreen}) are only used by {@link Profile#SHOWCASE}: the test profile is silent, keeps the
+     * default device and has an 854x480 window. {@code joinedFirstServer} suppresses the social interactions toast.
      */
     public static Map<String, String> options(
-            Profile profile, String soundDevice, boolean joinedFirstServer, String showcaseWindow) {
+            Profile profile, String soundDevice, boolean joinedFirstServer, String recorderScreen) {
         boolean showcase = profile == Profile.SHOWCASE;
-        String[] window = (showcase ? showcaseWindow : "854x480").split("x");
+        String[] window = showcase ? windowOfScreen(recorderScreen) : new String[] {"854", "480"};
         Map<String, String> options = new LinkedHashMap<>();
         options.put("version", OPTIONS_VERSION);
         options.put("lang", "en_us");
@@ -125,7 +126,7 @@ public final class ClientGameTestOptions {
         options.put("chunkSectionFadeInTime", "0.0");
         options.put("entityDistanceScaling", "0.5");
         options.put("mipmapLevels", "0");
-        // The lowest valid value (1 to 3); it only matters with anisotropic texture filtering, which stays off.
+        // The lowest valid value (1 to 3); it only matters with anisotropic texture filtering, which is off (textureFiltering is not written; its 26.3 default is NONE).
         options.put("maxAnisotropyBit", "1");
         options.put("menuBackgroundBlurriness", "0");
         options.put("prioritizeChunkUpdates", "0");
@@ -156,8 +157,8 @@ public final class ClientGameTestOptions {
     }
 
     public static void write(
-            Path file, Profile profile, String soundDevice, boolean joinedFirstServer, String showcaseWindow) {
-        String contents = options(profile, soundDevice, joinedFirstServer, showcaseWindow).entrySet().stream()
+            Path file, Profile profile, String soundDevice, boolean joinedFirstServer, String recorderScreen) {
+        String contents = options(profile, soundDevice, joinedFirstServer, recorderScreen).entrySet().stream()
                 .map(entry -> entry.getKey() + ":" + entry.getValue())
                 .collect(Collectors.joining("\n", "", "\n"));
         try {

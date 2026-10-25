@@ -2,11 +2,11 @@
   "schemaVersion": 1,
   "owner": "brainage04",
   "baseline": {
-    "minecraftVersion": "26.2",
-    "loaderVersion": "0.19.3",
-    "fabricApiVersion": "0.156.0+26.2",
+    "minecraftVersion": "26.3",
+    "loaderVersion": "0.19.5",
+    "fabricApiVersion": "0.165.0+26.3",
     "javaVersion": "25",
-    "conventionsVersion": "3.0.2"
+    "conventionsVersion": "3.1.0"
   },
   "ignoredRepositories": {
     "ToggleSprint": "Forge-only 1.8.9 mod",

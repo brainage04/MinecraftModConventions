@@ -37,9 +37,9 @@ public abstract class PrepareProductionGameTestRunsTask extends DefaultTask {
     @Input
     public abstract Property<String> getClientSoundDevice();
 
-    /** The {@code showcase} window, {@code WIDTHxHEIGHT}: the recorder's whole display. */
+    /** The recorder's screen, which a {@code showcase} window covers; see {@link ClientGameTestOptions#recorderScreen}. */
     @Input
-    public abstract Property<String> getClientShowcaseWindow();
+    public abstract Property<String> getClientRecorderScreen();
 
     @Input
     public abstract Property<Boolean> getDisableSocialInteractionsToast();
@@ -52,7 +52,7 @@ public abstract class PrepareProductionGameTestRunsTask extends DefaultTask {
                 ClientGameTestOptions.Profile.named(getClientOptionsProfile().get()),
                 getClientSoundDevice().get(),
                 getDisableSocialInteractionsToast().get(),
-                getClientShowcaseWindow().get()
+                getClientRecorderScreen().get()
         );
         writeEula(getServerEulaFile().get().getAsFile().toPath());
     }

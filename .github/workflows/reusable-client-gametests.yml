@@ -158,7 +158,7 @@ jobs:
         env:
           RECORD_CLIENT_GAMETESTS: ${{ inputs.record_client_gametests }}
         run: |
-          packages=(xvfb x11-utils mesa-utils libflite1 libgl1-mesa-dri libglx-mesa0 libxi6 libxrandr2 libxrender1 libxtst6 libxinerama1 libxcursor1 libxxf86vm1)
+          packages=(xvfb x11-utils mesa-utils libflite1 libgl1-mesa-dri libglx-mesa0 libxi6 libxrandr2 libxrender1 libxtst6 libxinerama1 libxcursor1 libxxf86vm1 libxss1 libxkbcommon0)
           if [ "${RECORD_CLIENT_GAMETESTS}" = 'true' ]; then
             packages+=(ffmpeg pipewire-bin)
           fi

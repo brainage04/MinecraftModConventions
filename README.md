@@ -1,6 +1,6 @@
 # MinecraftModConventions
 
-Shared Gradle plugins, GitHub workflows and client GameTest helpers for my Minecraft mods.
+Shared Gradle plugins, GitHub workflows and client GameTest helpers for my Minecraft mods. 3.1.x targets Minecraft 26.3; 3.0.x is the Minecraft 26.2 line.
 
 ## Plugins
 
@@ -209,11 +209,12 @@ Client GameTests (`runClientGameTest`), production client GameTests (`runProduct
 | `autoJump`, `toggleSprint`, `toggleCrouch` | `false` | same |
 
 - `showcase` is used when the recorder gives the run its private PulseAudio sink (`recordClientGameTest` passes it as `GTR_RECORDING_AUDIO_DEVICE`), `test` otherwise, including runs that only bring their own display (`GTR_RECORDING_MANAGED_XVFB=true`). Its sound only reaches that sink.
-- Client GameTests see the `overrideWidth` x `overrideHeight` window whatever the display size, so the GUI scale and layout are the same in every run of a profile. A `showcase` window covers the whole recorder display.
+- Client GameTests see the `overrideWidth` x `overrideHeight` window whatever the display size, so the GUI scale and layout are the same in every run of a profile. A `showcase` window covers the whole recorder display, so a recorded run has a larger GUI (960x540 at `guiScale` 2) than the same test's `test` run (427x240): a test that depends on screen coordinates or text wrapping can behave differently while recorded.
+- On Linux, every automated client launch (production and development client GameTests, every Loom run task with `GameTest` in its name on `:fabric` and `:neoforge`, and the recorder) sets `SDL_VIDEO_DRIVER=x11` and removes `WAYLAND_DISPLAY`. Minecraft 26.3 opens its window through SDL3, which otherwise prefers a Wayland desktop over `DISPLAY` (Xvfb). Interactive runs such as `runClient` are left alone.
 
 With `client-gametest-recorder` and `production-gametests` both applied, the runtime helper joins both client runs, and each launch has a startup deadline: the client must finish loading (the point where its GameTests start) within 300 seconds. Otherwise the task stops the client and every process it started (`xvfb-run` and its `Xvfb` included) and fails with a message naming them. Change the deadline with `clientGameTestRecorder.clientStartupTimeoutSeconds` or the Gradle property `minecraftmodconventions.clientStartupTimeoutSeconds`.
 
-A launch that ends before the client finished loading fails as well, whatever its exit code: a client that cannot open its window (no display, or no working graphics driver under Xvfb) exits without running any GameTest.
+With both plugins applied, a launch that ends before the client finished loading fails as well, whatever its exit code, with a message saying so (the launch's own failure is its cause): a client that cannot open its window (no display, or no working graphics driver under Xvfb) exits without running any GameTest.
 
 ## Client GameTest recording
 

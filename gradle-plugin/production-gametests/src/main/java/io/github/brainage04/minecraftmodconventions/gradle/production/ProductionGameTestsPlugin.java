@@ -204,7 +204,7 @@ public final class ProductionGameTestsPlugin implements Plugin<Project> {
                             .orElse(""));
                     task.getClientOptionsProfile().convention(ClientGameTestOptions.profile(task.getClientSoundDevice()));
                     task.getDisableSocialInteractionsToast().convention(true);
-                    task.getClientShowcaseWindow().convention(ClientGameTestOptions.showcaseWindow(project.getProviders()));
+                    task.getClientRecorderScreen().convention(ClientGameTestOptions.recorderScreen(project.getProviders()));
                     task.getServerEulaFile().convention(extension.getServerRunDir().file("eula.txt"));
                 }
         );

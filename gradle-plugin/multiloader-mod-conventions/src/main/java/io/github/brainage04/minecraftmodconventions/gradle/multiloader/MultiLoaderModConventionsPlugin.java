@@ -348,13 +348,16 @@ public final class MultiLoaderModConventionsPlugin implements Plugin<Project> {
     }
 
     /**
-     * Every Loom run of the loader, including runs a mod's own build script adds (a NeoForge client GameTest or a
-     * recording session), opens its window through SDL's X11 driver; see {@link ClientLaunchEnvironment}. Applied
-     * when the run starts, after the build script has set its environment.
+     * Every Loom GameTest run of the loader, including ones a mod's own build script adds (a NeoForge client GameTest,
+     * which the recorder can also drive), opens its window through SDL's X11 driver; see
+     * {@link ClientLaunchEnvironment}. Interactive runs such as {@code runClient} are left alone. Applied when the run
+     * starts, after the build script has set its environment.
      */
     private static void useX11ForRuns(Project loader) {
-        loader.getTasks().withType(AbstractRunTask.class).configureEach(task -> task.doFirst(
-                "useX11", running -> ClientLaunchEnvironment.useX11((AbstractRunTask) running)));
+        loader.getTasks().withType(AbstractRunTask.class)
+                .matching(task -> task.getName().contains("GameTest"))
+                .configureEach(task -> task.doFirst(
+                        "useX11", running -> ClientLaunchEnvironment.useX11((AbstractRunTask) running)));
     }
 
     private static void configureFabricTests(Project root, Project fabric) {
