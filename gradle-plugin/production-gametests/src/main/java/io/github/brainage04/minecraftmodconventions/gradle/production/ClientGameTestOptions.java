@@ -126,7 +126,8 @@ public final class ClientGameTestOptions {
         options.put("chunkSectionFadeInTime", "0.0");
         options.put("entityDistanceScaling", "0.5");
         options.put("mipmapLevels", "0");
-        // The lowest valid value (1 to 3); it only matters with anisotropic texture filtering, which is off (textureFiltering is not written; its 26.3 default is NONE).
+        // The lowest valid value (1 to 3); it only matters with anisotropic texture filtering, which is off:
+        // textureFiltering is not written, and its 26.3 default is NONE.
         options.put("maxAnisotropyBit", "1");
         options.put("menuBackgroundBlurriness", "0");
         options.put("prioritizeChunkUpdates", "0");
