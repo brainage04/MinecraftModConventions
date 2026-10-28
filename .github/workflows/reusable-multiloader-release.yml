@@ -104,7 +104,7 @@ on:
         description: CurseForge API token
         required: false
       git_ssh_key:
-        description: Optional read-only SSH deploy key for private repositories the build clones, such as gitMod repositories
+        description: Optional private half of read-only SSH deploy keys for private repositories the build clones, such as gitMod repositories; one key for all of git_ssh_repositories, or one per repository in their order (concatenated)
         required: false
     outputs:
       artifact_file:

@@ -50,7 +50,7 @@ on:
         type: string
     secrets:
       git_ssh_key:
-        description: Optional read-only SSH deploy key for private repositories the build clones, such as gitMod repositories
+        description: Optional private half of read-only SSH deploy keys for private repositories the build clones, such as gitMod repositories; one key for all of git_ssh_repositories, or one per repository in their order (concatenated)
         required: false
 
 permissions:
@@ -98,13 +98,28 @@ jobs:
           done
           dir="${RUNNER_TEMP}/git-ssh"
           rm -rf "${dir}"
-          (umask 077 && mkdir -p "${dir}" && printf '%s\n' "${GIT_SSH_KEY%$'\n'}" > "${dir}/id")
-          chmod 600 "${dir}/id"
+          # git_ssh_key holds one private key for every repository, or one key per repository in the order of
+          # git_ssh_repositories: GitHub accepts a deploy key on one repository only. Each repository gets an SSH
+          # host alias with its own key.
+          (umask 077 && mkdir -p "${dir}" && printf '%s\n' "${GIT_SSH_KEY%$'\n'}" |
+            awk -v dir="${dir}" '/^-----BEGIN /{n++} n{print > (dir "/id_" n)}')
+          read -r -a repositories <<< "${GIT_SSH_REPOSITORIES}"
+          keys="$(find "${dir}" -name 'id_*' | wc -l)"
+          if [ "${keys}" -ne 1 ] && [ "${keys}" -ne "${#repositories[@]}" ]; then
+            echo "git_ssh_key holds ${keys} private keys for ${#repositories[@]} repositories; give one key, or one per repository"
+            exit 1
+          fi
           count=0
           {
-            echo "GIT_SSH_COMMAND=ssh -i \"${dir}/id\" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=\"${dir}/known_hosts\""
-            for name in ${GIT_SSH_REPOSITORIES}; do
-              echo "GIT_CONFIG_KEY_${count}=url.git@github.com:brainage04/${name}.git.insteadOf"
+            echo "GIT_SSH_COMMAND=ssh -F \"${dir}/config\" -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=\"${dir}/known_hosts\""
+            for name in "${repositories[@]}"; do
+              key=1
+              if [ "${keys}" -gt 1 ]; then
+                key=$((count + 1))
+              fi
+              printf 'Host github-%s\n  HostName github.com\n  User git\n  IdentityFile "%s/id_%s"\n  IdentitiesOnly yes\n' \
+                "${name}" "${dir}" "${key}" >> "${dir}/config"
+              echo "GIT_CONFIG_KEY_${count}=url.git@github-${name}:brainage04/${name}.git.insteadOf"
               echo "GIT_CONFIG_VALUE_${count}=https://github.com/brainage04/${name}.git"
               count=$((count + 1))
             done
