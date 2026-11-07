@@ -111,6 +111,13 @@ jobs:
             echo "GIT_CONFIG_COUNT=${count}"
           } >> "${GITHUB_ENV}"
 
+      - name: install EGL for the production client
+        # The run step forces SDL's EGL path on GitHub-hosted runners (see there); their image has no libEGL.
+        if: runner.environment == 'github-hosted'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libegl-mesa0
+
       - name: validate gradle wrapper
         uses: gradle/actions/wrapper-validation@v5
 
