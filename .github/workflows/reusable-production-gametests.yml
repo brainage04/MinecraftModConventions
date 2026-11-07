@@ -159,6 +159,10 @@ jobs:
       - name: run production GameTests
         timeout-minutes: ${{ inputs.timeout_minutes }}
         env:
+          # Minecraft 26.3 asks SDL3 for an sRGB-capable OpenGL framebuffer. Ubuntu 24.04's Xvfb (21.1.12) has no
+          # sRGB-capable GLX visual, so SDL's GLX path fails with "Couldn't find matching GLX visual" and the
+          # production client never starts; SDL's EGL path finds an sRGB config there. Self-hosted runners keep GLX.
+          SDL_VIDEO_FORCE_EGL: ${{ runner.environment == 'github-hosted' && '1' || '' }}
           REQUESTED_CLIENT_GAMETEST_PROFILE: ${{ inputs.client_gametest_profile }}
           REQUESTED_TEST_RUNNER: ${{ inputs.test_runner }}
         run: |
