@@ -17,7 +17,6 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
-/** Starts real process trees that stand in for a client launch and lets the deadline run out on them. */
 class ClientStartupDeadlineTest {
     @TempDir
     Path directory;
@@ -82,7 +81,6 @@ class ClientStartupDeadlineTest {
         return new ProcessBuilder(command).redirectErrorStream(true).redirectOutput(ProcessBuilder.Redirect.DISCARD).start();
     }
 
-    /** Waits until the launch has started {@code program}, the innermost process, and returns all its descendants. */
     private static List<ProcessHandle> awaitDescendants(Process launch, String program) throws InterruptedException {
         long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
         List<ProcessHandle> descendants = launch.descendants().toList();

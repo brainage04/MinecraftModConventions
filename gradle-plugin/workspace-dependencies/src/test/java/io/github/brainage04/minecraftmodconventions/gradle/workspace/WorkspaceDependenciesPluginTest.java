@@ -257,7 +257,6 @@ class WorkspaceDependenciesPluginTest {
         assertEquals("guiScale:0\n", Files.readString(projectDirectory.resolve("run/client/options.txt")));
     }
 
-    /** A stand-in for Loom's development client run: a JavaExec task named runClient in its own run directory. */
     private void writeRunClientFixture() throws IOException {
         Files.createDirectories(projectDirectory.resolve("run/client"));
         Files.createDirectories(projectDirectory.resolve("src/main/java"));

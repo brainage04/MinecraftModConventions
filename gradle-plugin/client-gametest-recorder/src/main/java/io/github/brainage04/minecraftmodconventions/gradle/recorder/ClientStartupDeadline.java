@@ -105,7 +105,6 @@ public final class ClientStartupDeadline {
         return expired;
     }
 
-    /** Ends the watch; if the deadline has already expired, waits until the launch's processes are stopped. */
     void close() {
         synchronized (lock) {
             closed = true;
@@ -153,10 +152,6 @@ public final class ClientStartupDeadline {
         }
     }
 
-    /**
-     * Stops every descendant of this JVM whose command line contains {@code marker}, together with all of their own
-     * descendants, and returns a description of each process stopped.
-     */
     static List<String> stopLaunch(String marker) throws InterruptedException {
         List<ProcessHandle> launched = ProcessHandle.current().descendants()
                 .filter(process -> commandLine(process).contains(marker))
@@ -216,7 +211,6 @@ public final class ClientStartupDeadline {
         }
     }
 
-    /** The process id and program name, with the script name for a shell running a script such as xvfb-run. */
     private static String describe(ProcessHandle process) {
         String[] words = commandLine(process).strip().split(" ");
         String program = baseName(words[0]);

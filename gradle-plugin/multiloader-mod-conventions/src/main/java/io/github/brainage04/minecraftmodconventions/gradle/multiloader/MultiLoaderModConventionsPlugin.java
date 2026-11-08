@@ -274,10 +274,6 @@ public final class MultiLoaderModConventionsPlugin implements Plugin<Project> {
         gameTest.getResources().srcDir(sharedStructures.flatMap(GenerateSharedGameTestResourcesTask::getOutputDirectory));
     }
 
-    /**
-     * Gives the loader every integration GameTest suite declared at the root: sources from {@code common/src/<name>}
-     * (plus the loader's own {@code src/<name>}) and that loader's extra mods.
-     */
     private static void configureIntegrationGameTests(
             Project common,
             Project loader,
@@ -488,12 +484,6 @@ public final class MultiLoaderModConventionsPlugin implements Plugin<Project> {
         configureNeoForgeProductionGameTests(root, neoForge, gameTest, fleetExtension);
     }
 
-    /**
-     * Registers {@code productionGameTestJar}, {@code installProductionServer} and
-     * {@code runProductionServerGameTest}: the release JAR and the GameTest JAR on a NeoForge dedicated server
-     * installed with the official installer, the NeoForge counterpart of Loom's Fabric production server run.
-     * Each integration GameTest suite gets the same run with its extra mods as {@code runProduction<Name>GameTest}.
-     */
     private static void configureNeoForgeProductionGameTests(
             Project root,
             Project neoForge,
@@ -560,7 +550,6 @@ public final class MultiLoaderModConventionsPlugin implements Plugin<Project> {
         }));
     }
 
-    /** The settings every NeoForge production server GameTest run shares. */
     private record NeoForgeProductionRun(
             Project neoForge,
             String modId,

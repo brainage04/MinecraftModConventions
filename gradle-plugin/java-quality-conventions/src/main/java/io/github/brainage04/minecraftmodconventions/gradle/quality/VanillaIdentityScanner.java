@@ -96,13 +96,11 @@ public final class VanillaIdentityScanner {
         return findings;
     }
 
-    /** {@code null} without a marker, otherwise whether the marker gives a reason. */
     private static Boolean optOut(String comment) {
         Matcher marker = OPT_OUT.matcher(comment);
         return marker.matches() ? !marker.group(1).isBlank() : null;
     }
 
-    /** Splits a line into code (comments removed, literal contents blanked) and its {@code //} comment. */
     private static final class Lexer {
         private boolean inBlockComment;
         private boolean inTextBlock;

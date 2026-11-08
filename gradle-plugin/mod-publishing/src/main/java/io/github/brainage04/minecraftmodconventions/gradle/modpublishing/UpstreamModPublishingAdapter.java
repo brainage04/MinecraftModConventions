@@ -13,7 +13,6 @@ import org.gradle.api.NamedDomainObjectProvider;
 import org.gradle.api.Project;
 import org.gradle.api.file.RegularFile;
 
-/** Maps the conventions extension to the upstream Mod Publish Plugin model. */
 final class UpstreamModPublishingAdapter {
     private UpstreamModPublishingAdapter() {
     }

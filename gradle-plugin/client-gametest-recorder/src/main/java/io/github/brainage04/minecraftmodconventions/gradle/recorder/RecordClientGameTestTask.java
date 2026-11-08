@@ -488,7 +488,6 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
         );
     }
 
-    /** The unified-hierarchy cgroup directory of this process, or null outside cgroup v2. */
     static Path ownCgroup(Path procSelfCgroup, Path cgroupRoot) {
         try {
             for (String line : Files.readAllLines(procSelfCgroup, StandardCharsets.UTF_8)) {

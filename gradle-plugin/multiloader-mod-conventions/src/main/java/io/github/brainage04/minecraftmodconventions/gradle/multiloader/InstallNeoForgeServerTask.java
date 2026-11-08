@@ -49,7 +49,6 @@ public abstract class InstallNeoForgeServerTask extends DefaultTask {
     @Inject
     protected abstract FileSystemOperations getFileSystemOperations();
 
-    /** The launcher arguments file the installer writes for this platform. */
     static Path launcherArguments(Path serverDirectory, String neoForgeVersion) {
         String file = System.getProperty("os.name", "").startsWith("Windows") ? "win_args.txt" : "unix_args.txt";
         return serverDirectory.resolve("libraries/net/neoforged/neoforge").resolve(neoForgeVersion).resolve(file);

@@ -154,11 +154,6 @@ public abstract class NeoForgeServerGameTestProductionRunTask extends DefaultTas
         }
     }
 
-    /**
-     * Rewrites the installer's launcher arguments for a GameTest server outside the installation: the main class
-     * becomes FML's GameTest server entrypoint and every relative {@code libraries} path points into the
-     * installation. Each argument is written quoted on its own line.
-     */
     static List<String> gameTestServerArguments(String installerArguments, Path libraries, Path source) {
         Pattern relativeLibraries = Pattern.compile(
                 "(^|[=" + Pattern.quote(File.pathSeparator) + "])libraries(?=[/\\\\" + Pattern.quote(File.pathSeparator) + "]|$)"
