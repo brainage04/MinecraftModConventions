@@ -186,6 +186,71 @@ class FabricModConventionsPluginTest {
         ));
     }
 
+    @Test
+    void vanillaIdentityCheckFailsTheAutoSleepGateAndPassesDataDrivenOrOptedOutCode() throws IOException {
+        writeFixture("25", false, """
+                plugins {
+                    id '%s'
+                }
+
+                tasks.register('verifyVanillaIdentityWiring') {
+                    doLast {
+                        assert tasks.check.taskDependencies.getDependencies(tasks.check)*.name.contains('checkVanillaIdentity')
+                    }
+                }
+                """.formatted(BASE_PLUGIN_ID));
+        // GameTests may name vanilla dimensions to set a test up; only main and client sources are checked.
+        Path gameTest = projectDir.resolve("src/gametest/java/example/NetherBedGameTest.java");
+        Files.createDirectories(gameTest.getParent());
+        Files.writeString(gameTest, """
+                package example;
+                final class NetherBedGameTest {
+                    static boolean nether(net.minecraft.world.level.Level level) {
+                        return level.dimension() == net.minecraft.world.level.Level.NETHER;
+                    }
+                }
+                """);
+        Path sleeper = projectDir.resolve("src/client/java/example/AutoSleeper.java");
+        Files.createDirectories(sleeper.getParent());
+        String gate = """
+                package example;
+                import net.minecraft.world.level.Level;
+                final class AutoSleeper {
+                    static void tick(Level level) {
+                %s
+                    }
+                }
+                """;
+
+        Files.writeString(sleeper, gate.formatted("""
+                        // Beds explode in the Nether and the End.
+                        if (level.dimension() != Level.OVERWORLD) return;"""));
+        BuildResult failed = GradleRunner.create()
+                .withProjectDir(projectDir.toFile())
+                .withPluginClasspath()
+                .withArguments("checkVanillaIdentity")
+                .buildAndFail();
+        String output = failed.getOutput();
+        assertEquals(TaskOutcome.FAILED, failed.task(":checkVanillaIdentity").getOutcome(), output);
+        assertTrue(output.contains(
+                "src/client/java/example/AutoSleeper.java:6: if (level.dimension() != Level.OVERWORLD) return;"), output);
+        assertTrue(output.contains("EnvironmentAttributes.BED_RULE"), output);
+        assertTrue(output.contains("EnvironmentAttribute.isSyncable()"), output);
+        assertFalse(output.contains("NetherBedGameTest"), output);
+
+        Files.writeString(sleeper, gate.formatted("""
+                        if (level.environmentAttributes().getValue(EnvironmentAttributes.BED_RULE, pos).explodes()) return;"""));
+        BuildResult dataDriven = runGradle("checkVanillaIdentity", "verifyVanillaIdentityWiring");
+        assertEquals(TaskOutcome.SUCCESS, dataDriven.task(":checkVanillaIdentity").getOutcome(), dataDriven.getOutput());
+        assertEquals(TaskOutcome.SUCCESS, dataDriven.task(":verifyVanillaIdentityWiring").getOutcome());
+
+        Files.writeString(sleeper, gate.formatted("""
+                        // vanilla-identity: BED_RULE is not synced to the client, so a client-only mod falls back to vanilla
+                        if (level.dimension() != Level.OVERWORLD) return;"""));
+        BuildResult optedOut = runGradle("checkVanillaIdentity");
+        assertEquals(TaskOutcome.SUCCESS, optedOut.task(":checkVanillaIdentity").getOutcome(), optedOut.getOutput());
+    }
+
     private BuildResult runGradle(String... arguments) {
         return GradleRunner.create()
                 .withProjectDir(projectDir.toFile())
