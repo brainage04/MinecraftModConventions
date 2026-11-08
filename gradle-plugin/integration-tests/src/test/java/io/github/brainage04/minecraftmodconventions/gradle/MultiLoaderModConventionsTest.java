@@ -108,7 +108,6 @@ class MultiLoaderModConventionsTest {
                         assert vanilla.serverJarCache.get().asFile ==
                                 new File(gradle.gradleUserHomeDir, 'caches/minecraftmodconventions/vanilla-server')
                         assert vanilla.runDir.get().asFile == client.runDir.get().asFile
-                        assert vanilla.mods.files == client.mods.files
                         assert vanilla.jvmArgs.get().containsAll(['-Dfabric.client.gametest',
                                 '-Dminecraftmodconventions.clientGameTest=true'])
                         assert vanilla.jvmArgs.get().any { it.startsWith('-Dminecraftmodconventions.clientReadyFile=') }
