@@ -269,6 +269,38 @@ class MultiLoaderModConventionsTest {
     }
 
     @Test
+    void vanillaIdentityCheckCoversEveryLoadersMainAndClientSourcesButNotGameTests() throws IOException {
+        writeFixture("both", """
+                tasks.register('verifyVanillaIdentityWiring') {
+                    doLast {
+                        ['common', 'fabric', 'neoforge'].each { path ->
+                            def check = project(":$path").tasks.check
+                            assert check.taskDependencies.getDependencies(check)*.name.contains('checkVanillaIdentity')
+                        }
+                    }
+                }
+                """);
+        String gate = "if (level.dimension() != net.minecraft.world.level.Level.OVERWORLD) return;";
+        write("common/src/main/java/fixture/CommonGate.java", "class CommonGate {\n" + gate + "\n}\n");
+        write("fabric/src/client/java/fixture/ClientGate.java", "class ClientGate {\n" + gate + "\n}\n");
+        write("neoforge/src/main/java/fixture/OptedOutGate.java",
+                "class OptedOutGate {\n// vanilla-identity: the mod only changes the vanilla Overworld\n" + gate + "\n}\n");
+        write("common/src/gametest/java/fixture/GameTestGate.java", "class GameTestGate {\n" + gate + "\n}\n");
+
+        BuildResult result = runner("--continue", ":common:checkVanillaIdentity", ":fabric:checkVanillaIdentity",
+                ":neoforge:checkVanillaIdentity", "verifyVanillaIdentityWiring").buildAndFail();
+
+        String output = result.getOutput();
+        assertEquals(TaskOutcome.FAILED, result.task(":common:checkVanillaIdentity").getOutcome(), output);
+        assertEquals(TaskOutcome.FAILED, result.task(":fabric:checkVanillaIdentity").getOutcome(), output);
+        assertEquals(TaskOutcome.SUCCESS, result.task(":neoforge:checkVanillaIdentity").getOutcome(), output);
+        assertEquals(TaskOutcome.SUCCESS, result.task(":verifyVanillaIdentityWiring").getOutcome(), output);
+        assertTrue(output.contains("common/src/main/java/fixture/CommonGate.java:2: " + gate), output);
+        assertTrue(output.contains("fabric/src/client/java/fixture/ClientGate.java:2: " + gate), output);
+        assertFalse(output.contains("GameTestGate"), output);
+    }
+
+    @Test
     void clientModWithoutNeoForgeGameTestsSkipsTheProductionServerRunWithoutInstallingAServer() throws IOException {
         writeFixture("client", """
                 multiLoaderModConventions {

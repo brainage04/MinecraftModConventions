@@ -88,5 +88,45 @@ class RecordingOutputLayoutTest(unittest.TestCase):
             self.assertEqual(Path(metadata["recordingDirectory"]), output.resolve())
 
 
+class VanillaIdentityScanTest(unittest.TestCase):
+    patterns = mod_fleet.vanilla_identity_patterns()
+
+    def hit_lines(self, source: str) -> list[int]:
+        return [finding["line"] for finding in mod_fleet.scan_vanilla_identity(source.splitlines(), self.patterns)]
+
+    def test_autosleep_overworld_gate_is_a_hit(self) -> None:
+        self.assertEqual(
+            self.hit_lines(
+                "// Beds explode in the Nether and the End.\n"
+                "if (level.dimension() != Level.OVERWORLD) return;\n"
+            ),
+            [2],
+        )
+
+    def test_data_driven_code_comments_and_strings_pass(self) -> None:
+        self.assertEqual(
+            self.hit_lines(
+                "if (level.environmentAttributes().getValue(EnvironmentAttributes.BED_RULE, pos).explodes()) return;\n"
+                "ServerLevel end = server.getLevel(Level.END);\n"
+                "boolean hub = level.dimension().equals(ModDimensions.HUB);\n"
+                "// if (level.dimension() != Level.OVERWORLD) return;\n"
+                'String message = "level.dimension() == Level.NETHER";\n'
+            ),
+            [],
+        )
+
+    def test_opt_out_needs_a_reason(self) -> None:
+        self.assertEqual(
+            self.hit_lines(
+                "// vanilla-identity: the mod only floods the vanilla End\n"
+                "if (level.dimension() != Level.END) return;\n"
+                "boolean a = level.dimension() == Level.NETHER; // vanilla-identity: nether-only feature\n"
+                "// vanilla-identity:\n"
+                "if (level.dimension() != Level.OVERWORLD) return;\n"
+            ),
+            [5],
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

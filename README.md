@@ -6,8 +6,8 @@ Shared Gradle plugins, GitHub workflows and client GameTest helpers for my Minec
 
 | Plugin (`io.github.brainage04.…`) | Apply to | Purpose |
 | --- | --- | --- |
-| `multiloader-mod-conventions` | root of a `common`/`fabric` mod, optionally with `neoforge` | **The standard entry point.** Configures the included modules with Architectury Loom and applies every plugin below except `fabric-mod-conventions` and `maven-central-publishing`. |
-| `fabric-mod-conventions` | single-loader Fabric project | Fabric Loom, project identity, standard dependencies and repositories, Java settings, side-aware source layout, access widener, sources JAR, `fabric.mod.json` expansion, license in the JAR. |
+| `multiloader-mod-conventions` | root of a `common`/`fabric` mod, optionally with `neoforge` | **The standard entry point.** Configures the included modules with Architectury Loom and applies every plugin below except `fabric-mod-conventions` and `maven-central-publishing`. Adds the [vanilla dimension identity check](#vanilla-dimension-identity-check) to every module. |
+| `fabric-mod-conventions` | single-loader Fabric project | Fabric Loom, project identity, standard dependencies and repositories, Java settings, side-aware source layout, access widener, sources JAR, `fabric.mod.json` expansion, license in the JAR, the [vanilla dimension identity check](#vanilla-dimension-identity-check). |
 | `client-gametest-recorder` | Fabric project | `recordClientGameTest`: records client GameTests to MP4 in an isolated Xvfb display and audio sink. Adds the runtime helpers to the `gametest` source set. |
 | `production-gametests` | Fabric project | Creates the `gametest` source set and runs GameTests against the packaged mod through Loom's production client and server. |
 | `integration-gametests` | Fabric or NeoForge Loom project with a `gametest` source set | Named GameTest suites that run with extra mods (Maven artifacts or pinned Git commits) loaded, in their own source set and runs. |
@@ -156,6 +156,26 @@ fabricModConventions {
 ```
 
 Every option defaults to `true`. `fabric.mod.json` expansion fails on a missing or blank property.
+
+## Vanilla dimension identity check
+
+`fabric-mod-conventions` and `multiloader-mod-conventions` (in `common`, `fabric` and `neoforge`) register `checkVanillaIdentity` under `check`. It fails when the Java sources of the `main` and `client` source sets compare with a vanilla dimension, and names each `file:line`:
+
+- `Level.OVERWORLD`, `Level.NETHER` or `Level.END` (also through `ServerLevel`/`ClientLevel` or a static import) or a `BuiltinDimensionTypes` key, compared with `==`, `!=`, `equals(…)` or `is(…)`;
+- such a key on the same line as `dimension()`, `dimensionType()` or `dimensionTypeRegistration()`, as in `matches(Level.NETHER, level.dimension())`.
+
+Other uses of the keys, such as `server.getLevel(Level.END)`, and comparisons with a mod's own dimensions pass. GameTest and other source sets are not checked. The patterns are in `gradle-plugin/java-quality-conventions/src/main/resources/…/vanilla-identity-patterns.txt`.
+
+Datapacks and other mods change what a dimension allows, so ask the data the game itself reads: environment attributes (`level.environmentAttributes().getValue(EnvironmentAttributes.BED_RULE, pos)`, `RESPAWN_ANCHOR_WORKS`, `WATER_EVAPORATES`, …), `level.dimensionType()` properties, tags and game rules. On the client, confirm the attribute is synced (`EnvironmentAttribute.isSyncable()`) or decide it server-side: an attribute that is not synced, such as `BED_RULE` in 1.21.11, 26.2 and 26.3, reads its default value on the client.
+
+A mod that really targets one vanilla dimension, or a client mod with no synced rule to read, marks the line or the line above it:
+
+```java
+// vanilla-identity: the mod floods only the vanilla End
+if (level.dimension() != Level.END) return;
+```
+
+The reason after `vanilla-identity:` is required; a marker without one still fails.
 
 ## Workspace dependencies
 
@@ -368,6 +388,9 @@ Self-hosted runners keep their work tree between jobs, so every reusable workflo
 ```shell
 ./scripts/mod_fleet.py audit --github --strict
 ./scripts/mod_fleet.py record [--include <repository>] [--dry-run]
+./scripts/mod_fleet.py vanilla-identity [--output hits.md]
 ```
 
 `record` writes to a timestamped `~/Downloads/minecraft-mod-gametest-recordings-*` directory; `--output <dir> --resume` reruns only the repositories that failed. For a new Minecraft release, pass `--minecraft-version`, `--loader-version`, `--fabric-api-version`, `--java-version` and `--conventions-version` to `audit`, then update the manifest.
+
+`vanilla-identity` lists the lines `checkVanillaIdentity` would flag in every git checkout beside this one, including mods that do not use the conventions plugins.

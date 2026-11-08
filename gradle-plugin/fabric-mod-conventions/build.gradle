@@ -20,4 +20,5 @@ repositories {
 
 dependencies {
 	implementation "net.fabricmc:fabric-loom:${rootProject.loom_version}"
+	implementation project(':gradle-plugin:java-quality-conventions')
 }

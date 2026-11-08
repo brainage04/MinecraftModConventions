@@ -7,6 +7,7 @@ import io.github.brainage04.minecraftmodconventions.gradle.production.ClientGame
 import io.github.brainage04.minecraftmodconventions.gradle.production.ClientLaunchEnvironment;
 import io.github.brainage04.minecraftmodconventions.gradle.production.ProductionGameTestExtension;
 import io.github.brainage04.minecraftmodconventions.gradle.production.ProductionGameTestsPlugin;
+import io.github.brainage04.minecraftmodconventions.gradle.quality.VanillaIdentityCheck;
 import io.github.brainage04.minecraftmodconventions.gradle.recorder.ClientGameTestRecorderExtension;
 import io.github.brainage04.minecraftmodconventions.gradle.recorder.RecordClientGameTestTask;
 import io.github.brainage04.minecraftmodconventions.gradle.workspace.WorkspaceDependenciesExtension;
@@ -94,8 +95,11 @@ public final class MultiLoaderModConventionsPlugin implements Plugin<Project> {
         root.getPluginManager().apply(JAVA_QUALITY_PLUGIN);
         configureCommon(root, common);
         configureFabric(root, common, fabric, extension);
+        VanillaIdentityCheck.register(common);
+        VanillaIdentityCheck.register(fabric);
         if (neoForge != null) {
             configureNeoForge(root, common, fabric, neoForge, extension);
+            VanillaIdentityCheck.register(neoForge);
         }
         configureRootTasks(root, fabric, neoForge, extension);
     }
