@@ -11,12 +11,15 @@ import org.gradle.api.tasks.SourceSet;
 import org.gradle.api.tasks.TaskProvider;
 import org.gradle.api.tasks.bundling.Jar;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 
 /** Configures opt-in Fabric Loom production GameTest tasks. */
 public final class ProductionGameTestsPlugin implements Plugin<Project> {
     public static final String PLUGIN_ID = "io.github.brainage04.production-gametests";
+    /** The production client GameTests against a plain vanilla server; see {@link VanillaServerClientGameTestRunTask}. */
+    public static final String VANILLA_SERVER_CLIENT_GAMETEST_TASK = "runVanillaServerClientGameTest";
     private static final String RUNTIME_LIBRARIES_CONFIGURATION = "productionGameTestRuntimeLibraries";
     private static final String CLIENT_GAMETEST_ENABLED_PROPERTY = "minecraftmodconventions.clientGameTest";
     /**
@@ -84,13 +87,15 @@ public final class ProductionGameTestsPlugin implements Plugin<Project> {
             ));
         }
         if (extension.getIncludeClient().get()) {
-            productionTasks.add(registerClientProductionGameTest(
+            TaskProvider<? extends Task> clientRun = registerClientProductionGameTest(
                     project,
                     extension,
                     gameTestJar,
                     prepareRuns,
                     runtimeLibraries
-            ));
+            );
+            productionTasks.add(clientRun);
+            registerVanillaServerClientGameTest(project, extension, gameTestJar, prepareRuns, runtimeLibraries, clientRun);
         }
 
         if (isDisabled(project, AGGREGATE_TASK_PROPERTY)) {
@@ -116,25 +121,74 @@ public final class ProductionGameTestsPlugin implements Plugin<Project> {
                 task -> {
                     task.setGroup("verification");
                     task.setDescription("Runs Fabric client GameTests in Loom's production client environment.");
-                    task.getRunDir().convention(productionExtension.getClientRunDir());
-                    task.dependsOn(gameTestJar);
-                    task.dependsOn(prepareRuns);
-                    task.getMods().from(gameTestJar.flatMap(Jar::getArchiveFile));
-                    task.getRuntimeLibraries().from(runtimeLibraries);
-                    task.includeRuntimeLibrariesInClasspath();
-                    task.getUseXVFB().convention(productionExtension.getClientUseXvfb());
-                    task.getSilenceAudio().convention(productionExtension.getClientSilenceAudio());
-                    task.getJvmArgs().add("-Dfabric.client.gametest");
-                    if (productionExtension.getDisableClientNetworkSynchronizer().get()) {
-                        task.getJvmArgs().add("-Dfabric.client.gametest.disableNetworkSynchronizer=true");
-                    }
-                    task.getJvmArgs().add(
-                            "-D" + CLIENT_GAMETEST_ENABLED_PROPERTY + "=true"
-                    );
-                    task.getJvmArgs().addAll(productionExtension.getClientJvmArgs());
-                    task.getProgramArgs().addAll(productionExtension.getClientProgramArgs());
+                    configureClientRun(task, productionExtension, gameTestJar, prepareRuns, runtimeLibraries);
                 }
         );
+    }
+
+    private static void configureClientRun(
+            ClientGameTestProductionRunTask task,
+            ProductionGameTestExtension productionExtension,
+            TaskProvider<Jar> gameTestJar,
+            TaskProvider<PrepareProductionGameTestRunsTask> prepareRuns,
+            Configuration runtimeLibraries
+    ) {
+        task.getRunDir().convention(productionExtension.getClientRunDir());
+        task.dependsOn(gameTestJar);
+        task.dependsOn(prepareRuns);
+        task.getMods().from(gameTestJar.flatMap(Jar::getArchiveFile));
+        task.getRuntimeLibraries().from(runtimeLibraries);
+        task.includeRuntimeLibrariesInClasspath();
+        task.getUseXVFB().convention(productionExtension.getClientUseXvfb());
+        task.getSilenceAudio().convention(productionExtension.getClientSilenceAudio());
+        task.getJvmArgs().add("-Dfabric.client.gametest");
+        if (productionExtension.getDisableClientNetworkSynchronizer().get()) {
+            task.getJvmArgs().add("-Dfabric.client.gametest.disableNetworkSynchronizer=true");
+        }
+        task.getJvmArgs().add(
+                "-D" + CLIENT_GAMETEST_ENABLED_PROPERTY + "=true"
+        );
+        task.getJvmArgs().addAll(productionExtension.getClientJvmArgs());
+        task.getProgramArgs().addAll(productionExtension.getClientProgramArgs());
+    }
+
+    /**
+     * The production client GameTests against a plain vanilla server. Not part of {@code runAllProductionGameTests}:
+     * a mod opts in by calling {@code VanillaServerClientGameTests} from a client GameTest and running this task.
+     */
+    private static void registerVanillaServerClientGameTest(
+            Project project,
+            ProductionGameTestExtension productionExtension,
+            TaskProvider<Jar> gameTestJar,
+            TaskProvider<PrepareProductionGameTestRunsTask> prepareRuns,
+            Configuration runtimeLibraries,
+            TaskProvider<? extends Task> clientRun
+    ) {
+        project.getTasks().register(
+                VANILLA_SERVER_CLIENT_GAMETEST_TASK,
+                VanillaServerClientGameTestRunTask.class,
+                task -> {
+                    task.setGroup("verification");
+                    task.setDescription("Runs the Fabric production client GameTests against a plain vanilla server.");
+                    task.mustRunAfter(clientRun);
+                    configureClientRun(task, productionExtension, gameTestJar, prepareRuns, runtimeLibraries);
+                    task.getMinecraftVersion().convention(project.provider(() -> requiredProperty(project, "minecraft_version")));
+                    task.getVersionManifestUrl().convention(VanillaServer.DEFAULT_VERSION_MANIFEST);
+                    task.getServerMaxHeap().convention("1G");
+                    task.getServerStartupTimeoutSeconds().convention(240);
+                    task.getServerJarCache().convention(project.getLayout().dir(project.provider(() -> new File(
+                            project.getGradle().getGradleUserHomeDir(), "caches/minecraftmodconventions/vanilla-server"))));
+                    task.getServerDir().convention(project.getLayout().getBuildDirectory().dir("run/vanillaServer"));
+                }
+        );
+    }
+
+    private static String requiredProperty(Project project, String name) {
+        Object value = project.findProperty(name);
+        if (value == null || value.toString().isBlank()) {
+            throw new GradleException(VANILLA_SERVER_CLIENT_GAMETEST_TASK + " requires project property '" + name + "'.");
+        }
+        return value.toString().strip();
     }
 
     private static TaskProvider<? extends Task> registerServerProductionGameTest(

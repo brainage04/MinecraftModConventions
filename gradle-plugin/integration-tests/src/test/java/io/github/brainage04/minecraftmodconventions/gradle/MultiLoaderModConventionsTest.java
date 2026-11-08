@@ -96,6 +96,25 @@ class MultiLoaderModConventionsTest {
                                  ':fabric:runProductionClientGameTest', ':neoforge:runProductionServerGameTest'].toSet()
                         ['runFabricClient', 'runNeoForgeClient', 'runClientGameTest', 'recordClientGameTest',
                          'runNeoForgeGameTests', 'runAllProductionGameTests'].each { assert tasks.findByName(it) == null }
+                        // The vanilla-server run: the production client against a vanilla server, outside runAllGameTests.
+                        def fabric = project(':fabric')
+                        def vanilla = fabric.tasks.named('runVanillaServerClientGameTest').get()
+                        def client = fabric.tasks.named('runProductionClientGameTest').get()
+                        assert vanilla.class.name.startsWith(
+                                'io.github.brainage04.minecraftmodconventions.gradle.production.VanillaServerClientGameTestRunTask')
+                        assert vanilla.minecraftVersion.get() == '26.3'
+                        assert vanilla.versionManifestUrl.get() == 'https://piston-meta.mojang.com/mc/game/version_manifest_v2.json'
+                        assert vanilla.serverDir.get().asFile == fabric.layout.buildDirectory.dir('run/vanillaServer').get().asFile
+                        assert vanilla.serverJarCache.get().asFile ==
+                                new File(gradle.gradleUserHomeDir, 'caches/minecraftmodconventions/vanilla-server')
+                        assert vanilla.runDir.get().asFile == client.runDir.get().asFile
+                        assert vanilla.mods.files == client.mods.files
+                        assert vanilla.jvmArgs.get().containsAll(['-Dfabric.client.gametest',
+                                '-Dminecraftmodconventions.clientGameTest=true'])
+                        assert vanilla.jvmArgs.get().any { it.startsWith('-Dminecraftmodconventions.clientReadyFile=') }
+                        assert vanilla.mustRunAfter.getDependencies(vanilla)*.path == [':fabric:runProductionClientGameTest']
+                        assert vanilla.taskDependencies.getDependencies(vanilla)*.path.toSet().containsAll(
+                                [':fabric:productionGameTestJar', ':fabric:prepareProductionGameTestRuns'])
                     }
                 }
                 """);

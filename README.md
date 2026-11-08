@@ -49,6 +49,7 @@ NeoForge publication jobs while retaining Fabric and GitHub publication.
   | `:neoforge:runProductionServerGameTest` | NeoForge server GameTests against the packaged mod, on a NeoForge server installed with the official installer |
   | `:fabric:runProductionClientGameTest` | Fabric client GameTests against the packaged mod, in Xvfb |
   | `:fabric:recordClientGameTest` | the production client GameTests, recorded to MP4 |
+  | `:fabric:runVanillaServerClientGameTest` | the production client GameTests against a plain vanilla server ([vanilla-server checks](#vanilla-server-checks)); not part of `runAllGameTests` |
   | `runAllGameTests` | every GameTest run, one at a time: `:fabric:runGameTest` and `:neoforge:runGameTest`, then each [integration GameTest suite](#integration-gametests)'s development runs, then the Fabric production server and client runs and `:neoforge:runProductionServerGameTest`, then each suite's production runs |
   | `collectReleaseArtifacts` | copies both loader JARs to `build/libs` |
 
@@ -259,6 +260,35 @@ ClientGameTestServers.withDedicatedServer(context, "Example GameTest",
 
 The harness starts the server, connects the client, and always disconnects, finishes the recording and stops the server, even when the callback fails. The optional `beforeJoin` callback (also with a `Properties` argument) runs after the server has started and before the client connects; a recording is trimmed to start 0.5 s (`GTR_RECORDING_PRE_PADDING_SECONDS`) before the first world tick, so setup done there (blocks, entities, game rules, teams) never shows. To place the client player, set the world spawn there: `minecraftServer.setRespawnData(LevelData.RespawnData.of(Level.OVERWORLD, pos, yaw, pitch))` plus `GameRules.RESPAWN_RADIUS` set to `0` puts a new player on that block, facing that way. A player that joins in `beforeJoin` (a Carpet fake player) takes a slot, so raise `max-players` in the properties for it. Java helpers live in `io.github.brainage04.minecraftmodconventions`.
 
+### Vanilla-server checks
+
+A client mod that registers items must still let its players join servers without it: a creative player who takes one of its items there sends an item id the server cannot decode, and the server drops them (`Failed to decode packet 'serverbound/minecraft:set_creative_mode_slot'`). `:fabric:runVanillaServerClientGameTest` runs the production client GameTests against a real vanilla server, and `VanillaServerClientGameTests` gives them the checks. To opt in, add a client GameTest and its entrypoint (`fabric/src/gametest`):
+
+```java
+public final class ExampleVanillaServerClientGameTest implements FabricClientGameTest {
+    @Override
+    public void runTest(ClientGameTestContext context) {
+        VanillaServerClientGameTests.checkCreativeItems(context, VanillaServerClientGameTests.CreativeItems.of(
+                "Example Mod",
+                ServerSupport::serverHasExampleMod,      // the mod's own "this server has the mod" signal
+                ServerSupport::isExampleModItem,         // which stacks are the mod's items
+                () -> new ItemStack(ModItems.EXAMPLE))); // one of them, to take in creative
+    }
+}
+```
+
+```json
+"fabric-client-gametest": ["com.example.ExampleClientGameTest", "com.example.ExampleVanillaServerClientGameTest"]
+```
+
+and run `./gradlew :fabric:runVanillaServerClientGameTest` (through `nomad-heavy`, like any client run).
+
+- **The server.** The task downloads Mojang's dedicated server jar for `minecraft_version` once into `<Gradle user home>/caches/minecraftmodconventions/vanilla-server/<version>/`, checked against Mojang's published SHA-1 (later runs use it offline), and starts it with the client's Java and `-Xmx1G` in a fresh `build/run/vanillaServer` (`fabric/build/...` in a multi-loader mod): offline mode, no whitelist, a flat creative world (`force-gamemode`), `127.0.0.1` on a free port. The client gets `127.0.0.1:<port>` in `MINECRAFTMODCONVENTIONS_VANILLA_SERVER`; the server is stopped when the client exits, also when it fails. Its console is `build/run/vanillaServer/console.log`, and the task logs its join, leave and disconnect lines.
+- **The run fails** when the client GameTests fail, and when no client joined the server, since then nothing was checked (a missing entrypoint, say). All of the mod's client GameTests run, as in `runProductionClientGameTest`; the vanilla checks do nothing outside this task, so the ordinary client run and `runAllGameTests` are unchanged.
+- **`checkCreativeItems`** joins the server and asserts: the mod's signal says the server lacks the mod; the player is in creative; no creative tab and no search result offers one of its items; a hotbar saved with one loads it empty; taking one into the hotbar in creative leaves the client connected and the slot empty. `CreativeItems.withExtraChecks(client -> ...)` adds the mod's own checks, which run on the client thread while it is still connected. Last, it sends the held-back `set_creative_mode_slot` packet with the mod's item directly and expects the server to drop the client with that decode error, so a pass also shows the check would catch the kick.
+- **Other checks against a vanilla server:** `VanillaServerClientGameTests.withVanillaServer(context, test -> ...)` joins, runs `test`, checks the client is still connected, and leaves; `assertConnected(context, message)` checks it at any point.
+- The server startup counts against the client's [startup deadline](#automated-client-launches) (300 s), as it happens inside the same task.
+
 ## Production GameTests
 
 ```gradle
@@ -268,7 +298,7 @@ productionGameTests {
 }
 ```
 
-Loom's production runs do not inherit the dev classpath, so extra mods and libraries must be listed here; Fabric API is added automatically. Tasks: `productionGameTestJar`, `runProductionClientGameTest` (Xvfb by default), `runProductionServerGameTest`, and in single-loader builds `runAllProductionGameTests` (multi-loader builds use the root `runAllGameTests`). `includeClient`, `includeServer`, `clientUseXvfb`, `clientSilenceAudio`, `clientJvmArgs` and `serverProgramArgs` override the defaults. Under `recordClientGameTest`, `client-gametest-recorder` turns `clientUseXvfb` and `clientSilenceAudio` off, so the production client uses the recorder's display and audio sink.
+Loom's production runs do not inherit the dev classpath, so extra mods and libraries must be listed here; Fabric API is added automatically. Tasks: `productionGameTestJar`, `runProductionClientGameTest` (Xvfb by default), `runVanillaServerClientGameTest` (the same client against a vanilla server, see [vanilla-server checks](#vanilla-server-checks)), `runProductionServerGameTest`, and in single-loader builds `runAllProductionGameTests` (multi-loader builds use the root `runAllGameTests`; neither includes the vanilla-server run). `includeClient`, `includeServer`, `clientUseXvfb`, `clientSilenceAudio`, `clientJvmArgs` and `serverProgramArgs` override the defaults. Under `recordClientGameTest`, `client-gametest-recorder` turns `clientUseXvfb` and `clientSilenceAudio` off, so the production client uses the recorder's display and audio sink.
 
 ## Publishing
 

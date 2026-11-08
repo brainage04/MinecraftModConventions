@@ -19,6 +19,7 @@ The `run*` and `record*` tasks a multi-loader mod gets from `io.github.brainage0
 | `:fabric:runProductionServerGameTest` | Fabric server GameTests on a production Fabric server, against the release jar |
 | `:fabric:runProductionClientGameTest` | Fabric client GameTests in a production Fabric client under Xvfb; does nothing when `fabricClientGameTests = false` |
 | `:fabric:recordClientGameTest` | The same client GameTests, recorded to video (Xvfb, PipeWire, ffmpeg); skipped when client GameTests are off |
+| `:fabric:runVanillaServerClientGameTest` | The same client GameTests against a plain vanilla server of `minecraft_version` (offline, flat, creative, free local port), started before the client and stopped after it; fails when no client joined it. Not in `runAllGameTests`; does not exist when `fabricClientGameTests = false`. See [vanilla-server checks](../README.md#vanilla-server-checks) |
 | `:neoforge:runProductionServerGameTest` | NeoForge server GameTests on a real NeoForge server installed with the official installer, against the release jar; skipped when `neoForgeGameTests = false` |
 | `:fabric:runProduction<Name>GameTest` / `:neoforge:runProduction<Name>GameTest` | One integration GameTest suite on the same production servers as `runProductionServerGameTest`, with the suite's JAR and its extra mods added |
 

@@ -761,7 +761,9 @@ public final class MultiLoaderModConventionsPlugin implements Plugin<Project> {
             runs.add(fabric.getTasks().named(PRODUCTION_SERVER_GAMETEST_TASK));
             fabricSuites.forEach(suite -> fabricRuns.add(suite.getProductionRunTaskName()));
         }
-        fabric.getTasks().withType(ClientGameTestProductionRunTask.class).getNames()
+        // The vanilla-server run is opt-in and starts a server of its own; it is not one of the ordinary runs.
+        fabric.getTasks().withType(ClientGameTestProductionRunTask.class).getNames().stream()
+                .filter(name -> !name.equals(ProductionGameTestsPlugin.VANILLA_SERVER_CLIENT_GAMETEST_TASK))
                 .forEach(name -> runs.add(fabric.getTasks().named(name)));
         if (neoForge != null) {
             runs.add(neoForge.getTasks().named(PRODUCTION_SERVER_GAMETEST_TASK));
