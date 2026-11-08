@@ -173,7 +173,6 @@ class MultiLoaderModConventionsTest {
                 "verifyNoDevAuth"
         );
 
-        // Only the placeholder and the skipped recorder run: no GameTest JAR, run preparation or client launch.
         assertEquals(
                 Set.of(":fabric:runProductionClientGameTest", ":fabric:recordClientGameTest"),
                 result.getTasks().stream()
@@ -256,7 +255,6 @@ class MultiLoaderModConventionsTest {
         assertTrue(output.contains("fixturemod:fails: deliberately broken"), output);
         assertTrue(output.contains("NeoForge production server GameTests failed with exit code 1"), output);
 
-        // The server loaded the release JAR and the GameTest JAR as one mod and ran both of its tests.
         String report = Files.readString(projectDir.resolve(
                 "neoforge/build/test-results/runProductionServerGameTest/TEST-gametest.xml"));
         assertTrue(report.matches("(?s).*name=\"fixturemod:passes\" time=\"[0-9.]+\"/>.*"), report);
@@ -354,7 +352,6 @@ class MultiLoaderModConventionsTest {
         assertEquals(TaskOutcome.SKIPPED, result.task(":neoforge:installProductionServer").getOutcome());
         assertEquals(TaskOutcome.SKIPPED, result.task(":neoforge:runProductionServerGameTest").getOutcome());
         assertFalse(Files.exists(projectDir.resolve("neoforge/build/minecraftmodconventions/neoforge-server")));
-        // No Fabric server GameTests for a client mod; the NeoForge runs stay in the plan and are skipped.
         assertEquals(
                 List.of(":neoforge:runGameTest", ":fabric:runProductionClientGameTest",
                         ":neoforge:runProductionServerGameTest"),
@@ -537,7 +534,6 @@ class MultiLoaderModConventionsTest {
         }
     }
 
-    /** A NeoForge mod whose GameTest source set registers one passing and one failing test. */
     private void writeNeoForgeMod() throws IOException {
         write("neoforge/src/main/resources/META-INF/neoforge.mods.toml", """
                 modLoader = "javafml"

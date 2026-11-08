@@ -21,7 +21,6 @@ import java.nio.file.StandardCopyOption;
  * The file is the source of truth: changes made in the development client are overwritten on the next launch.
  */
 final class DevClientOptions {
-    /** Gradle property naming the options file; set it in {@code ~/.gradle/gradle.properties} to opt in. */
     static final String PROPERTY = "minecraftmodconventions.devClientOptions";
     private static final String RUN_CLIENT_TASK = "runClient";
     private static final String CLIENT_RUN = "client";

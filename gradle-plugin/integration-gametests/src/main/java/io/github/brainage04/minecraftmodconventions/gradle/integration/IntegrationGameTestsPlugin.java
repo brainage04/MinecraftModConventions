@@ -36,7 +36,6 @@ public final class IntegrationGameTestsPlugin implements Plugin<Project> {
     private static final String GAMETEST_RUN = "gameTest";
     private static final String FABRIC_FILTER_PROPERTY = "fabric-api.gametest.filter";
     private static final String FABRIC_PRODUCTION_SERVER_TASK = "runProductionServerGameTest";
-    /** production-gametests' single-loader aggregate; multi-loader builds use the root runAllGameTests instead. */
     private static final String PRODUCTION_AGGREGATE_TASK = "runAllProductionGameTests";
 
     @Override
@@ -180,10 +179,6 @@ public final class IntegrationGameTestsPlugin implements Plugin<Project> {
         }
     }
 
-    /**
-     * The JARs of {@code gitMod} for this loader, built once per build by a root-project task shared by every
-     * project and suite that uses the same commit. The checkout is kept in the root project's {@code .gradle}.
-     */
     private static Provider<?> gitModJar(Project project, GitMod gitMod) {
         Project root = project.getRootProject();
         String taskName = "buildGitMod" + capitalized(gitMod.name()) + gitMod.shortCommit();

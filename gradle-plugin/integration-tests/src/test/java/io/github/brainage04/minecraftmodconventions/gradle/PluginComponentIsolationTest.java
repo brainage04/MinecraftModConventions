@@ -348,7 +348,6 @@ class PluginComponentIsolationTest {
         Files.createDirectories(devOptions.getParent());
         Files.writeString(devOptions, "guiScale:4\nrenderDistance:32\n");
 
-        // A run that brings its own display but no recorder sink, as some CI jobs do, stays on the test profile.
         var result = GradleRunner.create()
                 .withProjectDir(projectDir.toFile())
                 .withPluginClasspath()

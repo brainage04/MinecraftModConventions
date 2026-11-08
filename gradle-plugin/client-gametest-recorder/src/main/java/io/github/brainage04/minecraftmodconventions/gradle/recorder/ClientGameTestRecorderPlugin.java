@@ -75,10 +75,6 @@ public final class ClientGameTestRecorderPlugin implements Plugin<Project> {
                 .configureEach(task -> configureRunClientGameTest(project, extension, prepareTask, task)));
     }
 
-    /**
-     * True when the recorder runs loom's own {@code runClientGameTest} task rather than another run task such as
-     * {@code runProductionClientGameTest}; only then is that run pointed at the recorder directory.
-     */
     static boolean drivesLoomClientGameTestRun(Project project) {
         String configuredRun = project.getTasks()
                 .named("recordClientGameTest", RecordClientGameTestTask.class)
@@ -95,11 +91,6 @@ public final class ClientGameTestRecorderPlugin implements Plugin<Project> {
         return project.relativePath(runDirectory);
     }
 
-    /**
-     * With production-gametests, the runtime helper joins both client runs, so the production client gets the same
-     * options as the development one and both launches get a startup deadline. Under the recorder, the production
-     * client uses the recorder's display and audio sink instead of its own Xvfb and OpenAL's null driver.
-     */
     private static void configureProductionGameTests(Project project, ClientGameTestRecorderExtension extension) {
         addRuntimeHelperDependencies(project);
         Provider<Boolean> recorderManaged = project.getProviders().environmentVariable("GTR_RECORDING_MANAGED_XVFB")

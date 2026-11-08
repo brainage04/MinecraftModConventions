@@ -114,7 +114,6 @@ public final class ClientGameTestOptions {
         options.put("maxFps", "30");
         options.put("enableVsync", "false");
         options.put("inactivityFpsLimit", "\"minimized\"");
-        // Graphics.
         options.put("graphicsPreset", showcase ? "\"fancy\"" : "\"fast\"");
         options.put("ao", Boolean.toString(showcase));
         options.put("cutoutLeaves", Boolean.toString(showcase));
@@ -132,12 +131,10 @@ public final class ClientGameTestOptions {
         options.put("menuBackgroundBlurriness", "0");
         options.put("prioritizeChunkUpdates", "0");
         options.put("weatherRadius", "5");
-        // Sound: silent for tests; for recordings everything but music, on the recorder's private sink.
         options.put("soundDevice", "\"" + (showcase ? soundDevice : "") + "\"");
         for (String category : SOUND_CATEGORIES) {
             options.put("soundCategory_" + category, showcase ? showcaseVolume(category) : "0.0");
         }
-        // Screens, toasts and prompts a person would otherwise have to dismiss.
         options.put("narrator", "0");
         options.put("narratorHotkey", "false");
         options.put("tutorialStep", "none");
@@ -150,7 +147,6 @@ public final class ClientGameTestOptions {
         options.put("hideSplashTexts", "true");
         options.put("showAutosaveIndicator", "false");
         options.put("pauseOnLostFocus", "false");
-        // Input.
         options.put("autoJump", "false");
         options.put("toggleSprint", "false");
         options.put("toggleCrouch", "false");

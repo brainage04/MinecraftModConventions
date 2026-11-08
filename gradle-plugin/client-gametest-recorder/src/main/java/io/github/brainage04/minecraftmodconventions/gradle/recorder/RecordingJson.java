@@ -5,7 +5,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
-/** Minimal deterministic JSON writer for recording metadata. */
 final class RecordingJson {
     private RecordingJson() {
     }
