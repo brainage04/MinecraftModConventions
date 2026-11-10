@@ -187,7 +187,7 @@ class FabricModConventionsPluginTest {
     }
 
     @Test
-    void vanillaIdentityCheckFailsTheAutoSleepGateAndPassesDataDrivenOrOptedOutCode() throws IOException {
+    void vanillaIdentityCheckWarnsAboutTheAutoSleepGateAndPassesDataDrivenOrOptedOutCode() throws IOException {
         writeFixture("25", false, """
                 plugins {
                     id '%s'
@@ -212,6 +212,7 @@ class FabricModConventionsPluginTest {
                 """);
         Path sleeper = projectDir.resolve("src/client/java/example/AutoSleeper.java");
         Files.createDirectories(sleeper.getParent());
+        Path report = projectDir.resolve("build/reports/vanilla-identity.txt");
         String gate = """
                 package example;
                 import net.minecraft.world.level.Level;
@@ -221,34 +222,44 @@ class FabricModConventionsPluginTest {
                     }
                 }
                 """;
+        String hit = "src/client/java/example/AutoSleeper.java:6: if (level.dimension() != Level.OVERWORLD) return;";
 
         Files.writeString(sleeper, gate.formatted("""
                         // Beds explode in the Nether and the End.
                         if (level.dimension() != Level.OVERWORLD) return;"""));
-        BuildResult failed = GradleRunner.create()
-                .withProjectDir(projectDir.toFile())
-                .withPluginClasspath()
-                .withArguments("checkVanillaIdentity")
-                .buildAndFail();
-        String output = failed.getOutput();
-        assertEquals(TaskOutcome.FAILED, failed.task(":checkVanillaIdentity").getOutcome(), output);
-        assertTrue(output.contains(
-                "src/client/java/example/AutoSleeper.java:6: if (level.dimension() != Level.OVERWORLD) return;"), output);
+        BuildResult warned = runGradle("checkVanillaIdentity", "verifyVanillaIdentityWiring");
+        String output = warned.getOutput();
+        assertEquals(TaskOutcome.SUCCESS, warned.task(":checkVanillaIdentity").getOutcome(), output);
+        assertEquals(TaskOutcome.SUCCESS, warned.task(":verifyVanillaIdentityWiring").getOutcome(), output);
+        assertTrue(output.contains(hit), output);
         assertTrue(output.contains("EnvironmentAttributes.BED_RULE"), output);
         assertTrue(output.contains("EnvironmentAttribute.isSyncable()"), output);
+        assertTrue(output.contains("place"), output);
         assertFalse(output.contains("NetherBedGameTest"), output);
+        assertTrue(Files.readString(report).contains(hit), Files.readString(report));
 
         Files.writeString(sleeper, gate.formatted("""
                         if (level.environmentAttributes().getValue(EnvironmentAttributes.BED_RULE, pos).explodes()) return;"""));
-        BuildResult dataDriven = runGradle("checkVanillaIdentity", "verifyVanillaIdentityWiring");
+        BuildResult dataDriven = runGradle("checkVanillaIdentity");
         assertEquals(TaskOutcome.SUCCESS, dataDriven.task(":checkVanillaIdentity").getOutcome(), dataDriven.getOutput());
-        assertEquals(TaskOutcome.SUCCESS, dataDriven.task(":verifyVanillaIdentityWiring").getOutcome());
+        assertFalse(dataDriven.getOutput().contains("AutoSleeper.java"), dataDriven.getOutput());
+        assertEquals("", Files.readString(report));
 
         Files.writeString(sleeper, gate.formatted("""
                         // vanilla-identity: BED_RULE is not synced to the client, so a client-only mod falls back to vanilla
                         if (level.dimension() != Level.OVERWORLD) return;"""));
         BuildResult optedOut = runGradle("checkVanillaIdentity");
         assertEquals(TaskOutcome.SUCCESS, optedOut.task(":checkVanillaIdentity").getOutcome(), optedOut.getOutput());
+        assertFalse(optedOut.getOutput().contains("AutoSleeper.java"), optedOut.getOutput());
+
+        Files.writeString(sleeper, gate.formatted("""
+                        // vanilla-identity:
+                        if (level.dimension() != Level.OVERWORLD) return;"""));
+        BuildResult reasonless = runGradle("checkVanillaIdentity");
+        String reasonlessOutput = reasonless.getOutput();
+        assertEquals(TaskOutcome.SUCCESS, reasonless.task(":checkVanillaIdentity").getOutcome(), reasonlessOutput);
+        assertTrue(reasonlessOutput.contains("needs a reason"), reasonlessOutput);
+        assertTrue(reasonlessOutput.contains(hit), reasonlessOutput);
     }
 
     private BuildResult runGradle(String... arguments) {

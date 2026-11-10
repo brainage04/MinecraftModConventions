@@ -27,7 +27,7 @@ public final class VanillaIdentityCheck {
                     CheckVanillaIdentityTask.class,
                     task -> {
                         task.setGroup("verification");
-                        task.setDescription("Fails on hardcoded vanilla dimension identities in the mod's main and client sources.");
+                        task.setDescription("Reports hardcoded vanilla dimension identities in the mod's main and client sources.");
                         task.getRootDirectory().set(project.getRootDir().getAbsolutePath());
                         task.getReport().set(project.getLayout().getBuildDirectory().file("reports/vanilla-identity.txt"));
                     }
