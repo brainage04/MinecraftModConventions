@@ -605,6 +605,9 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
         if (!ClientGpuCapture.hasGraphicsDevice()) {
             return fallBack(requested, "this host has no /dev/dri render node and no NVIDIA device node.");
         }
+        // The virtual screen has no alpha channel, and the faker cannot complete the client's
+        // framebuffers without one: every draw is rejected and the captured screen stays black.
+        environment.put("VGL_FORCEALPHA", "1");
         getLogger().lifecycle("Rendering the client on the graphics card through VirtualGL (device {}, {}).", device, launcher);
         getLogger().lifecycle("VirtualGL client environment: {}", environment);
         return new GpuResolution(new ClientGpuCapture(requested, device, launcher, environment), null);
