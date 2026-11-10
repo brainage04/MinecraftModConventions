@@ -168,7 +168,7 @@ Other uses of the keys, such as `server.getLevel(Level.END)`, and comparisons wi
 
 A comparison is right when the feature is about that dimension by name, and wrong when it stands in for a property the game reads from data. Ask: would a datapack dimension, or another mod's dimension, that behaves like this one need the same treatment?
 
-- **Yes, a property:** sleeping, water evaporating, fog, terrain. Ask the data the game itself reads: environment attributes (`level.environmentAttributes().getValue(EnvironmentAttributes.BED_RULE, pos)`, `RESPAWN_ANCHOR_WORKS`, `WATER_EVAPORATES`, …), `level.dimensionType()` properties, tags and game rules. On the client, confirm the attribute is synced (`EnvironmentAttribute.isSyncable()`) or decide it server-side: an attribute that is not synced, such as `BED_RULE` in 1.21.11, 26.2 and 26.3, reads its default value on the client.
+- **Yes, a property:** sleeping, water evaporating, fog, terrain. Ask the data the game itself reads: environment attributes (`level.environmentAttributes().getValue(EnvironmentAttributes.BED_RULE, pos)`, `RESPAWN_ANCHOR_WORKS`, `WATER_EVAPORATES`, …), `level.dimensionType()` properties, tags and game rules. A bed asks the rule its own block gives (`AbstractBedBlock#getBedRule(level, pos)`), so a straw bed reads `STRAW_BED_RULE`. On the client, confirm the attribute is synced (`EnvironmentAttribute.isSyncable()`) or decide it server-side: `BED_RULE` and `STRAW_BED_RULE` are not synced (`EnvironmentAttributes.java:124-129`) and read their defaults on the client.
 - **No, a place:** a Nether kill score, a dungeon theme per vanilla dimension, a command that lists the players in the Nether. The identity check is right.
 
 Two examples from the fleet:
@@ -180,7 +180,7 @@ if (theme.dimension.equals(Level.NETHER)) { ... }
 
 // Property, and wrong: baritone refuses a water-bucket fall in the Nether. Vanilla asks
 // level.environmentAttributes().getValue(EnvironmentAttributes.WATER_EVAPORATES, pos)
-// (BucketItem.java:123 in 26.2, :124 in 1.21.11).
+// (BucketItem.java:122 in 26.3, :123 in 26.2, :124 in 1.21.11).
 if (dimension() == Level.NETHER) return;
 ```
 

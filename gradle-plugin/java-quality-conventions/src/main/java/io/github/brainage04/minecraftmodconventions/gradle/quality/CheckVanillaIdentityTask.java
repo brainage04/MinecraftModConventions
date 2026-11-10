@@ -35,13 +35,14 @@ public abstract class CheckVanillaIdentityTask extends DefaultTask {
             another mod's dimension, that behaves like this one need the same treatment? If yes, prepare the code to \
             ask the game:
               - environment attributes: level.environmentAttributes().getValue(EnvironmentAttributes.BED_RULE, pos), \
-            RESPAWN_ANCHOR_WORKS, WATER_EVAPORATES, ...
+            RESPAWN_ANCHOR_WORKS, WATER_EVAPORATES, ...; a bed asks the rule its own block gives \
+            (AbstractBedBlock#getBedRule(level, pos)), so a straw bed reads STRAW_BED_RULE instead
               - level.dimensionType() properties, such as hasCeiling() and hasSkyLight()
               - tags and game rules
             A Nether kill score or a dungeon theme that targets one vanilla dimension is about that place, so the \
             identity check is right there. On the client, confirm the attribute is synced \
-            (EnvironmentAttribute.isSyncable()) or decide it server-side: an attribute that is not synced, such as \
-            BED_RULE, reads its default value on the client.
+            (EnvironmentAttribute.isSyncable()) or decide it server-side: BED_RULE and STRAW_BED_RULE are not synced \
+            (EnvironmentAttributes.java:124-129) and read their defaults on the client.
             `// vanilla-identity: <reason>` silences this warning for a line or the line above it; it is optional.""";
 
     @InputFiles

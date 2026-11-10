@@ -199,7 +199,6 @@ class FabricModConventionsPluginTest {
                     }
                 }
                 """.formatted(BASE_PLUGIN_ID));
-        // GameTests may name vanilla dimensions to set a test up; only main and client sources are checked.
         Path gameTest = projectDir.resolve("src/gametest/java/example/NetherBedGameTest.java");
         Files.createDirectories(gameTest.getParent());
         Files.writeString(gameTest, """
