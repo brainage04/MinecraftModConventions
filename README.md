@@ -256,6 +256,7 @@ clientGameTestRecorder {
 - The recording HUD panel sits in the top-right corner, clear of chat in the bottom-left. `GTR_RECORDING_PROFILE=showcase` shows a title card there instead of the diagnostic overlay.
 - `GTR_RECORDING_PRE_PADDING_SECONDS` / `GTR_RECORDING_POST_PADDING_SECONDS`: `0`–`60`, default `0.5`.
 - Each recording writes metadata with tick and frame boundaries, effective padding and any capture gaps. A run fails if game audio is not routed to the recorder's sink or cannot be decoded.
+- `scripts/trim_stages.py LOG VIDEO.mp4 OUT.mp4 META.json` cuts a recording down to its filmed stages. The test prints `STAGE_START <epoch ms> <id>` and `STAGE_END <epoch ms> <id>` around what should be on screen; the script keeps 0.10 s before each start and 0.12 s after each end, joins stages that touch, and drops the join, the dimension change and the off-camera rehearsal between them. `LOG` is the run's log (it also carries the `VIDEO_WINDOW pre=` padding) and `META.json` the recording's metadata.
 - The raw capture's muxer queues up to 4096 encoded packets (over a minute of capture), so a write that waits on a busy disk does not stop the screen grab and leave a frame gap.
 - When the job runs in a cgroup of its own with a memory limit (a job runner's slot, such as a systemd scope), the recording sets that cgroup's `memory.low` to the limit for the run, so the kernel reclaims sibling jobs first instead of evicting ffmpeg's and the game's files, whose reads from a busy disk stall the capture. A cgroup without a limit is left alone.
 
