@@ -592,6 +592,9 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
             return fallBack(requested, "VirtualGL is not installed: no vglrun on the PATH and no "
                     + ClientGpuCapture.LAUNCHER_ENV + ".");
         }
+        if (!(new File(launcher).isAbsolute() && new File(launcher).canExecute())) {
+            return fallBack(requested, "the VirtualGL launcher is not an executable file: " + launcher + ".");
+        }
         CommandResult report = runCommand(List.of(launcher, "-d", device, "sh", "-c",
                         "printf '%s\\n' \"LD_PRELOAD=$LD_PRELOAD\" \"VGL_DISPLAY=$VGL_DISPLAY\" \"LD_LIBRARY_PATH=$LD_LIBRARY_PATH\""),
                 Map.of("DISPLAY", display), true);
