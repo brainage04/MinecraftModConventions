@@ -1,0 +1,34 @@
+# Patterns of the hardcoded world height check, read by WorldHeightScanner and by
+# scripts/mod_fleet.py. Keep every regex inside the syntax Java and Python share.
+#
+# `name = regex` defines a fragment that later lines use as {name}.
+# `hit = regex` is searched in each line of Java code, after comments are removed and the
+# contents of string and character literals are blanked.
+#
+# The numbers are the build limits of the vanilla overworld: -64, 319 and 320 in 1.18 and later,
+# and 0 and 256 in 1.17 and earlier. 0 and 256 are only a hit next to a name that says what it
+# holds, because 0 is every other number too; -64, 319 and 320 are also a hit next to a plain y.
+# level.getMinY(), level.getMaxY() and level.getHeight() answer all of these.
+
+y = (?:\b[yY]\b|\b(?:blockY|posY|yPos|sectionY|chunkY|yLevel|yMin|yMax|minY|maxY|bottomY|topY)\b)
+ycall = \b(?:getY|getMinY|getMaxY|getHeight|getMinBuildHeight|getMaxBuildHeight)\s*\(\s*\)
+# A name that holds a build limit. A bare `height` is often a GUI or image dimension, so it is not one.
+heightName = \b(?:minY|maxY|minBuildHeight|maxBuildHeight|worldHeight|buildHeight|heightLimit|yMin|yMax|bottomY|topY|MIN_Y|MAX_Y|MIN_BUILD_HEIGHT|MAX_BUILD_HEIGHT|WORLD_HEIGHT)\b
+weakY = (?:{y}|{ycall})
+modern = (?<![\w.])(?:-64|319|320)(?![\w.])
+number = (?<![\w.])(?:-64|319|320|0|256)(?![\w.])
+compare = (?:<=?|>=?|==|!=)
+
+# Compared with a height, either way round.
+hit = {heightName}\s*{compare}\s*{number}
+hit = {number}\s*{compare}\s*{heightName}
+hit = {weakY}\s*{compare}\s*{modern}
+hit = {modern}\s*{compare}\s*{weakY}
+# Assigned to a height name.
+hit = {heightName}\s*=\s*{number}
+# The y argument of a new BlockPos.
+hit = \bnew BlockPos\s*\(\s*[^,()]+,\s*{modern}\s*,
+# Clamped between build limits: Math.min(320, y), Math.max(y, -64), Mth.clamp(y, -64, 320).
+hit = \b(?:Math\.)?(?:min|max)\s*\(\s*{modern}\s*,\s*{weakY}
+hit = \b(?:Math\.)?(?:min|max)\s*\(\s*{weakY}\s*,\s*{modern}
+hit = \b(?:Mth\.)?clamp\s*\(\s*{weakY}\s*,\s*{modern}

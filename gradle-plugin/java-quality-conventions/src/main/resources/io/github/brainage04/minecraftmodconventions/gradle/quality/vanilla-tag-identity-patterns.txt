@@ -1,0 +1,34 @@
+# Patterns of the vanilla tag identity check, read by VanillaTagIdentityScanner and by
+# scripts/mod_fleet.py. Keep every regex inside the syntax Java and Python share.
+#
+# `name = regex` defines a fragment that later lines use as {name}.
+# `hit = regex` is searched in each line of Java code, after comments are removed and the
+# contents of string and character literals are blanked.
+#
+# Every `hit` pattern carries the named group `identity`, the registry constant the line
+# compares with, such as Blocks.RED_BED. A hit is only reported when a vanilla tag names that
+# identity, so a comparison with a block or item that no datapack can extend passes.
+#
+# A switch case label cannot be a registry constant: Java allows only constant expressions of a
+# primitive type, String or an enum there, and Blocks.RED_BED is an object, so that shape does
+# not occur in code that compiles. Type checks such as `instanceof BedBlock` are not covered
+# either: the tag data names block ids, and one class backs many ids.
+
+constant = (?:Blocks|Items|Biomes)\.[A-Z][A-Z0-9_]*
+identity = (?<identity>{constant})
+# The identity may be fully qualified, as in net.minecraft.world.level.block.Blocks.RED_BED.
+# The unnamed copy is for patterns that name the group only once.
+qualified = (?:[a-z]\w*\.)*{identity}
+qualifiedConstant = (?:[a-z]\w*\.)*{constant}
+
+# == and !=, either way round.
+hit = {qualified}\s*(?:==|!=)
+hit = (?:==|!=)\s*{qualified}
+# equals(...) and Holder.is(...), either way round, and as an argument of Objects.equals.
+hit = {qualified}\s*\.\s*(?:equals|is)\s*\(
+hit = \.\s*(?:equals|is)\s*\(\s*{qualified}
+hit = \bObjects\.equals\s*\([^;]*{qualified}
+# A membership set or list whose direct arguments are identities: Set.of(Blocks.RED_BED, Blocks.BLACK_BED).
+# A list built from them, such as List.of(new ItemStack(Items.ARROW)), gives or displays items, not a comparison.
+ofArguments = \(\s*(?:{qualifiedConstant}\s*,\s*)*{identity}\s*[,)]
+hit = \b(?:Set|List|Stream)\.of{ofArguments}

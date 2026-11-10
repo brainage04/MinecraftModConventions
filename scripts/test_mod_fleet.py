@@ -128,5 +128,111 @@ class VanillaIdentityScanTest(unittest.TestCase):
         )
 
 
+class VanillaTagScanTest(unittest.TestCase):
+    patterns = mod_fleet.vanilla_tag_patterns()
+
+    def setUp(self) -> None:
+        self.temporary = TemporaryDirectory()
+        tags = Path(self.temporary.name) / "tags"
+        for name, values in {
+            "block/beds.json": ["minecraft:red_bed", "minecraft:black_bed"],
+            "block/oak_logs.json": ["minecraft:oak_log"],
+            "block/logs.json": ["#minecraft:oak_logs"],
+            "block/mineable/pickaxe.json": ["minecraft:ice"],
+            "block/beacon_base_blocks.json": ["minecraft:red_bed"],
+            "item/swords.json": ["minecraft:diamond_sword"],
+            "worldgen/biome/is_forest.json": ["minecraft:forest"],
+        }.items():
+            path = tags / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps({"values": values}), encoding="utf-8")
+        self.index = mod_fleet.vanilla_tag_index(tags)
+
+    def tearDown(self) -> None:
+        self.temporary.cleanup()
+
+    def scan(self, source: str) -> list[dict[str, object]]:
+        return mod_fleet.scan_vanilla_tags(source.splitlines(), self.patterns, self.index)
+
+    def test_comparisons_of_tag_listed_identities_are_hits(self) -> None:
+        findings = self.scan(
+            "boolean bed = block == Blocks.RED_BED;\n"
+            "if (stack.is(Items.DIAMOND_SWORD)) return;\n"
+            "Set<Block> logs = Set.of(Blocks.OAK_LOG);\n"
+            "Set<Block> tail = Set.of(Blocks.STONE, Blocks.RED_BED);\n"
+            "Set<Block> head = Set.of(Blocks.RED_BED, Blocks.STONE);\n"
+            "boolean forest = key == Biomes.FOREST;\n"
+            "boolean qualified = block == net.minecraft.world.level.block.Blocks.RED_BED;\n"
+        )
+        self.assertEqual([finding["line"] for finding in findings], [1, 2, 3, 4, 5, 6, 7])
+        self.assertEqual(findings[0]["constants"], ["block tag #minecraft:beds"])
+        self.assertEqual(findings[1]["constants"], ["item tag #minecraft:swords"])
+        self.assertEqual(findings[2]["constants"], ["block tag #minecraft:logs", "block tag #minecraft:oak_logs"])
+        self.assertEqual(findings[3]["constants"], ["block tag #minecraft:beds"])
+        self.assertEqual(findings[4]["constants"], ["block tag #minecraft:beds"])
+        self.assertEqual(findings[5]["constants"], ["biome tag #minecraft:is_forest"])
+        self.assertEqual(findings[6]["constants"], ["block tag #minecraft:beds"])
+
+    def test_placing_untagged_identities_and_comments_pass(self) -> None:
+        self.assertEqual(
+            self.scan(
+                "level.setBlock(pos, Blocks.RED_BED.defaultBlockState(), 3);\n"
+                "if (block == Blocks.ICE) return;\n"
+                "if (block == ModBlocks.BED) return;\n"
+                "Stream.of(new ItemStack(Items.ARROW, 64)).forEach(menu::add);\n"
+                "// block == Blocks.RED_BED\n"
+                'String message = "block == Blocks.RED_BED";\n'
+            ),
+            [],
+        )
+
+    def test_opt_out_needs_a_reason(self) -> None:
+        findings = self.scan(
+            "// vanilla-tag: the mod replaces the bed block only\n"
+            "if (block == Blocks.RED_BED) return;\n"
+            "// vanilla-tag:\n"
+            "if (block == Blocks.BLACK_BED) return;\n"
+        )
+        self.assertEqual([finding["line"] for finding in findings], [4])
+        self.assertTrue(findings[0]["missingReason"])
+
+
+class WorldHeightScanTest(unittest.TestCase):
+    patterns = mod_fleet.world_height_patterns()
+
+    def hit_lines(self, source: str) -> list[int]:
+        return [
+            finding["line"]
+            for finding in mod_fleet.scan_patterns(
+                source.splitlines(), self.patterns, mod_fleet.WORLD_HEIGHT_OPT_OUT
+            )
+        ]
+
+    def test_overworld_limits_in_height_code_are_hits(self) -> None:
+        self.assertEqual(
+            self.hit_lines(
+                "if (y < -64) return;\n"
+                "int maxY = 320;\n"
+                "BlockPos top = new BlockPos(x, 320, z);\n"
+                "int worldHeight = 256;\n"
+                "if (sprite.getY() == 0) return;\n"
+                "int width = 256;\n"
+                "int height = 256;\n"
+            ),
+            [1, 2, 3, 4],
+        )
+
+    def test_opt_out_needs_a_reason(self) -> None:
+        self.assertEqual(
+            self.hit_lines(
+                "if (y < -64) return; // world-height: the 1.16.1 overworld only\n"
+                "// world-height: the form is 256 pixels tall\n"
+                "int maxBuildHeight = 256;\n"
+                "// world-height:\n"
+                "if (y > 320) return;\n"
+            ),
+            [5],
+        )
+
 if __name__ == "__main__":
     unittest.main()

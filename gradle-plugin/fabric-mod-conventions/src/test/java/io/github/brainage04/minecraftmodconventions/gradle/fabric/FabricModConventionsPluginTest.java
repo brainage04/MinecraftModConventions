@@ -261,6 +261,94 @@ class FabricModConventionsPluginTest {
         assertTrue(reasonlessOutput.contains(hit), reasonlessOutput);
     }
 
+    @Test
+    void vanillaTagAndWorldHeightChecksWarnAboutComparisonsAndPassPlacedBlocks() throws IOException {
+        writeFixture("25", false, """
+                plugins {
+                    id '%s'
+                }
+
+                tasks.register('verifyQualityChecks') {
+                    doLast {
+                        ['checkVanillaIdentity', 'checkVanillaTagIdentities', 'checkWorldHeight'].each { name ->
+                            assert tasks.check.taskDependencies.getDependencies(tasks.check)*.name.contains(name)
+                        }
+                    }
+                }
+                """.formatted(BASE_PLUGIN_ID));
+        write("src/client/java/example/BedCheck.java", """
+                package example;
+                import net.minecraft.world.item.Item;
+                import net.minecraft.world.item.Items;
+                import net.minecraft.world.level.block.Blocks;
+                final class BedCheck {
+                    static boolean beds(Object block) {
+                        return block == Blocks.RED_BED;
+                    }
+
+                    static boolean swords(Item item) {
+                        return item == Items.DIAMOND_SWORD;
+                    }
+                }
+                """);
+        write("src/client/java/example/PlacedBed.java", """
+                package example;
+                import net.minecraft.core.BlockPos;
+                import net.minecraft.world.level.Level;
+                import net.minecraft.world.level.block.Blocks;
+                final class PlacedBed {
+                    static void place(Level level, BlockPos pos) {
+                        level.setBlock(pos, Blocks.RED_BED.defaultBlockState(), 3);
+                    }
+                }
+                """);
+        write("src/main/java/example/TopOfWorld.java", """
+                package example;
+                import net.minecraft.core.BlockPos;
+                final class TopOfWorld {
+                    static boolean outside(int y, int x, int z) {
+                        if (y < -64) return true;
+                        return new BlockPos(x, 320, z).getY() > 0;
+                    }
+
+                    static int width() {
+                        return 256;
+                    }
+                }
+                """);
+
+        BuildResult result = runGradle("checkVanillaTagIdentities", "checkWorldHeight", "verifyQualityChecks");
+
+        String output = result.getOutput();
+        assertEquals(TaskOutcome.SUCCESS, result.task(":checkVanillaTagIdentities").getOutcome(), output);
+        assertEquals(TaskOutcome.SUCCESS, result.task(":checkWorldHeight").getOutcome(), output);
+        assertEquals(TaskOutcome.SUCCESS, result.task(":verifyQualityChecks").getOutcome(), output);
+        assertTrue(output.contains("src/client/java/example/BedCheck.java:7: return block == Blocks.RED_BED;"), output);
+        assertTrue(output.contains("src/client/java/example/BedCheck.java:11: return item == Items.DIAMOND_SWORD;"),
+                output);
+        assertTrue(output.contains("block tag #minecraft:beds"), output);
+        assertFalse(output.contains("PlacedBed"), output);
+        assertTrue(output.contains("if (y < -64) return true;"), output);
+        assertTrue(output.contains("new BlockPos(x, 320, z)"), output);
+        assertFalse(output.contains("return 256;"), output);
+        String tagsReport = Files.readString(projectDir.resolve("build/reports/vanilla-tag-identities.txt"));
+        assertTrue(tagsReport.contains("BedCheck.java:7"), tagsReport);
+        assertTrue(tagsReport.contains("block tag #minecraft:beds"), tagsReport);
+        assertTrue(tagsReport.contains("BedCheck.java:11"), tagsReport);
+        assertTrue(tagsReport.contains("item tag #minecraft:swords"), tagsReport);
+        assertFalse(tagsReport.contains("PlacedBed"), tagsReport);
+        String heightReport = Files.readString(projectDir.resolve("build/reports/world-height.txt"));
+        assertTrue(heightReport.contains("if (y < -64) return true;"), heightReport);
+        assertTrue(heightReport.contains("new BlockPos(x, 320, z)"), heightReport);
+        assertFalse(heightReport.contains("return 256;"), heightReport);
+    }
+
+    private void write(String path, String content) throws IOException {
+        Path file = projectDir.resolve(path);
+        Files.createDirectories(file.getParent());
+        Files.writeString(file, content);
+    }
+
     private BuildResult runGradle(String... arguments) {
         return GradleRunner.create()
                 .withProjectDir(projectDir.toFile())

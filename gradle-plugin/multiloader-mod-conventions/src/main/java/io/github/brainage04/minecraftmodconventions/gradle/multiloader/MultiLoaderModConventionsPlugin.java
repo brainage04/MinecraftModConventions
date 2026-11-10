@@ -7,6 +7,8 @@ import io.github.brainage04.minecraftmodconventions.gradle.production.ClientGame
 import io.github.brainage04.minecraftmodconventions.gradle.production.ProductionGameTestExtension;
 import io.github.brainage04.minecraftmodconventions.gradle.production.ProductionGameTestsPlugin;
 import io.github.brainage04.minecraftmodconventions.gradle.quality.VanillaIdentityCheck;
+import io.github.brainage04.minecraftmodconventions.gradle.quality.VanillaTagIdentitiesCheck;
+import io.github.brainage04.minecraftmodconventions.gradle.quality.WorldHeightCheck;
 import io.github.brainage04.minecraftmodconventions.gradle.recorder.ClientGameTestRecorderExtension;
 import io.github.brainage04.minecraftmodconventions.gradle.recorder.RecordClientGameTestTask;
 import io.github.brainage04.minecraftmodconventions.gradle.workspace.WorkspaceDependenciesExtension;
@@ -95,9 +97,18 @@ public final class MultiLoaderModConventionsPlugin implements Plugin<Project> {
         configureFabric(root, common, fabric, extension);
         VanillaIdentityCheck.register(common);
         VanillaIdentityCheck.register(fabric);
+        VanillaTagIdentitiesCheck.register(common,
+                common.getExtensions().getByType(LoomGradleExtensionAPI.class).getNamedMinecraftJars());
+        VanillaTagIdentitiesCheck.register(fabric,
+                fabric.getExtensions().getByType(LoomGradleExtensionAPI.class).getNamedMinecraftJars());
+        WorldHeightCheck.register(common);
+        WorldHeightCheck.register(fabric);
         if (neoForge != null) {
             configureNeoForge(root, common, fabric, neoForge, extension);
             VanillaIdentityCheck.register(neoForge);
+            VanillaTagIdentitiesCheck.register(neoForge,
+                neoForge.getExtensions().getByType(LoomGradleExtensionAPI.class).getNamedMinecraftJars());
+            WorldHeightCheck.register(neoForge);
         }
         configureRootTasks(root, fabric, neoForge, extension);
     }
