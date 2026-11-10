@@ -45,3 +45,6 @@ replay_*.log
 .env
 
 .codex
+
+# job runners
+.gametest.lock

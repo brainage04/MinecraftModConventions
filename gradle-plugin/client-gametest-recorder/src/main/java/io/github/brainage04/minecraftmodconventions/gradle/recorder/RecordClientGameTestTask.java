@@ -69,6 +69,7 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
         String fps = env("GTR_RECORDING_FPS", "30");
         int startWaitSeconds = parsePositiveInt(env("GTR_RECORDING_START_WAIT_SECONDS", "90"), "GTR_RECORDING_START_WAIT_SECONDS");
         String xvfbScreen = env("GTR_RECORDING_XVFB_SCREEN", "1920x1080x24");
+        String gpuRequest = env(ClientGpuCapture.DEVICE_ENV, "");
         double prePadding = parsePadding(env("GTR_RECORDING_PRE_PADDING_SECONDS", "0.5"));
         double postPadding = parsePadding(env("GTR_RECORDING_POST_PADDING_SECONDS", "0.5"));
         int frameRate = parsePositiveInt(fps, "GTR_RECORDING_FPS");
@@ -112,6 +113,10 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
         AtomicBoolean soundFailed = new AtomicBoolean();
         Map<String, Object> boundaryEvidence = new LinkedHashMap<>();
         boolean audioRouteVerified = false;
+        ClientGpuCapture gpu = null;
+        String gpuFallback = null;
+        String glRenderer = "";
+        String sdlVideoDriver = "";
         boolean audioDecoded = false;
         boolean audioNonSilent = false;
         String captureFailure = null;
@@ -155,6 +160,10 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
                     .start();
             waitForXDisplay(xvfbDisplay, xvfbProcess);
 
+            GpuResolution gpuResolution = resolveGpuCapture(gpuRequest, xvfbDisplay);
+            gpu = gpuResolution.capture();
+            gpuFallback = gpuResolution.fallbackReason();
+
             audioSinkId = createVirtualAudioSink(audioSinkName);
 
             Files.writeString(alsoftConfig.toPath(), """
@@ -170,6 +179,12 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
             processEnvironment.clear();
             processEnvironment.putAll(System.getenv());
             processEnvironment.put("DISPLAY", xvfbDisplay);
+            // SDL3 finds a Wayland compositor through XDG_RUNTIME_DIR otherwise and opens the window
+            // there: the capture cannot see it, and nothing may appear on someone's screen.
+            processEnvironment.put("SDL_VIDEO_DRIVER", "x11");
+            if (gpu != null) {
+                processEnvironment.putAll(gpu.environment());
+            }
             processEnvironment.put("ALSOFT_CONF", alsoftConfig.getAbsolutePath());
             processEnvironment.put("ALSOFT_DRIVERS", "pulse");
             processEnvironment.put("ALSOFT_PULSE_DEFAULT", audioSinkName);
@@ -224,7 +239,7 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
                 ProcessBuilder ffmpegBuilder = new ProcessBuilder(ffmpegCommand);
                 ffmpegBuilder.directory(projectDir);
                 ffmpegBuilder.redirectErrorStream(true);
-                ffmpegBuilder.environment().putAll(processEnvironment);
+                ffmpegBuilder.environment().putAll(ClientGpuCapture.withoutGpuEnvironment(processEnvironment));
                 ffmpegProcess = ffmpegBuilder.start();
                 streamToStdout(ffmpegProcess, "ffmpeg-output", _ -> {});
                 waitForCaptureFrames(ffmpegProcess, progress);
@@ -356,6 +371,10 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
             getLogger().lifecycle("Client GameTest run directory saved: {}", keptRunDir.getAbsolutePath());
         }
 
+        String clientLog = readClientLog(resolvedRunDir);
+        glRenderer = ClientGpuCapture.rendererIn(clientLog);
+        sdlVideoDriver = ClientGpuCapture.sdlVideoDriverIn(clientLog);
+
         List<String> recordingFailures = recordingFailureMessages(
                 gradleStatus,
                 recordingStartObserved,
@@ -373,6 +392,14 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
         if (!audioRouteVerified || !soundInitialized.get() || soundFailed.get() || !audioDecoded) {
             recordingFailures.add("Game audio must initialize successfully on the isolated sink and decode to PCM samples.");
         }
+        if (!sdlVideoDriver.isEmpty() && !sdlVideoDriver.equals("x11")) {
+            recordingFailures.add("The client used SDL's " + sdlVideoDriver
+                    + " video driver: a recording must render on the recorder's own x11 display.");
+        }
+        if (gpu != null && ClientGpuCapture.isSoftwareRenderer(glRenderer)) {
+            getLogger().error("GTR_RECORDING_GPU={} was accepted but the client renders with {}; the recording is the software path.",
+                    gpuRequest, glRenderer);
+        }
         if (boundaryEvidence.containsKey("clockDriftUs")
                 && Math.abs(Long.parseLong(boundaryEvidence.get("clockDriftUs").toString())) > 10_000L) {
             recordingFailures.add("Wall clock drift exceeded 10ms during capture; boundary timing requires review.");
@@ -386,7 +413,19 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
         metadataModel.put("startedAt", recordingStartedAt);
         metadataModel.put("finishedAt", DateTimeFormatter.ISO_INSTANT.format(Instant.now()));
         metadataModel.put("gradleStatus", gradleStatus);
-        metadataModel.put("captureMode", "xvfb");
+        metadataModel.put("captureMode", gpu == null ? "xvfb" : "xvfb+gpu");
+        metadataModel.put("glRenderer", glRenderer.isEmpty() ? null : glRenderer);
+        metadataModel.put("sdlVideoDriver", sdlVideoDriver.isEmpty() ? null : sdlVideoDriver);
+        metadataModel.put("presentedFps", ClientGpuCapture.presentedFps(boundaryEvidence));
+        metadataModel.put("host", hostName());
+        Map<String, Object> gpuModel = new LinkedHashMap<>();
+        gpuModel.put("requested", gpuRequest.isEmpty() ? null : gpuRequest);
+        gpuModel.put("device", gpu == null ? null : gpu.device());
+        gpuModel.put("launcher", gpu == null ? null : gpu.launcher());
+        gpuModel.put("environment", gpu == null ? Map.of() : gpu.environment());
+        gpuModel.put("fallbackReason", gpuFallback);
+        gpuModel.put("active", gpu != null && !ClientGpuCapture.isSoftwareRenderer(glRenderer));
+        metadataModel.put("gpu", gpuModel);
         metadataModel.put("fps", fps);
         metadataModel.put("xvfbScreen", xvfbScreen);
         metadataModel.put("video", output.getAbsolutePath());
@@ -531,6 +570,72 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
             Files.writeString(cgroup.resolve("memory.low"), previous, StandardCharsets.UTF_8);
         } catch (IOException exception) {
             // The job's cgroup is gone with its last process; there is nothing left to restore.
+        }
+    }
+
+    /**
+     * The GPU path for this run, and the reason the software one is used when it is asked for but
+     * cannot work: a host without a card, or CI, then records exactly as it did before instead of
+     * failing, and the metadata says which path ran.
+     */
+    private GpuResolution resolveGpuCapture(String requested, String display) {
+        String device = ClientGpuCapture.device(requested);
+        if (device == null) {
+            return new GpuResolution(null, null);
+        }
+        String launcher = env(ClientGpuCapture.LAUNCHER_ENV, "");
+        if (launcher.isEmpty()) {
+            CommandResult found = runCommand(List.of("sh", "-c", "command -v vglrun"), Map.of(), true);
+            launcher = found.status() == 0 ? found.output().strip() : "";
+        }
+        if (launcher.isEmpty()) {
+            return fallBack(requested, "VirtualGL is not installed: no vglrun on the PATH and no "
+                    + ClientGpuCapture.LAUNCHER_ENV + ".");
+        }
+        CommandResult report = runCommand(List.of(launcher, "-d", device, "sh", "-c",
+                        "printf '%s\\n' \"LD_PRELOAD=$LD_PRELOAD\" \"VGL_DISPLAY=$VGL_DISPLAY\" \"LD_LIBRARY_PATH=$LD_LIBRARY_PATH\""),
+                Map.of("DISPLAY", display), true);
+        Map<String, String> environment = ClientGpuCapture.environmentOf(report.output());
+        if (report.status() != 0 || !environment.containsKey("LD_PRELOAD")) {
+            return fallBack(requested, "VirtualGL could not start for device " + device + ": " + report.output().strip());
+        }
+        if (!ClientGpuCapture.hasGraphicsDevice()) {
+            return fallBack(requested, "this host has no /dev/dri render node and no NVIDIA device node.");
+        }
+        getLogger().lifecycle("Rendering the client on the graphics card through VirtualGL (device {}, {}).", device, launcher);
+        getLogger().lifecycle("VirtualGL client environment: {}", environment);
+        return new GpuResolution(new ClientGpuCapture(requested, device, launcher, environment), null);
+    }
+
+    private GpuResolution fallBack(String requested, String reason) {
+        getLogger().warn("{}={} was ignored; recording on the software rasterizer. {}",
+                ClientGpuCapture.DEVICE_ENV, requested, reason);
+        return new GpuResolution(null, reason);
+    }
+
+    /** The start of the client's own log, where it names the graphics device and the SDL video driver. */
+    private static String readClientLog(File runDirectory) {
+        if (runDirectory == null) {
+            return "";
+        }
+        File log = new File(runDirectory, "logs/latest.log");
+        if (!log.isFile()) {
+            return "";
+        }
+        try (var reader = new InputStreamReader(new java.io.FileInputStream(log), StandardCharsets.UTF_8)) {
+            char[] buffer = new char[2 * 1024 * 1024];
+            int read = reader.read(buffer);
+            return read <= 0 ? "" : new String(buffer, 0, read);
+        } catch (IOException exception) {
+            return "";
+        }
+    }
+
+    private static String hostName() {
+        try {
+            return Files.readString(Path.of("/etc/hostname"), StandardCharsets.UTF_8).strip();
+        } catch (IOException exception) {
+            return env("HOSTNAME", "");
         }
     }
 
@@ -930,5 +1035,9 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
 
 
     private record CommandResult(int status, String output) {
+    }
+
+    /** The GPU path of this run, or the reason the software one is used. */
+    private record GpuResolution(ClientGpuCapture capture, String fallbackReason) {
     }
 }
