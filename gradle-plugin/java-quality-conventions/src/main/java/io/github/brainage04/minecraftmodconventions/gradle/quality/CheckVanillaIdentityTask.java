@@ -1,7 +1,6 @@
 package io.github.brainage04.minecraftmodconventions.gradle.quality;
 
 import org.gradle.api.DefaultTask;
-import org.gradle.api.GradleException;
 import org.gradle.api.file.ConfigurableFileCollection;
 import org.gradle.api.file.RegularFileProperty;
 import org.gradle.api.provider.Property;
@@ -23,20 +22,25 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
-/** Fails when mod sources compare with a vanilla dimension identity instead of asking the game's data. */
+/**
+ * Reports lines of mod sources that compare with a vanilla dimension identity instead of asking the game's data.
+ * The hits go to the report file and to a warning; a place that is about the dimension by name keeps its comparison.
+ */
 public abstract class CheckVanillaIdentityTask extends DefaultTask {
     static final String GUIDANCE = """
-            Vanilla decides what a dimension allows from data that datapacks and other mods change, so a check for \
-            the Overworld, the Nether or the End is wrong in custom dimensions and in changed vanilla ones. Use the \
-            data-driven rule the game itself reads:
+            A comparison with a vanilla dimension identity is right when the feature is about that dimension by name, \
+            and wrong when it stands in for a property the game reads from data. Ask: would a datapack dimension, or \
+            another mod's dimension, that behaves like this one need the same treatment? If yes, prepare the code to \
+            ask the game:
               - environment attributes: level.environmentAttributes().getValue(EnvironmentAttributes.BED_RULE, pos), \
             RESPAWN_ANCHOR_WORKS, WATER_EVAPORATES, ...
               - level.dimensionType() properties, such as hasCeiling() and hasSkyLight()
               - tags and game rules
-            On the client, confirm the attribute is synced (EnvironmentAttribute.isSyncable()) or decide it \
-            server-side: an attribute that is not synced, such as BED_RULE, reads its default value on the client.
-            If the mod really targets one vanilla dimension, or a client mod has no synced rule to read, put \
-            `// vanilla-identity: <reason>` on the line or the line above it.""";
+            A Nether kill score or a dungeon theme that targets one vanilla dimension is about that place, so the \
+            identity check is right there. On the client, confirm the attribute is synced \
+            (EnvironmentAttribute.isSyncable()) or decide it server-side: an attribute that is not synced, such as \
+            BED_RULE, reads its default value on the client.
+            `// vanilla-identity: <reason>` silences this warning for a line or the line above it; it is optional.""";
 
     @InputFiles
     @SkipWhenEmpty
@@ -44,7 +48,7 @@ public abstract class CheckVanillaIdentityTask extends DefaultTask {
     @PathSensitive(PathSensitivity.RELATIVE)
     public abstract ConfigurableFileCollection getSources();
 
-    /** Paths in the failure message are relative to this directory. */
+    /** Paths in the report are relative to this directory. */
     @Internal
     public abstract Property<String> getRootDirectory();
 
@@ -68,9 +72,10 @@ public abstract class CheckVanillaIdentityTask extends DefaultTask {
                         + (finding.missingReason() ? "  (the vanilla-identity opt-out needs a reason)" : ""));
             }
         }
-        Files.writeString(getReport().get().getAsFile().toPath(), String.join("\n", hits) + "\n");
+        Files.writeString(getReport().get().getAsFile().toPath(),
+                hits.isEmpty() ? "" : String.join("\n", hits) + "\n");
         if (!hits.isEmpty()) {
-            throw new GradleException("Hardcoded vanilla dimension identity in mod sources:\n"
+            getLogger().warn("Vanilla dimension identity in mod sources (check: place or property?):\n"
                     + String.join("\n", hits) + "\n\n" + GUIDANCE);
         }
     }

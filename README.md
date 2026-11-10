@@ -158,23 +158,38 @@ Every option defaults to `true`. `fabric.mod.json` expansion fails on a missing 
 
 ## Vanilla dimension identity check
 
-`fabric-mod-conventions` and `multiloader-mod-conventions` (in `common`, `fabric` and `neoforge`) register `checkVanillaIdentity` under `check`. It fails when the Java sources of the `main` and `client` source sets compare with a vanilla dimension, and names each `file:line`:
+`fabric-mod-conventions` and `multiloader-mod-conventions` (in `common`, `fabric` and `neoforge`) register `checkVanillaIdentity` under `check`. It warns about the Java sources of the `main` and `client` source sets that compare with a vanilla dimension, writes each `file:line` to `build/reports/vanilla-identity.txt`, and names them in the build output:
 
 - `Level.OVERWORLD`, `Level.NETHER` or `Level.END` (also through `ServerLevel`/`ClientLevel` or a static import) or a `BuiltinDimensionTypes` key, compared with `==`, `!=`, `equals(…)` or `is(…)`;
 - such a key on the same line as `dimension()`, `dimensionType()` or `dimensionTypeRegistration()`, as in `matches(Level.NETHER, level.dimension())`.
 
 Other uses of the keys, such as `server.getLevel(Level.END)`, and comparisons with a mod's own dimensions pass. GameTest and other source sets are not checked. The patterns are in `gradle-plugin/java-quality-conventions/src/main/resources/…/vanilla-identity-patterns.txt`.
 
-Datapacks and other mods change what a dimension allows, so ask the data the game itself reads: environment attributes (`level.environmentAttributes().getValue(EnvironmentAttributes.BED_RULE, pos)`, `RESPAWN_ANCHOR_WORKS`, `WATER_EVAPORATES`, …), `level.dimensionType()` properties, tags and game rules. On the client, confirm the attribute is synced (`EnvironmentAttribute.isSyncable()`) or decide it server-side: an attribute that is not synced, such as `BED_RULE` in 1.21.11, 26.2 and 26.3, reads its default value on the client.
+A comparison is right when the feature is about that dimension by name, and wrong when it stands in for a property the game reads from data. Ask: would a datapack dimension, or another mod's dimension, that behaves like this one need the same treatment?
 
-A mod that really targets one vanilla dimension, or a client mod with no synced rule to read, marks the line or the line above it:
+- **Yes, a property:** sleeping, water evaporating, fog, terrain. Ask the data the game itself reads: environment attributes (`level.environmentAttributes().getValue(EnvironmentAttributes.BED_RULE, pos)`, `RESPAWN_ANCHOR_WORKS`, `WATER_EVAPORATES`, …), `level.dimensionType()` properties, tags and game rules. On the client, confirm the attribute is synced (`EnvironmentAttribute.isSyncable()`) or decide it server-side: an attribute that is not synced, such as `BED_RULE` in 1.21.11, 26.2 and 26.3, reads its default value on the client.
+- **No, a place:** a Nether kill score, a dungeon theme per vanilla dimension, a command that lists the players in the Nether. The identity check is right.
+
+Two examples from the fleet:
+
+```java
+// Place: ProceduralDungeon writes one theme per vanilla dimension, and the datagen for the Nether theme
+// places its structures with the Nether's tags.
+if (theme.dimension.equals(Level.NETHER)) { ... }
+
+// Property, and wrong: baritone refuses a water-bucket fall in the Nether. Vanilla asks
+// level.environmentAttributes().getValue(EnvironmentAttributes.WATER_EVAPORATES, pos) (BucketItem.java:124).
+if (dimension() == Level.NETHER) return;
+```
+
+A mod that really targets one vanilla dimension, or a client mod with no synced rule to read, silences the line or the line above it:
 
 ```java
 // vanilla-identity: the mod floods only the vanilla End
 if (level.dimension() != Level.END) return;
 ```
 
-The reason after `vanilla-identity:` is required; a marker without one still fails.
+The marker is optional. A marker without a reason does not silence anything and still warns.
 
 ## Workspace dependencies
 

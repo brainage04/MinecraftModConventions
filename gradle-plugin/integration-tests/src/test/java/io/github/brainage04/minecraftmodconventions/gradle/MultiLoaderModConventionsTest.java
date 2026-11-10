@@ -249,7 +249,7 @@ class MultiLoaderModConventionsTest {
     }
 
     @Test
-    void vanillaIdentityCheckCoversEveryLoadersMainAndClientSourcesButNotGameTests() throws IOException {
+    void vanillaIdentityCheckWarnsInEveryLoadersMainAndClientSourcesButNotGameTests() throws IOException {
         writeFixture("both", """
                 tasks.register('verifyVanillaIdentityWiring') {
                     doLast {
@@ -267,17 +267,24 @@ class MultiLoaderModConventionsTest {
                 "class OptedOutGate {\n// vanilla-identity: the mod only changes the vanilla Overworld\n" + gate + "\n}\n");
         write("common/src/gametest/java/fixture/GameTestGate.java", "class GameTestGate {\n" + gate + "\n}\n");
 
-        BuildResult result = runner("--continue", ":common:checkVanillaIdentity", ":fabric:checkVanillaIdentity",
-                ":neoforge:checkVanillaIdentity", "verifyVanillaIdentityWiring").buildAndFail();
+        BuildResult result = runGradle(":common:checkVanillaIdentity", ":fabric:checkVanillaIdentity",
+                ":neoforge:checkVanillaIdentity", "verifyVanillaIdentityWiring");
 
         String output = result.getOutput();
-        assertEquals(TaskOutcome.FAILED, result.task(":common:checkVanillaIdentity").getOutcome(), output);
-        assertEquals(TaskOutcome.FAILED, result.task(":fabric:checkVanillaIdentity").getOutcome(), output);
+        assertEquals(TaskOutcome.SUCCESS, result.task(":common:checkVanillaIdentity").getOutcome(), output);
+        assertEquals(TaskOutcome.SUCCESS, result.task(":fabric:checkVanillaIdentity").getOutcome(), output);
         assertEquals(TaskOutcome.SUCCESS, result.task(":neoforge:checkVanillaIdentity").getOutcome(), output);
         assertEquals(TaskOutcome.SUCCESS, result.task(":verifyVanillaIdentityWiring").getOutcome(), output);
         assertTrue(output.contains("common/src/main/java/fixture/CommonGate.java:2: " + gate), output);
         assertTrue(output.contains("fabric/src/client/java/fixture/ClientGate.java:2: " + gate), output);
+        assertTrue(output.contains("EnvironmentAttributes.BED_RULE"), output);
         assertFalse(output.contains("GameTestGate"), output);
+        assertFalse(output.contains("OptedOutGate"), output);
+        assertTrue(Files.readString(projectDir.resolve("common/build/reports/vanilla-identity.txt"))
+                .contains("CommonGate.java:2"), output);
+        assertTrue(Files.readString(projectDir.resolve("fabric/build/reports/vanilla-identity.txt"))
+                .contains("ClientGate.java:2"), output);
+        assertEquals("", Files.readString(projectDir.resolve("neoforge/build/reports/vanilla-identity.txt")));
     }
 
     @Test

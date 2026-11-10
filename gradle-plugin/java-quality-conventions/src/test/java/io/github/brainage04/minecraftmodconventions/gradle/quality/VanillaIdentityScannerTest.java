@@ -72,7 +72,7 @@ class VanillaIdentityScannerTest {
     }
 
     @Test
-    void optOutWithoutAReasonStillFails() {
+    void optOutWithoutAReasonStillWarns() {
         List<VanillaIdentityScanner.Finding> findings = scanner.scan(List.of(
                 "// vanilla-identity:",
                 "if (level.dimension() != Level.OVERWORLD) return;",
