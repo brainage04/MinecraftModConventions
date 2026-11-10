@@ -78,6 +78,25 @@ subprocess.run([
     "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p",
     "-c:a", "aac", "-b:a", "128k", str(out_path),
 ], check=True)
+
+
+def frame_count(video):
+    return int(subprocess.run([
+        "ffprobe", "-v", "error", "-count_frames", "-select_streams", "v:0",
+        "-show_entries", "stream=nb_read_frames", "-of", "csv=p=0", str(video),
+    ], check=True, capture_output=True, text=True).stdout.strip())
+
+
+stages = []
+frame = 0
+for part, (_, _, stage) in zip(parts, merged):
+    frames = frame_count(part)
+    stages.append({"stage": stage, "startFrame": frame, "endFrameExclusive": frame + frames})
+    frame += frames
+joined = frame_count(out_path)
+if joined != frame:
+    raise SystemExit(f"the joined video has {joined} frames but its clips add up to {frame}; stage frames would be wrong")
+out_path.with_suffix(".stages.json").write_text(json.dumps(stages, indent=2) + "\n")
 for part in parts:
     part.unlink()
 listing.unlink()
