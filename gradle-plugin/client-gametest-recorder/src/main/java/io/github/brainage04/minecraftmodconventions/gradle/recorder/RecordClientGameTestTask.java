@@ -178,6 +178,8 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
             // Vanilla selects an enumerated OpenAL device; environment defaults alone do not pin it.
             processEnvironment.put("GTR_RECORDING_AUDIO_DEVICE", audioSinkName);
             processEnvironment.put("GTR_RECORDING_MANAGED_XVFB", "true");
+            // The client's options take their window size from this, so a named display's own size wins.
+            processEnvironment.put("GTR_RECORDING_XVFB_SCREEN", xvfbScreen);
             processEnvironment.put("GTR_RECORDING_NAME", recordingName);
             processEnvironment.put("GTR_RECORDING_PROFILE", recordingProfile);
             processEnvironment.put("GTR_RECORDING_TRACE", recordingTrace);
