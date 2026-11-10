@@ -24,6 +24,8 @@ class ClientGameTestOptionsTest {
         });
         Map<String, String> expected = new TreeMap<>(Map.ofEntries(
                 Map.entry("fullscreen", "true"),
+                Map.entry("overrideWidth", "1920"),
+                Map.entry("overrideHeight", "1080"),
                 Map.entry("renderDistance", "12"),
                 Map.entry("graphicsPreset", "\"fancy\""),
                 Map.entry("ao", "true"),

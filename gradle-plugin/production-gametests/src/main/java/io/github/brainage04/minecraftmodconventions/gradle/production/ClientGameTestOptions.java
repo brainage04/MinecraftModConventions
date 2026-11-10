@@ -22,6 +22,9 @@ import java.util.stream.Collectors;
 public final class ClientGameTestOptions {
     /** Environment variable naming the recorder's private PulseAudio sink; the recorder sets it for its build. */
     public static final String RECORDER_AUDIO_DEVICE_ENV = "GTR_RECORDING_AUDIO_DEVICE";
+    /** Environment variable naming the recorder's screen; a recording renders at that size. */
+    public static final String RECORDER_SCREEN_ENV = "GTR_RECORDING_XVFB_SCREEN";
+    private static final String DEFAULT_RECORDING_WINDOW = "854x480";
     /**
      * The options format version: Minecraft 26.2's data version. A client of a later Minecraft version upgrades
      * the file with its own data fixers.
@@ -78,10 +81,14 @@ public final class ClientGameTestOptions {
         Map<String, String> options = new LinkedHashMap<>();
         options.put("version", OPTIONS_VERSION);
         options.put("lang", "en_us");
-        // Window: GameTests see this size whatever the display; the recorder fills its display with it.
+        // Window: GameTests see this size whatever the display. A recording takes the recorder's screen,
+        // because fullscreen needs a window manager and a virtual display has none: at the smaller size
+        // its client sits in a corner of the captured screen.
+        String window = showcase ? recordingWindow() : DEFAULT_RECORDING_WINDOW;
+        String[] sides = window.split("x");
         options.put("fullscreen", Boolean.toString(showcase));
-        options.put("overrideWidth", "854");
-        options.put("overrideHeight", "480");
+        options.put("overrideWidth", sides[0]);
+        options.put("overrideHeight", sides[1]);
         options.put("guiScale", "2");
         // Performance: a fixed frame cap, and no throttling when no input arrives (GameTest input does not count).
         options.put("renderDistance", showcase ? "12" : "5");
@@ -144,6 +151,18 @@ public final class ClientGameTestOptions {
         } catch (IOException exception) {
             throw new UncheckedIOException("Failed to write client GameTest options: " + file, exception);
         }
+    }
+
+    /** The recorder's screen as {@code WIDTHxHEIGHT}, or the shared window size when it names none. */
+    private static String recordingWindow() {
+        String screen = System.getenv(RECORDER_SCREEN_ENV);
+        if (screen == null || screen.isBlank()) {
+            return "1920x1080";
+        }
+        String[] parts = screen.strip().split("x");
+        return parts.length >= 2 && parts[0].matches("[0-9]+") && parts[1].matches("[0-9]+")
+                ? parts[0] + "x" + parts[1]
+                : "1920x1080";
     }
 
     private static String showcaseVolume(String category) {

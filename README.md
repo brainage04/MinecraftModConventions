@@ -205,7 +205,7 @@ Client GameTests (`runClientGameTest`), production client GameTests (`runProduct
 | `version` | `4903` (26.2) | same |
 | `lang` | `en_us` | same |
 | `fullscreen` | `false` | `true` |
-| `overrideWidth`, `overrideHeight` | `854`, `480` | same |
+| `overrideWidth`, `overrideHeight` | `854`, `480` | the recorder's screen (`GTR_RECORDING_XVFB_SCREEN`, 1920x1080 by default): fullscreen needs a window manager |
 | `guiScale` | `2` | same |
 | `renderDistance` | `5` | `12` |
 | `simulationDistance` | `5` | same |
