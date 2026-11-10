@@ -24,7 +24,6 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.util.List;
 
 /** Installs a NeoForge dedicated server with the official installer ({@code --install-server}). */
@@ -60,10 +59,9 @@ public abstract class InstallNeoForgeServerTask extends DefaultTask {
         getFileSystemOperations().delete(spec -> spec.delete(serverDirectory));
         Files.createDirectories(serverDirectory.toPath());
 
-        // The installer writes <installer>.log beside itself, so it runs from a copy outside Gradle's cache.
+        // The installer writes <jar name>.log to its working directory, not beside the jar
+        // (LegacyInstaller 3.0.48 SimpleInstaller.getLog), so running the cached jar leaves the log here.
         File installer = getInstaller().getSingleFile();
-        Path workingCopy = getTemporaryDir().toPath().resolve(installer.getName());
-        Files.copy(installer.toPath(), workingCopy, StandardCopyOption.REPLACE_EXISTING);
         Path log = getTemporaryDir().toPath().resolve(installer.getName() + ".log");
 
         getLogger().lifecycle("Installing the NeoForge {} server into {}", getNeoForgeVersion().get(), serverDirectory);
@@ -71,7 +69,8 @@ public abstract class InstallNeoForgeServerTask extends DefaultTask {
         try (OutputStream output = Files.newOutputStream(getTemporaryDir().toPath().resolve("installer-output.txt"))) {
             result = getExecOperations().exec(spec -> {
                 spec.setExecutable(getJavaLauncher().get().getExecutablePath().getAsFile());
-                spec.setArgs(List.of("-jar", workingCopy.toString(), "--install-server", serverDirectory.getAbsolutePath()));
+                spec.setArgs(List.of("-jar", installer.getAbsolutePath(), "--install-server",
+                        serverDirectory.getAbsolutePath()));
                 spec.setWorkingDir(getTemporaryDir());
                 spec.setStandardOutput(output);
                 spec.setErrorOutput(output);
