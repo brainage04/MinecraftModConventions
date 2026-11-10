@@ -22,12 +22,15 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
@@ -882,18 +885,45 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
                 "after-last-world-tick", Math.max(0, (Double.isNaN(afterLastTickFrame) ? lastTickFrame : afterLastTickFrame) - selectedStart));
         evidence.put("boundaryFrameVideoSeconds", boundaryFrames);
         evidence.put("boundaryFramePolicy", "First/last images use captured frames at or before each tick boundary. Adjacent images clamp to retained video when padding excludes the neighboring frame; inspect their actual PTS rather than assuming they lie outside the tick interval.");
-        boundaryFrames.forEach((marker, seconds) -> saveBoundaryFrame(output, marker, seconds));
+        Map<String, File> boundaryImages = new LinkedHashMap<>();
+        boundaryFrames.forEach((marker, seconds) -> boundaryImages.put(marker, saveBoundaryFrame(output, marker, seconds)));
+        requireChangingPicture(output, selectedEnd - selectedStart, boundaryImages);
         getLogger().lifecycle("[CLIENT_GAMETEST_BOUNDARY] VIDEO_WINDOW pre={}s post={}s; raw frame interval [{}, {})",
                 firstTick - selectedStart, selectedEnd - lastTick, startIndex, endIndex);
     }
 
-    private void saveBoundaryFrame(File video, String marker, double seconds) {
+    /**
+     * Fails a capture whose images never change. A client whose frames never reach the display — the
+     * faker library of a GPU recording that the client's OpenGL backend cannot drive, for example —
+     * otherwise records a black still and reports nothing wrong.
+     */
+    private void requireChangingPicture(File video, double seconds, Map<String, File> boundaryImages) {
+        if (seconds < 3 || boundaryImages.size() < 2) {
+            return;
+        }
+        Set<Integer> pictures = new HashSet<>();
+        for (File frame : boundaryImages.values()) {
+            try {
+                pictures.add(Arrays.hashCode(Files.readAllBytes(frame.toPath())));
+            } catch (IOException exception) {
+                throw new UncheckedIOException(exception);
+            }
+            if (pictures.size() > 1) {
+                return;
+            }
+        }
+        throw new GradleException("Every captured frame is identical: the client's pictures never reached the "
+                + "recording display. " + video.getName());
+    }
+
+    private File saveBoundaryFrame(File video, String marker, double seconds) {
         File frame = new File(video.getParentFile(), video.getName() + "-" + marker + ".png");
         runCommand(List.of("ffmpeg", "-y", "-v", "error", "-ss", String.format(Locale.ROOT, "%.6f", Math.max(0, seconds)),
                 "-i", video.getAbsolutePath(), "-frames:v", "1", frame.getAbsolutePath()));
         if (!frame.isFile() || frame.length() == 0) {
             throw new GradleException("No decoded frame for recording boundary " + marker + " at " + seconds + "s.");
         }
+        return frame;
     }
 
     private static double parsePadding(String value) {
