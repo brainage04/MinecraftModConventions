@@ -68,9 +68,13 @@ public final class ClientGameTestOptions {
     /**
      * The options of a profile in file order. {@code soundDevice} is only used by {@link Profile#SHOWCASE}: the
      * test profile is silent and keeps the default device. {@code joinedFirstServer} suppresses the social
-     * interactions toast.
+     * interactions toast. {@code gpuRendering} is a recording that renders on the machine's graphics card (see
+     * {@code GTR_RECORDING_GPU} in the client GameTest recorder): it raises the frame cap above the capture rate and
+     * pins the OpenGL backend.
      */
-    public static Map<String, String> options(Profile profile, String soundDevice, boolean joinedFirstServer) {
+    public static Map<String, String> options(
+            Profile profile, String soundDevice, boolean joinedFirstServer, boolean gpuRendering
+    ) {
         boolean showcase = profile == Profile.SHOWCASE;
         Map<String, String> options = new LinkedHashMap<>();
         options.put("version", OPTIONS_VERSION);
@@ -83,10 +87,15 @@ public final class ClientGameTestOptions {
         // Performance: a fixed frame cap, and no throttling when no input arrives (GameTest input does not count).
         options.put("renderDistance", showcase ? "12" : "5");
         options.put("simulationDistance", "5");
-        options.put("maxFps", "30");
+        // A card presents faster than the 30 frames a second the recorder captures, so every captured
+        // image is a fresh one.
+        options.put("maxFps", gpuRendering ? "60" : "30");
         options.put("enableVsync", "false");
         options.put("inactivityFpsLimit", "\"minimized\"");
         // Graphics.
+        // Vulkan finds its presentation support through the display's X connection, which the recorder's
+        // virtual display cannot back; OpenGL goes through VirtualGL to the card.
+        options.put("preferredGraphicsBackend", gpuRendering ? "\"opengl\"" : "\"default\"");
         options.put("graphicsPreset", showcase ? "\"fancy\"" : "\"fast\"");
         options.put("ao", Boolean.toString(showcase));
         options.put("cutoutLeaves", Boolean.toString(showcase));
@@ -127,8 +136,10 @@ public final class ClientGameTestOptions {
         return options;
     }
 
-    public static void write(Path file, Profile profile, String soundDevice, boolean joinedFirstServer) {
-        String contents = options(profile, soundDevice, joinedFirstServer).entrySet().stream()
+    public static void write(
+            Path file, Profile profile, String soundDevice, boolean joinedFirstServer, boolean gpuRendering
+    ) {
+        String contents = options(profile, soundDevice, joinedFirstServer, gpuRendering).entrySet().stream()
                 .map(entry -> entry.getKey() + ":" + entry.getValue())
                 .collect(Collectors.joining("\n", "", "\n"));
         try {

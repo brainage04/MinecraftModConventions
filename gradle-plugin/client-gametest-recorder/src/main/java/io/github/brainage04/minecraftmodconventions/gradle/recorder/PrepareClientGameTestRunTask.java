@@ -23,8 +23,16 @@ public abstract class PrepareClientGameTestRunTask extends DefaultTask {
     @Input
     public abstract Property<Boolean> getDisableSocialInteractionsToast();
 
+    /** A recording that renders on the machine's graphics card; see {@link ClientGameTestOptions#options}. */
+    @Input
+    public abstract Property<Boolean> getGpuRendering();
+
     @OutputFile
     public abstract RegularFileProperty getOptionsFile();
+
+    protected PrepareClientGameTestRunTask() {
+        getGpuRendering().convention(false);
+    }
 
     @TaskAction
     public void writeOptions() {
@@ -32,7 +40,8 @@ public abstract class PrepareClientGameTestRunTask extends DefaultTask {
                 getOptionsFile().get().getAsFile().toPath(),
                 ClientGameTestOptions.Profile.named(getProfile().get()),
                 getRecordingAudioDevice().get(),
-                getDisableSocialInteractionsToast().get()
+                getDisableSocialInteractionsToast().get(),
+                getGpuRendering().get()
         );
     }
 }

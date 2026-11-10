@@ -12,8 +12,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 class ClientGameTestOptionsTest {
     @Test
     void showcaseIsTheTestProfileWithViewGraphicsAndSoundChanges() {
-        Map<String, String> test = ClientGameTestOptions.options(ClientGameTestOptions.Profile.TEST, "sink", true);
-        Map<String, String> showcase = ClientGameTestOptions.options(ClientGameTestOptions.Profile.SHOWCASE, "sink", true);
+        Map<String, String> test = ClientGameTestOptions.options(ClientGameTestOptions.Profile.TEST, "sink", true, false);
+        Map<String, String> showcase = ClientGameTestOptions.options(ClientGameTestOptions.Profile.SHOWCASE, "sink", true, false);
 
         assertEquals(test.keySet().stream().toList(), showcase.keySet().stream().toList());
         Map<String, String> changed = new TreeMap<>();
@@ -46,7 +46,7 @@ class ClientGameTestOptionsTest {
 
     @Test
     void theTestProfileIsSilentWhateverTheSoundDevice() {
-        Map<String, String> test = ClientGameTestOptions.options(ClientGameTestOptions.Profile.TEST, "sink", true);
+        Map<String, String> test = ClientGameTestOptions.options(ClientGameTestOptions.Profile.TEST, "sink", true, false);
 
         assertEquals("\"\"", test.get("soundDevice"));
         test.forEach((key, value) -> {
@@ -54,6 +54,21 @@ class ClientGameTestOptionsTest {
                 assertEquals("0.0", value, key);
             }
         });
+    }
+
+    @Test
+    void aRecordingOnACardPresentsFasterThanTheCaptureAndStaysOnOpenGl() {
+        Map<String, String> software = ClientGameTestOptions.options(
+                ClientGameTestOptions.Profile.SHOWCASE, "sink", true, false);
+        Map<String, String> card = ClientGameTestOptions.options(
+                ClientGameTestOptions.Profile.SHOWCASE, "sink", true, true);
+
+        assertEquals("30", software.get("maxFps"));
+        assertEquals("\"default\"", software.get("preferredGraphicsBackend"));
+        // A capture at 30 frames a second needs a fresh image for every one of them.
+        assertEquals("60", card.get("maxFps"));
+        assertEquals("\"opengl\"", card.get("preferredGraphicsBackend"));
+        assertEquals(software.keySet(), card.keySet());
     }
 
     @Test

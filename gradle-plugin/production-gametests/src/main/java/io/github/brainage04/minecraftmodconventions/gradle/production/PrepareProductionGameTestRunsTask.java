@@ -40,6 +40,10 @@ public abstract class PrepareProductionGameTestRunsTask extends DefaultTask {
     @Input
     public abstract Property<Boolean> getDisableSocialInteractionsToast();
 
+    /** A recording that renders on the machine's graphics card; see {@link ClientGameTestOptions#options}. */
+    @Input
+    public abstract Property<Boolean> getGpuRendering();
+
     @TaskAction
     public void prepare() {
         writeEula(getClientEulaFile().get().getAsFile().toPath());
@@ -47,7 +51,8 @@ public abstract class PrepareProductionGameTestRunsTask extends DefaultTask {
                 getClientOptionsFile().get().getAsFile().toPath(),
                 ClientGameTestOptions.Profile.named(getClientOptionsProfile().get()),
                 getClientSoundDevice().get(),
-                getDisableSocialInteractionsToast().get()
+                getDisableSocialInteractionsToast().get(),
+                getGpuRendering().get()
         );
         writeEula(getServerEulaFile().get().getAsFile().toPath());
     }
