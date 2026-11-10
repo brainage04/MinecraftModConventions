@@ -127,11 +127,11 @@ public final class ClientGameTestRecorderPlugin implements Plugin<Project> {
                 .orElse("");
     }
 
-    /** Whether the recorded client renders on the card, from the request the recorder reads itself. */
+    /** Whether the recorded client renders on the card, from the display the recorder is given. */
     private static Provider<Boolean> gpuRendering(Project project) {
         return project.getProviders()
-                .environmentVariable(ClientGpuCapture.DEVICE_ENV)
-                .map(value -> ClientGpuCapture.device(value) != null)
+                .environmentVariable(ClientGpuCapture.DISPLAY_ENV)
+                .map(value -> ClientGpuCapture.display(value) != null)
                 .orElse(false);
     }
 

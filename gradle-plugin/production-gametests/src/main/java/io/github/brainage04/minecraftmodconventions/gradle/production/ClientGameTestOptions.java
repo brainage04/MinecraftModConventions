@@ -69,8 +69,7 @@ public final class ClientGameTestOptions {
      * The options of a profile in file order. {@code soundDevice} is only used by {@link Profile#SHOWCASE}: the
      * test profile is silent and keeps the default device. {@code joinedFirstServer} suppresses the social
      * interactions toast. {@code gpuRendering} is a recording that renders on the machine's graphics card (see
-     * {@code GTR_RECORDING_GPU} in the client GameTest recorder): it raises the frame cap above the capture rate and
-     * pins the OpenGL backend.
+     * {@code GTR_RECORDING_DISPLAY} in the client GameTest recorder): it raises the frame cap above the capture rate.
      */
     public static Map<String, String> options(
             Profile profile, String soundDevice, boolean joinedFirstServer, boolean gpuRendering
@@ -93,9 +92,6 @@ public final class ClientGameTestOptions {
         options.put("enableVsync", "false");
         options.put("inactivityFpsLimit", "\"minimized\"");
         // Graphics.
-        // Vulkan finds its presentation support through the display's X connection, which the recorder's
-        // virtual display cannot back; OpenGL goes through VirtualGL to the card.
-        options.put("preferredGraphicsBackend", gpuRendering ? "\"opengl\"" : "\"default\"");
         options.put("graphicsPreset", showcase ? "\"fancy\"" : "\"fast\"");
         options.put("ao", Boolean.toString(showcase));
         options.put("cutoutLeaves", Boolean.toString(showcase));

@@ -72,7 +72,7 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
         String fps = env("GTR_RECORDING_FPS", "30");
         int startWaitSeconds = parsePositiveInt(env("GTR_RECORDING_START_WAIT_SECONDS", "90"), "GTR_RECORDING_START_WAIT_SECONDS");
         String xvfbScreen = env("GTR_RECORDING_XVFB_SCREEN", "1920x1080x24");
-        String gpuRequest = env(ClientGpuCapture.DEVICE_ENV, "");
+        String gpuDisplayRequest = env(ClientGpuCapture.DISPLAY_ENV, "");
         double prePadding = parsePadding(env("GTR_RECORDING_PRE_PADDING_SECONDS", "0.5"));
         double postPadding = parsePadding(env("GTR_RECORDING_POST_PADDING_SECONDS", "0.5"));
         int frameRate = parsePositiveInt(fps, "GTR_RECORDING_FPS");
@@ -116,7 +116,7 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
         AtomicBoolean soundFailed = new AtomicBoolean();
         Map<String, Object> boundaryEvidence = new LinkedHashMap<>();
         boolean audioRouteVerified = false;
-        ClientGpuCapture gpu = null;
+        String gpuDisplay = null;
         String gpuFallback = null;
         String glRenderer = "";
         String sdlVideoDriver = "";
@@ -145,27 +145,12 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
             getLogger().lifecycle("Protecting the recording job's memory up to its limit from sibling reclaim ({}).", memoryCgroup);
         }
         try {
-            if (xvfbDisplay.isBlank()) {
-                xvfbDisplay = findFreeXvfbDisplay();
-            }
-            if (!xvfbDisplay.startsWith(":")) {
-                xvfbDisplay = ":" + xvfbDisplay;
-            }
-            String displayNumber = xvfbDisplay.substring(1);
-            if (!displayNumber.matches("[0-9]+")
-                    || new File("/tmp/.X" + displayNumber + "-lock").exists()
-                    || new File("/tmp/.X11-unix/X" + displayNumber).exists()) {
-                throw new GradleException("Refusing to attach to an existing or invalid X display: " + xvfbDisplay);
-            }
-            getLogger().lifecycle("Starting virtual X display {} ({})...", xvfbDisplay, xvfbScreen);
-            xvfbProcess = new ProcessBuilder("Xvfb", xvfbDisplay, "-screen", "0", xvfbScreen, "-nolisten", "tcp")
-                    .redirectErrorStream(true)
-                    .start();
-            waitForXDisplay(xvfbDisplay, xvfbProcess);
-
-            GpuResolution gpuResolution = resolveGpuCapture(gpuRequest, xvfbDisplay);
-            gpu = gpuResolution.capture();
-            gpuFallback = gpuResolution.fallbackReason();
+            DisplayResolution display = startDisplay(gpuDisplayRequest, xvfbDisplay, xvfbScreen);
+            xvfbDisplay = display.display();
+            xvfbScreen = display.screen();
+            xvfbProcess = display.process();
+            gpuDisplay = display.gpuDisplay();
+            gpuFallback = display.fallbackReason();
 
             audioSinkId = createVirtualAudioSink(audioSinkName);
 
@@ -185,9 +170,6 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
             // SDL3 finds a Wayland compositor through XDG_RUNTIME_DIR otherwise and opens the window
             // there: the capture cannot see it, and nothing may appear on someone's screen.
             processEnvironment.put("SDL_VIDEO_DRIVER", "x11");
-            if (gpu != null) {
-                processEnvironment.putAll(gpu.environment());
-            }
             processEnvironment.put("ALSOFT_CONF", alsoftConfig.getAbsolutePath());
             processEnvironment.put("ALSOFT_DRIVERS", "pulse");
             processEnvironment.put("ALSOFT_PULSE_DEFAULT", audioSinkName);
@@ -242,7 +224,7 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
                 ProcessBuilder ffmpegBuilder = new ProcessBuilder(ffmpegCommand);
                 ffmpegBuilder.directory(projectDir);
                 ffmpegBuilder.redirectErrorStream(true);
-                ffmpegBuilder.environment().putAll(ClientGpuCapture.withoutGpuEnvironment(processEnvironment));
+                ffmpegBuilder.environment().putAll(processEnvironment);
                 ffmpegProcess = ffmpegBuilder.start();
                 streamToStdout(ffmpegProcess, "ffmpeg-output", _ -> {});
                 waitForCaptureFrames(ffmpegProcess, progress);
@@ -399,9 +381,9 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
             recordingFailures.add("The client used SDL's " + sdlVideoDriver
                     + " video driver: a recording must render on the recorder's own x11 display.");
         }
-        if (gpu != null && ClientGpuCapture.isSoftwareRenderer(glRenderer)) {
-            getLogger().error("GTR_RECORDING_GPU={} was accepted but the client renders with {}; the recording is the software path.",
-                    gpuRequest, glRenderer);
+        if (gpuDisplay != null && ClientGpuCapture.isSoftwareRenderer(glRenderer)) {
+            getLogger().error("The recording display {} renders with {}; the recording is the software path.",
+                    gpuDisplay, glRenderer);
         }
         if (boundaryEvidence.containsKey("clockDriftUs")
                 && Math.abs(Long.parseLong(boundaryEvidence.get("clockDriftUs").toString())) > 10_000L) {
@@ -416,18 +398,16 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
         metadataModel.put("startedAt", recordingStartedAt);
         metadataModel.put("finishedAt", DateTimeFormatter.ISO_INSTANT.format(Instant.now()));
         metadataModel.put("gradleStatus", gradleStatus);
-        metadataModel.put("captureMode", gpu == null ? "xvfb" : "xvfb+gpu");
+        metadataModel.put("captureMode", gpuDisplay == null ? "xvfb" : "x11");
         metadataModel.put("glRenderer", glRenderer.isEmpty() ? null : glRenderer);
         metadataModel.put("sdlVideoDriver", sdlVideoDriver.isEmpty() ? null : sdlVideoDriver);
         metadataModel.put("presentedFps", ClientGpuCapture.presentedFps(boundaryEvidence));
         metadataModel.put("host", hostName());
         Map<String, Object> gpuModel = new LinkedHashMap<>();
-        gpuModel.put("requested", gpuRequest.isEmpty() ? null : gpuRequest);
-        gpuModel.put("device", gpu == null ? null : gpu.device());
-        gpuModel.put("launcher", gpu == null ? null : gpu.launcher());
-        gpuModel.put("environment", gpu == null ? Map.of() : gpu.environment());
+        gpuModel.put("requestedDisplay", gpuDisplayRequest.isEmpty() ? null : gpuDisplayRequest);
+        gpuModel.put("display", gpuDisplay);
         gpuModel.put("fallbackReason", gpuFallback);
-        gpuModel.put("active", gpu != null && !ClientGpuCapture.isSoftwareRenderer(glRenderer));
+        gpuModel.put("active", gpuDisplay != null && !ClientGpuCapture.isSoftwareRenderer(glRenderer));
         metadataModel.put("gpu", gpuModel);
         metadataModel.put("fps", fps);
         metadataModel.put("xvfbScreen", xvfbScreen);
@@ -577,46 +557,53 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
     }
 
     /**
-     * The GPU path for this run, and the reason the software one is used when it is asked for but
-     * cannot work: a host without a card, or CI, then records exactly as it did before instead of
-     * failing, and the metadata says which path ran.
+     * The display this recording captures, and the process that serves it when the recorder started
+     * one. A display named by {@code GTR_RECORDING_DISPLAY} is used as it is: the machine's card is
+     * behind its GLX, which is what makes the client present as fast as the card does. A named display
+     * that does not answer falls back to the recorder's own virtual one, so an unattended run on a host
+     * without a card still records.
      */
-    private GpuResolution resolveGpuCapture(String requested, String display) {
-        String device = ClientGpuCapture.device(requested);
-        if (device == null) {
-            return new GpuResolution(null, null);
+    private DisplayResolution startDisplay(String requested, String configuredDisplay, String configuredScreen) {
+        String gpuDisplay = ClientGpuCapture.display(requested);
+        String fallback = null;
+        if (gpuDisplay != null) {
+            CommandResult info = runCommand(List.of("xdpyinfo", "-display", gpuDisplay), Map.of(), true);
+            String screen = ClientGpuCapture.screen(info.output());
+            if (info.status() == 0 && !screen.isEmpty()) {
+                getLogger().lifecycle("Recording X display {} ({}), which renders with the machine's graphics card.",
+                        gpuDisplay, screen);
+                getLogger().lifecycle("The client's window is visible on that display while it runs.");
+                return new DisplayResolution(gpuDisplay, screen, null, gpuDisplay, null);
+            }
+            fallback = "X display " + gpuDisplay + " does not answer: "
+                    + info.output().lines().findFirst().orElse("");
+            getLogger().warn("{}={} was ignored; recording on the recorder's own virtual display. {}",
+                    ClientGpuCapture.DISPLAY_ENV, requested, fallback);
         }
-        String launcher = env(ClientGpuCapture.LAUNCHER_ENV, "");
-        if (launcher.isEmpty()) {
-            CommandResult found = runCommand(List.of("sh", "-c", "command -v vglrun"), Map.of(), true);
-            launcher = found.status() == 0 ? found.output().strip() : "";
+        String display = configuredDisplay;
+        if (display.isBlank()) {
+            display = findFreeXvfbDisplay();
         }
-        if (launcher.isEmpty()) {
-            return fallBack(requested, "VirtualGL is not installed: no vglrun on the PATH and no "
-                    + ClientGpuCapture.LAUNCHER_ENV + ".");
+        if (!display.startsWith(":")) {
+            display = ":" + display;
         }
-        if (!(new File(launcher).isAbsolute() && new File(launcher).canExecute())) {
-            return fallBack(requested, "the VirtualGL launcher is not an executable file: " + launcher + ".");
+        String displayNumber = display.substring(1);
+        if (!displayNumber.matches("[0-9]+")
+                || new File("/tmp/.X" + displayNumber + "-lock").exists()
+                || new File("/tmp/.X11-unix/X" + displayNumber).exists()) {
+            throw new GradleException("Refusing to attach to an existing or invalid X display: " + display);
         }
-        CommandResult report = runCommand(List.of(launcher, "-d", device, "sh", "-c",
-                        "printf '%s\\n' \"LD_PRELOAD=$LD_PRELOAD\" \"VGL_DISPLAY=$VGL_DISPLAY\" \"LD_LIBRARY_PATH=$LD_LIBRARY_PATH\""),
-                Map.of("DISPLAY", display), true);
-        Map<String, String> environment = ClientGpuCapture.environmentOf(report.output());
-        if (report.status() != 0 || !environment.containsKey("LD_PRELOAD")) {
-            return fallBack(requested, "VirtualGL could not start for device " + device + ": " + report.output().strip());
+        getLogger().lifecycle("Starting virtual X display {} ({})...", display, configuredScreen);
+        Process xvfb = null;
+        try {
+            xvfb = new ProcessBuilder("Xvfb", display, "-screen", "0", configuredScreen, "-nolisten", "tcp")
+                    .redirectErrorStream(true)
+                    .start();
+        } catch (IOException exception) {
+            throw new UncheckedIOException("Failed to start Xvfb: " + display, exception);
         }
-        if (!ClientGpuCapture.hasGraphicsDevice()) {
-            return fallBack(requested, "this host has no /dev/dri render node and no NVIDIA device node.");
-        }
-        getLogger().lifecycle("Rendering the client on the graphics card through VirtualGL (device {}, {}).", device, launcher);
-        getLogger().lifecycle("VirtualGL client environment: {}", environment);
-        return new GpuResolution(new ClientGpuCapture(requested, device, launcher, environment), null);
-    }
-
-    private GpuResolution fallBack(String requested, String reason) {
-        getLogger().warn("{}={} was ignored; recording on the software rasterizer. {}",
-                ClientGpuCapture.DEVICE_ENV, requested, reason);
-        return new GpuResolution(null, reason);
+        waitForXDisplay(display, xvfb);
+        return new DisplayResolution(display, configuredScreen, xvfb, null, fallback);
     }
 
     /** The start of the client's own log, where it names the graphics device and the SDL video driver. */
@@ -1070,7 +1057,11 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
     private record CommandResult(int status, String output) {
     }
 
-    /** The GPU path of this run, or the reason the software one is used. */
-    private record GpuResolution(ClientGpuCapture capture, String fallbackReason) {
+    /**
+     * The display a recording captures, the process serving it when the recorder started one, the
+     * display it was asked to use, and why that one was not used.
+     */
+    private record DisplayResolution(String display, String screen, Process process, String gpuDisplay,
+            String fallbackReason) {
     }
 }

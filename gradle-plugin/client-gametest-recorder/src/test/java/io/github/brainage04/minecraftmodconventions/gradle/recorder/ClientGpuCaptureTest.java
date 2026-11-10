@@ -1,12 +1,7 @@
 package io.github.brainage04.minecraftmodconventions.gradle.recorder;
 
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 
-import java.io.File;
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -19,27 +14,24 @@ class ClientGpuCaptureTest {
     /** The lines a 26.3 client writes before its window exists, trimmed to what the recorder reads. */
     private static final String CLIENT_LOG = String.join("\n",
             "[21:15:14] [Render thread/INFO]: Backend library: LWJGL version 3.4.3-snapshot",
-            "[21:15:15] [Render thread/ERROR]: Failed to create backend OpenGL",
-            "[21:15:15] [Render thread/INFO]: Using graphics backend Vulkan, using drivers: 1.4.312 NVIDIA 580.178.04",
+            "[21:15:15] [Render thread/INFO]: Using graphics backend OpenGL, using drivers: 3.3.0 NVIDIA 580.178.04",
             "[21:15:15] [Render thread/INFO]: Using graphics device: NVIDIA GeForce GTX 1060 (NVIDIA)",
-            "[21:15:15] [Render thread/INFO]: Created window using SDL video driver: wayland",
+            "[21:15:15] [Render thread/INFO]: Created window using SDL video driver: x11",
             "");
 
     @Test
-    void requestIsOffUnlessItNamesADevice() {
+    void aDisplayIsOnlyUsedWhenOneIsNamed() {
         for (String off : new String[] {"", "  ", "0", "false", "no", "OFF", null}) {
-            assertNull(ClientGpuCapture.device(off), "value " + off);
+            assertNull(ClientGpuCapture.display(off), "value " + off);
         }
-        for (String egl : new String[] {"1", "true", "yes", "on", "egl", " EGL "}) {
-            assertEquals(ClientGpuCapture.EGL_DEVICE, ClientGpuCapture.device(egl), "value " + egl);
-        }
-        assertEquals("/dev/dri/renderD128", ClientGpuCapture.device(" /dev/dri/renderD128 "));
+        assertEquals(":1", ClientGpuCapture.display(":1"));
+        assertEquals(":1", ClientGpuCapture.display(" 1 "));
     }
 
     @Test
     void graphicsDeviceAndVideoDriverComeFromTheClientLog() {
         assertEquals("NVIDIA GeForce GTX 1060", ClientGpuCapture.rendererIn(CLIENT_LOG));
-        assertEquals("wayland", ClientGpuCapture.sdlVideoDriverIn(CLIENT_LOG));
+        assertEquals("x11", ClientGpuCapture.sdlVideoDriverIn(CLIENT_LOG));
         assertFalse(ClientGpuCapture.isSoftwareRenderer(ClientGpuCapture.rendererIn(CLIENT_LOG)));
 
         String software = String.join("\n",
@@ -65,57 +57,18 @@ class ClientGpuCaptureTest {
     }
 
     @Test
-    void aHostWithoutADeviceNodeIsNotACardHost(@TempDir Path root) throws IOException {
-        Path renderNodes = Files.createDirectories(root.resolve("dri"));
-        Path deviceNodes = Files.createDirectories(root.resolve("dev"));
-        assertFalse(ClientGpuCapture.hasGraphicsDevice(renderNodes.toFile(), deviceNodes.toFile()));
-
-        Files.createFile(deviceNodes.resolve("nvidia0"));
-        assertTrue(ClientGpuCapture.hasGraphicsDevice(renderNodes.toFile(), deviceNodes.toFile()));
-
-        Files.delete(deviceNodes.resolve("nvidia0"));
-        Files.createFile(renderNodes.resolve("card1"));
-        assertFalse(
-                ClientGpuCapture.hasGraphicsDevice(renderNodes.toFile(), deviceNodes.toFile()),
-                "a card node alone cannot render");
-        Files.createFile(renderNodes.resolve("renderD128"));
-        assertTrue(ClientGpuCapture.hasGraphicsDevice(renderNodes.toFile(), deviceNodes.toFile()));
-
-        assertFalse(ClientGpuCapture.hasGraphicsDevice(root.resolve("missing").toFile(), root.resolve("also-missing").toFile()));
-    }
-
-    @Test
-    void virtualGlEnvironmentIsReadFromTheLauncher() {
-        Map<String, String> environment = ClientGpuCapture.environmentOf(String.join("\n",
-                "[VGL] NOTICE: Added /vgl/lib to LD_LIBRARY_PATH",
-                "LD_PRELOAD=/vgl/lib/libdlfaker.so:/vgl/lib/libvglfaker.so",
-                "VGL_DISPLAY=egl",
-                "LD_LIBRARY_PATH=/vgl/lib:/run/opengl-driver/lib",
-                "PATH=/usr/bin",
-                ""));
-
-        assertEquals(Map.of(
-                "LD_PRELOAD", "/vgl/lib/libdlfaker.so:/vgl/lib/libvglfaker.so",
-                "VGL_DISPLAY", "egl",
-                "LD_LIBRARY_PATH", "/vgl/lib:/run/opengl-driver/lib"), environment);
-    }
-
-    @Test
-    void captureEnvironmentKeepsTheInterposerOut() {
-        Map<String, String> environment = new LinkedHashMap<>(Map.of(
-                "LD_PRELOAD", "/vgl/lib/libvglfaker.so",
-                "VGL_DISPLAY", "egl",
-                "LD_LIBRARY_PATH", "/vgl/lib",
-                "PULSE_SINK", "gametest_recorder_1"));
-        environment.put("LD_PRELOAD", "/vgl/lib/libvglfaker.so");
-
-        Map<String, String> capture = ClientGpuCapture.withoutGpuEnvironment(environment);
-
-        assertEquals("/vgl/lib", capture.get("LD_LIBRARY_PATH"));
-        assertEquals("gametest_recorder_1", capture.get("PULSE_SINK"));
-        assertFalse(capture.containsKey("LD_PRELOAD"));
-        assertFalse(capture.containsKey("VGL_DISPLAY"));
-        assertEquals("/vgl/lib/libvglfaker.so", environment.get("LD_PRELOAD"));
+    void theScreenSizeComesFromXdpyinfo() {
+        String xdpyinfo = String.join("\n",
+                "name of display: :1",
+                "version number: 11.0",
+                "maximum request size: 16777212 bytes",
+                "  dimensions:    1920x1080 pixels (508x285 millimeters)",
+                "  resolution:    96x96 dots per inch",
+                "depth of root window:    24 planes",
+                "");
+        assertEquals("1920x1080x24", ClientGpuCapture.screen(xdpyinfo));
+        assertEquals("", ClientGpuCapture.screen("Error: unable to open display :1"));
+        assertEquals("", ClientGpuCapture.screen(""));
     }
 
     @Test

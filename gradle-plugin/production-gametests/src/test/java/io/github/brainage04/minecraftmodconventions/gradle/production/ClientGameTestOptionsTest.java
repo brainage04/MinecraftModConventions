@@ -57,17 +57,15 @@ class ClientGameTestOptionsTest {
     }
 
     @Test
-    void aRecordingOnACardPresentsFasterThanTheCaptureAndStaysOnOpenGl() {
+    void aRecordingOnACardPresentsFasterThanTheCapture() {
         Map<String, String> software = ClientGameTestOptions.options(
                 ClientGameTestOptions.Profile.SHOWCASE, "sink", true, false);
         Map<String, String> card = ClientGameTestOptions.options(
                 ClientGameTestOptions.Profile.SHOWCASE, "sink", true, true);
 
         assertEquals("30", software.get("maxFps"));
-        assertEquals("\"default\"", software.get("preferredGraphicsBackend"));
         // A capture at 30 frames a second needs a fresh image for every one of them.
         assertEquals("60", card.get("maxFps"));
-        assertEquals("\"opengl\"", card.get("preferredGraphicsBackend"));
         assertEquals(software.keySet(), card.keySet());
     }
 
