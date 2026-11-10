@@ -6,8 +6,8 @@ Shared Gradle plugins, GitHub workflows and client GameTest helpers for my Minec
 
 | Plugin (`io.github.brainage04.…`) | Apply to | Purpose |
 | --- | --- | --- |
-| `multiloader-mod-conventions` | root of a `common`/`fabric` mod, optionally with `neoforge` | **The standard entry point.** Configures the included modules with Architectury Loom and applies every plugin below except `fabric-mod-conventions` and `maven-central-publishing`. Adds the [vanilla dimension identity check](#vanilla-dimension-identity-check) to every module. |
-| `fabric-mod-conventions` | single-loader Fabric project | Fabric Loom, project identity, standard dependencies and repositories, Java settings, side-aware source layout, access widener, sources JAR, `fabric.mod.json` expansion, license in the JAR, the [vanilla dimension identity check](#vanilla-dimension-identity-check). |
+| `multiloader-mod-conventions` | root of a `common`/`fabric` mod, optionally with `neoforge` | **The standard entry point.** Configures the included modules with Architectury Loom and applies every plugin below except `fabric-mod-conventions` and `maven-central-publishing`. Adds the [vanilla dimension identity](#vanilla-dimension-identity-check), [tag identity](#vanilla-tag-identity-check) and [world height](#hardcoded-world-height-check) checks to every module. |
+| `fabric-mod-conventions` | single-loader Fabric project | Fabric Loom, project identity, standard dependencies and repositories, Java settings, side-aware source layout, access widener, sources JAR, `fabric.mod.json` expansion, license in the JAR, and the [vanilla dimension identity](#vanilla-dimension-identity-check), [tag identity](#vanilla-tag-identity-check) and [world height](#hardcoded-world-height-check) checks. |
 | `client-gametest-recorder` | Fabric project | `recordClientGameTest`: records client GameTests to MP4 in an isolated Xvfb display and audio sink. Adds the runtime helpers to the `gametest` source set. |
 | `production-gametests` | Fabric project | Creates the `gametest` source set and runs GameTests against the packaged mod through Loom's production client and server. |
 | `integration-gametests` | Fabric or NeoForge Loom project with a `gametest` source set | Named GameTest suites that run with extra mods (Maven artifacts or pinned Git commits) loaded, in their own source set and runs. |
@@ -179,7 +179,8 @@ Two examples from the fleet:
 if (theme.dimension.equals(Level.NETHER)) { ... }
 
 // Property, and wrong: baritone refuses a water-bucket fall in the Nether. Vanilla asks
-// level.environmentAttributes().getValue(EnvironmentAttributes.WATER_EVAPORATES, pos) (BucketItem.java:124).
+// level.environmentAttributes().getValue(EnvironmentAttributes.WATER_EVAPORATES, pos)
+// (BucketItem.java:123 in 26.2, :124 in 1.21.11).
 if (dimension() == Level.NETHER) return;
 ```
 
@@ -190,7 +191,29 @@ A mod that really targets one vanilla dimension, or a client mod with no synced 
 if (level.dimension() != Level.END) return;
 ```
 
-The marker is optional. A marker without a reason does not silence anything and still warns.
+The marker is optional. A marker without a reason does not silence anything and still warns. The warning prints when the task runs: a second build finds the task up to date and only rewrites the report.
+
+## Vanilla tag identity check
+
+`checkVanillaTagIdentities` runs over the same source sets as the dimension check and warns about a comparison or membership test of one vanilla block, item or biome that a vanilla tag also lists. It writes the hits and the tag to use to `build/reports/vanilla-tag-identities.txt`:
+
+```java
+if (block == Blocks.RED_BED) { ... }          // block tag #minecraft:beds
+if (stack.is(Items.DIAMOND_SWORD)) { ... }    // item tag #minecraft:swords
+Set.of(Blocks.RED_BED, Blocks.BLACK_BED)      // block tag #minecraft:beds
+```
+
+The identities come from the named Minecraft jars Loom builds for the project (`LoomGradleExtensionAPI#getNamedMinecraftJars` in the conventions plugins): the check reads their `data/minecraft/tags`, so the map always matches the version the mod compiles against instead of a list copied from one release. A tag only makes a hit when its name ends the identity id, ignoring a plural `s` and a leading `is_`: `beds` ends `red_bed`, `oak_logs` ends `oak_log`, `is_forest` ends `forest`. A list such as `beacon_base_blocks` or `bookshelf_books` mentions the identity for one use without naming it, and the check leaves the comparison alone. Tags that only classify a block for a tool, an enchantment, a spawn rule or a structure placement (`mineable/*`, `needs_*_tool`, `enchantable/*`, `has_structure/*`, …) are left out too, because replacing `block == Blocks.ICE` with the pickaxe tag would be wrong. Placing or giving a specific block is a place, not a comparison, and a list built from items (`List.of(new ItemStack(Items.ARROW))`) gives or displays them, so neither is reported. Type checks such as `instanceof BedBlock` are not covered: the tag data names block ids, and one class backs many ids.
+
+The report names the tag id (`block tag #minecraft:beds`) rather than a Java constant, because 26.x moved many tags into `BlockItemTags` and a constant minted from the path would not compile there.
+
+The place-or-property question decides the warning: a comparison is right when the feature is about that particular block or item by name, and wrong when it stands in for a property of the tag (`#minecraft:beds`, `#minecraft:swords`, `#minecraft:is_forest`, …) that a datapack can extend. `// vanilla-tag: <reason>` silences the line or the line above it, and a marker without a reason still warns.
+
+## Hardcoded world height check
+
+`checkWorldHeight` warns about the literal build limits of the vanilla overworld: `-64`, `319` and `320` next to a `y` or a height name, and `0` or `256` next to a name that says what it holds. It writes the hits to `build/reports/world-height.txt`. It only reports a limit that is compared with, assigned to or passed as a height: `if (y < -64)`, `int maxY = 320;`, `new BlockPos(x, 320, z)`, `Math.min(320, y)`, and not `new BlockPos(x, 0, z)` or `int width = 256`.
+
+A world's build limits come from its dimension type, so a datapack dimension can be 256 blocks tall or start at 0. `level.getMinY()`, `level.getMaxY()` and `level.getHeight()` answer for the level the code runs in, and `level.dimensionType().minY()` and `height()` when no level is at hand. `// world-height: <reason>` silences the line or the line above it, and a marker without a reason still warns.
 
 ## Workspace dependencies
 
@@ -275,7 +298,7 @@ clientGameTestRecorder {
 - The recording HUD panel sits in the top-right corner, clear of chat in the bottom-left. `GTR_RECORDING_PROFILE=showcase` shows a title card there instead of the diagnostic overlay.
 - `GTR_RECORDING_PRE_PADDING_SECONDS` / `GTR_RECORDING_POST_PADDING_SECONDS`: `0`–`60`, default `0.5`.
 - Each recording writes metadata with tick and frame boundaries, effective padding and any capture gaps. A run fails if game audio is not routed to the recorder's sink or cannot be decoded.
-- `scripts/trim_stages.py LOG VIDEO.mp4 OUT.mp4 META.json` cuts a recording down to its filmed stages. The test prints `STAGE_START <epoch ms> <id>` and `STAGE_END <epoch ms> <id>` around what should be on screen; the script keeps 0.10 s before each start and 0.12 s after each end, joins stages that touch, and drops the join, the dimension change and the off-camera rehearsal between them. `LOG` is the run's log (it also carries the `VIDEO_WINDOW pre=` padding) and `META.json` the recording's metadata.
+- `scripts/trim_stages.py LOG VIDEO.mp4 OUT.mp4 META.json` cuts a recording down to its filmed stages. The test prints `STAGE_START <epoch ms> <id>` and `STAGE_END <epoch ms> <id>` around what should be on screen; the script keeps 0.10 s before each start and 0.12 s after each end, joins stages that touch, and drops the join, the dimension change and the off-camera rehearsal between them. `LOG` is the run's log and `META.json` the recording's metadata, whose `boundaries.selectedStartEpochSeconds` is where the video starts.
 - The raw capture's muxer queues up to 4096 encoded packets (over a minute of capture), so a write that waits on a busy disk does not stop the screen grab and leave a frame gap.
 - When the job runs in a cgroup of its own with a memory limit (a job runner's slot, such as a systemd scope), the recording sets that cgroup's `memory.low` to the limit for the run, so the kernel reclaims sibling jobs first instead of evicting ffmpeg's and the game's files, whose reads from a busy disk stall the capture. A cgroup without a limit is left alone.
 
@@ -405,8 +428,10 @@ Self-hosted runners keep their work tree between jobs, so every reusable workflo
 ./scripts/mod_fleet.py audit --github --strict
 ./scripts/mod_fleet.py record [--include <repository>] [--dry-run]
 ./scripts/mod_fleet.py vanilla-identity [--output hits.md]
+./scripts/mod_fleet.py vanilla-tags --tag-data <directory> [--output hits.md]
+./scripts/mod_fleet.py world-height [--output hits.md]
 ```
 
 `record` writes to a timestamped `~/Downloads/minecraft-mod-gametest-recordings-*` directory; `--output <dir> --resume` reruns only the repositories that failed. For a new Minecraft release, pass `--minecraft-version`, `--loader-version`, `--fabric-api-version`, `--java-version` and `--conventions-version` to `audit`, then update the manifest.
 
-`vanilla-identity` lists the lines `checkVanillaIdentity` would flag in every git checkout beside this one, including mods that do not use the conventions plugins.
+`vanilla-identity` lists the lines `checkVanillaIdentity` would flag in every git checkout beside this one, including mods that do not use the conventions plugins. `vanilla-tags` does the same for `checkVanillaTagIdentities` and names the tag each line should ask about; it reads the vanilla tags from `--tag-data`, the `data/minecraft/tags` directory of a decompiled Minecraft tree. `world-height` lists the literal overworld build limits `checkWorldHeight` would flag.

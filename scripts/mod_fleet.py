@@ -33,6 +33,49 @@ VANILLA_IDENTITY_CHECK_PLUGINS = (
     "io.github.brainage04.multiloader-mod-conventions",
 )
 VANILLA_IDENTITY_OPT_OUT = re.compile(r"^//\s*vanilla-identity:(.*)$")
+# Shared with the checkVanillaTagIdentities task, which reads the same pattern file.
+VANILLA_TAG_PATTERNS = (
+    SCRIPT_DIR.parent
+    / "gradle-plugin/java-quality-conventions/src/main/resources/io/github/brainage04"
+    / "minecraftmodconventions/gradle/quality/vanilla-tag-identity-patterns.txt"
+)
+VANILLA_TAG_OPT_OUT = re.compile(r"^//\s*vanilla-tag:(.*)$")
+# Shared with the checkWorldHeight task, which reads the same pattern file.
+WORLD_HEIGHT_PATTERNS = (
+    SCRIPT_DIR.parent
+    / "gradle-plugin/java-quality-conventions/src/main/resources/io/github/brainage04"
+    / "minecraftmodconventions/gradle/quality/world-height-patterns.txt"
+)
+WORLD_HEIGHT_OPT_OUT = re.compile(r"^//\s*world-height:(.*)$")
+# Mirrors VanillaTagIndex by hand: the tag directories of data/minecraft/tags, the classification tags that
+# say how a block is mined, enchanted, spawned on or built into a structure instead of what it is, and the
+# rule that a tag must name the identity it lists. A change in the Java index needs the same change here.
+TAG_REGISTRIES = {
+    "block": "block",
+    "blocks": "block",
+    "item": "item",
+    "items": "item",
+    "worldgen/biome": "biome",
+}
+TAG_REFERENCE_PREFIX = {"block": "block tag", "item": "item tag", "biome": "biome tag"}
+TAG_CLASSIFICATION_PREFIXES = ("mineable/", "enchantable/", "has_structure/", "spawns_")
+TAG_CLASSIFICATION_PARTS = ("spawnable", "carver_replaceables", "_tool")
+TAG_CLASSIFICATION_NAMES = {
+    "replaceable",
+    "replaceable_by_trees",
+    "replaceable_by_mushrooms",
+    "geode_invalid_blocks",
+    "fall_damage_resetting",
+    "stronghold_biased_to",
+    "enchantment_power_transmitter",
+    "breaks_decorated_pots",
+    "trimmable_armor",
+    "snow_layer_cannot_survive_on",
+}
+TAG_IDENTITY = re.compile(r"^(Blocks|Items|Biomes)\.([A-Z][A-Z0-9_]*)$")
+TAG_IDENTITY_REGISTRY = {"Blocks": "block", "Items": "item", "Biomes": "biome"}
+# Every registry constant in a match, so a membership list reports each of its arguments.
+TAG_IDENTITY_IN_TEXT = re.compile(r"\b(Blocks|Items|Biomes)\.([A-Z][A-Z0-9_]*)")
 SKIPPED_SOURCE_DIRECTORIES = {"build", ".gradle", "run", "node_modules"}
 DEFAULT_MANIFEST = SCRIPT_DIR / "mod-fleet.json"
 RECORDER_CAPABLE_PLUGINS = (
@@ -319,7 +362,8 @@ def audit_fleet(
     }
 
 
-def vanilla_identity_patterns(path: Path = VANILLA_IDENTITY_PATTERNS) -> list[re.Pattern[str]]:
+def pattern_file(path: Path, required_group: str | None = None) -> list[re.Pattern[str]]:
+    """The hit patterns of a pattern file, with Java's `(?<name>` turned into Python's `(?P<name>`."""
     fragments: dict[str, str] = {}
     hits: list[re.Pattern[str]] = []
     for raw_line in path.read_text(encoding="utf-8").splitlines():
@@ -337,10 +381,25 @@ def vanilla_identity_patterns(path: Path = VANILLA_IDENTITY_PATTERNS) -> list[re
 
         regex = re.sub(r"\{([a-z]\w*)}", expand, definition.group(2))
         if definition.group(1) == "hit":
-            hits.append(re.compile(regex))
+            pattern = re.compile(re.sub(r"\(\?<(\w+)>", r"(?P<\1>", regex))
+            if required_group is not None and required_group not in pattern.groupindex:
+                raise ValueError(f"Hit pattern of {path} has no (?<{required_group}>...) group: {line}")
+            hits.append(pattern)
         else:
             fragments[definition.group(1)] = regex
     return hits
+
+
+def vanilla_identity_patterns(path: Path = VANILLA_IDENTITY_PATTERNS) -> list[re.Pattern[str]]:
+    return pattern_file(path)
+
+
+def vanilla_tag_patterns(path: Path = VANILLA_TAG_PATTERNS) -> list[re.Pattern[str]]:
+    return pattern_file(path, "identity")
+
+
+def world_height_patterns(path: Path = WORLD_HEIGHT_PATTERNS) -> list[re.Pattern[str]]:
+    return pattern_file(path)
 
 
 class JavaLineSplitter:
@@ -390,25 +449,151 @@ class JavaLineSplitter:
         return "".join(code), ""
 
 
-def vanilla_identity_opt_out(comment: str) -> bool | None:
-    """None without a marker, otherwise whether the marker gives a reason."""
-    marker = VANILLA_IDENTITY_OPT_OUT.match(comment)
-    return None if marker is None else bool(marker.group(1).strip())
-
-
 def scan_vanilla_identity(lines: list[str], patterns: list[re.Pattern[str]]) -> list[dict[str, Any]]:
     """Mirrors VanillaIdentityScanner.scan: a reasoned marker clears its own line and the next."""
+    return scan_patterns(lines, patterns, VANILLA_IDENTITY_OPT_OUT)
+
+
+def scan_patterns(
+    lines: list[str], patterns: list[re.Pattern[str]], marker: re.Pattern[str]
+) -> list[dict[str, Any]]:
+    """Mirrors the scanners: a line is a hit when a pattern matches it and no marker with a reason covers it."""
     splitter = JavaLineSplitter()
     findings: list[dict[str, Any]] = []
     previous: bool | None = None
     for number, line in enumerate(lines, start=1):
         code, comment = splitter.split(line)
-        current = vanilla_identity_opt_out(comment)
+        current = opt_out_reason(comment, marker)
         if any(pattern.search(code) for pattern in patterns) and current is not True and previous is not True:
             findings.append({
                 "line": number,
                 "source": line.strip(),
                 "missingReason": current is not None or previous is not None,
+            })
+        previous = current
+    return findings
+
+
+def opt_out_reason(comment: str, marker: re.Pattern[str]) -> bool | None:
+    found = marker.match(comment)
+    return None if found is None else bool(found.group(1).strip())
+
+
+def without_namespace(value: str) -> str | None:
+    """The id inside the vanilla namespace, or None for another namespace, whose tags only it knows."""
+    return value[len("minecraft:"):] if value.startswith("minecraft:") else None
+
+
+def resolve_tag(
+    tag: str, raw_tags: dict[str, list[str]], done: dict[str, set[str]], visiting: set[str]
+) -> set[str]:
+    if tag in done:
+        return done[tag]
+    if tag in visiting:
+        return set()
+    visiting.add(tag)
+    ids: set[str] = set()
+    for value in raw_tags.get(tag, []):
+        if value.startswith("#"):
+            nested = without_namespace(value[1:])
+            if nested is not None:
+                ids |= resolve_tag(nested, raw_tags, done, visiting)
+        else:
+            identifier = without_namespace(value)
+            if identifier is not None:
+                ids.add(identifier)
+    visiting.discard(tag)
+    done[tag] = ids
+    return ids
+
+
+def is_classification_tag(tag: str) -> bool:
+    """Mirrors VanillaTagIndex.isClassificationTag: how it is mined, spawned on or built, not what it is."""
+    return (
+        tag in TAG_CLASSIFICATION_NAMES
+        or tag.startswith(TAG_CLASSIFICATION_PREFIXES)
+        or any(part in tag for part in TAG_CLASSIFICATION_PARTS)
+    )
+
+
+def singular(word: str) -> str:
+    return word[:-1] if word.endswith("s") and len(word) > 3 else word
+
+
+def names_the_identity(tag: str, identifier: str) -> bool:
+    """Mirrors VanillaTagIndex.namesTheIdentity: `beds` ends `red_bed`, `beacon_base_blocks` does not."""
+    path = tag.rsplit("/", 1)[-1]
+    if path.startswith("is_"):
+        path = path[len("is_"):]
+    return singular(identifier).endswith(singular(path))
+
+
+def vanilla_tag_index(data_root: Path) -> dict[tuple[str, str], list[str]]:
+    """Mirrors VanillaTagIndex: (registry, id) to the sorted tag paths listing it, from a data/minecraft/tags tree."""
+    raw: dict[str, dict[str, list[str]]] = {}
+    for directory, registry in TAG_REGISTRIES.items():
+        for path in sorted((data_root / directory).rglob("*.json")):
+            tag = path.relative_to(data_root / directory).with_suffix("").as_posix()
+            values = json.loads(path.read_text(encoding="utf-8")).get("values", [])
+            entries: list[str] = []
+            for value in values:
+                if isinstance(value, str):
+                    entries.append(value)
+                elif isinstance(value, dict) and isinstance(value.get("id"), str):
+                    entries.append(value["id"])
+            raw.setdefault(registry, {})[tag] = entries
+    members: dict[tuple[str, str], list[str]] = {}
+    for registry, tags in raw.items():
+        done: dict[str, set[str]] = {}
+        for tag in tags:
+            resolve_tag(tag, tags, done, set())
+        for tag, ids in done.items():
+            if is_classification_tag(tag):
+                continue
+            for identifier in ids:
+                if not names_the_identity(tag, identifier):
+                    continue
+                members.setdefault((registry, identifier), []).append(tag)
+    for tags in members.values():
+        tags.sort()
+    return members
+
+
+def tag_references(index: dict[tuple[str, str], list[str]], identity: str) -> list[str]:
+    """Mirrors VanillaTagIndex.reference: the tags to ask about for `Blocks.RED_BED`, such as block tag #minecraft:beds."""
+    match = TAG_IDENTITY.fullmatch(identity)
+    if match is None:
+        return []
+    registry = TAG_IDENTITY_REGISTRY[match.group(1)]
+    return [
+        TAG_REFERENCE_PREFIX[registry] + " #minecraft:" + tag
+        for tag in index.get((registry, match.group(2).lower()), [])
+    ]
+
+
+def scan_vanilla_tags(
+    lines: list[str], patterns: list[re.Pattern[str]], index: dict[tuple[str, str], list[str]]
+) -> list[dict[str, Any]]:
+    """Mirrors VanillaTagIdentityScanner.scan, including which identity each hit compares with."""
+    splitter = JavaLineSplitter()
+    findings: list[dict[str, Any]] = []
+    previous: bool | None = None
+    for number, line in enumerate(lines, start=1):
+        code, comment = splitter.split(line)
+        current = opt_out_reason(comment, VANILLA_TAG_OPT_OUT)
+        constants: list[str] = []
+        for pattern in patterns:
+            for match in pattern.finditer(code):
+                for token, name in TAG_IDENTITY_IN_TEXT.findall(match.group(0)):
+                    for tag in tag_references(index, f"{token}.{name}"):
+                        if tag not in constants:
+                            constants.append(tag)
+        if constants and current is not True and previous is not True:
+            findings.append({
+                "line": number,
+                "source": line.strip(),
+                "missingReason": current is not None or previous is not None,
+                "constants": constants,
             })
         previous = current
     return findings
@@ -425,8 +610,8 @@ def mod_source_files(root: Path) -> list[Path]:
     return sorted(set(files))
 
 
-def vanilla_identity_fleet(workspace: Path) -> list[dict[str, Any]]:
-    patterns = vanilla_identity_patterns()
+def scan_fleet(workspace: Path, finder: Any) -> list[dict[str, Any]]:
+    """Scans every checkout under workspace with finder(lines) and records which apply a conventions plugin."""
     repositories: list[dict[str, Any]] = []
     for child in sorted(workspace.iterdir()):
         if not child.is_dir() or not (child / ".git").exists():
@@ -438,7 +623,7 @@ def vanilla_identity_fleet(workspace: Path) -> list[dict[str, Any]]:
                 lines = path.read_text(encoding="utf-8").splitlines()
             except UnicodeDecodeError:
                 continue
-            for finding in scan_vanilla_identity(lines, patterns):
+            for finding in finder(lines):
                 hits.append({"path": str(path.relative_to(child)), **finding})
         repositories.append({
             "name": child.name,
@@ -446,6 +631,22 @@ def vanilla_identity_fleet(workspace: Path) -> list[dict[str, Any]]:
             "hits": hits,
         })
     return repositories
+
+
+def vanilla_identity_fleet(workspace: Path) -> list[dict[str, Any]]:
+    patterns = vanilla_identity_patterns()
+    return scan_fleet(workspace, lambda lines: scan_vanilla_identity(lines, patterns))
+
+
+def vanilla_tags_fleet(workspace: Path, tag_data: Path) -> list[dict[str, Any]]:
+    patterns = vanilla_tag_patterns()
+    index = vanilla_tag_index(tag_data)
+    return scan_fleet(workspace, lambda lines: scan_vanilla_tags(lines, patterns, index))
+
+
+def world_height_fleet(workspace: Path) -> list[dict[str, Any]]:
+    patterns = world_height_patterns()
+    return scan_fleet(workspace, lambda lines: scan_patterns(lines, patterns, WORLD_HEIGHT_OPT_OUT))
 
 
 def vanilla_identity_markdown(workspace: Path, repositories: list[dict[str, Any]]) -> str:
@@ -458,6 +659,58 @@ def vanilla_identity_markdown(workspace: Path, repositories: list[dict[str, Any]
         "from the `main` and `client` source sets (GameTests excluded), with the patterns of the "
         "`checkVanillaIdentity` build check. *Checked* means the build applies a conventions plugin "
         "that runs the check, once it uses a release that has it.",
+        "",
+        "| Repository | Checked | Location | Line |",
+        "|---|---|---|---|",
+    ]
+    for repo in with_hits:
+        for hit in repo["hits"]:
+            note = " *(opt-out without a reason)*" if hit["missingReason"] else ""
+            lines.append(
+                f"| {repo['name']} | {'yes' if repo['checked'] else 'no'} | `{hit['path']}:{hit['line']}` "
+                f"| `{escape_table(hit['source'])}`{note} |"
+            )
+    clean = [repo["name"] for repo in repositories if not repo["hits"]]
+    lines.extend(["", "No hits: " + (", ".join(clean) if clean else "none") + "."])
+    return "\n".join(lines) + "\n"
+
+
+def vanilla_tags_markdown(workspace: Path, repositories: list[dict[str, Any]], tag_data: Path) -> str:
+    hit_count = sum(len(repo["hits"]) for repo in repositories)
+    with_hits = [repo for repo in repositories if repo["hits"]]
+    lines = [
+        "# Vanilla tag identities",
+        "",
+        f"{hit_count} lines in {len(with_hits)} of {len(repositories)} checkouts under `{workspace}`, "
+        "from the `main` and `client` source sets (GameTests excluded), with the patterns of the "
+        f"`checkVanillaTagIdentities` build check and the vanilla tags of `{tag_data}`. *Checked* means the "
+        "build applies a conventions plugin that runs the check, once it uses a release that has it.",
+        "",
+        "| Repository | Checked | Location | Tag | Line |",
+        "|---|---|---|---|---|",
+    ]
+    for repo in with_hits:
+        for hit in repo["hits"]:
+            note = " *(opt-out without a reason)*" if hit["missingReason"] else ""
+            lines.append(
+                f"| {repo['name']} | {'yes' if repo['checked'] else 'no'} | `{hit['path']}:{hit['line']}` "
+                f"| {escape_table(', '.join(hit['constants']))} | `{escape_table(hit['source'])}`{note} |"
+            )
+    clean = [repo["name"] for repo in repositories if not repo["hits"]]
+    lines.extend(["", "No hits: " + (", ".join(clean) if clean else "none") + "."])
+    return "\n".join(lines) + "\n"
+
+
+def world_height_markdown(workspace: Path, repositories: list[dict[str, Any]]) -> str:
+    hit_count = sum(len(repo["hits"]) for repo in repositories)
+    with_hits = [repo for repo in repositories if repo["hits"]]
+    lines = [
+        "# Hardcoded world heights",
+        "",
+        f"{hit_count} lines in {len(with_hits)} of {len(repositories)} checkouts under `{workspace}`, "
+        "from the `main` and `client` source sets (GameTests excluded), with the patterns of the "
+        "`checkWorldHeight` build check. *Checked* means the build applies a conventions plugin that runs "
+        "the check, once it uses a release that has it.",
         "",
         "| Repository | Checked | Location | Line |",
         "|---|---|---|---|",
@@ -764,6 +1017,26 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     identity_parser.add_argument("--workspace", type=Path, default=SCRIPT_DIR.parents[1])
     identity_parser.add_argument("--output", type=Path, help="Also write the Markdown report here")
 
+    tags_parser = subparsers.add_parser(
+        "vanilla-tags",
+        help="List comparisons with one vanilla block, item or biome that a vanilla tag lists",
+    )
+    tags_parser.add_argument("--workspace", type=Path, default=SCRIPT_DIR.parents[1])
+    tags_parser.add_argument(
+        "--tag-data",
+        type=Path,
+        required=True,
+        help="A data/minecraft/tags directory of a decompiled Minecraft tree",
+    )
+    tags_parser.add_argument("--output", type=Path, help="Also write the Markdown report here")
+
+    height_parser = subparsers.add_parser(
+        "world-height",
+        help="List hardcoded overworld build limits in every checkout's main and client sources",
+    )
+    height_parser.add_argument("--workspace", type=Path, default=SCRIPT_DIR.parents[1])
+    height_parser.add_argument("--output", type=Path, help="Also write the Markdown report here")
+
     record_parser = subparsers.add_parser("record", help="Audit and record every eligible repository")
     add_shared_arguments(record_parser)
     record_parser.add_argument("--output", type=Path, default=None)
@@ -783,6 +1056,24 @@ def main(argv: list[str] | None = None) -> int:
     workspace = args.workspace.expanduser().resolve()
     if args.command == "vanilla-identity":
         report = vanilla_identity_markdown(workspace, vanilla_identity_fleet(workspace))
+        print(report, end="")
+        if args.output:
+            args.output.expanduser().resolve().write_text(report, encoding="utf-8")
+        return 0
+
+    if args.command == "vanilla-tags":
+        tag_data = args.tag_data.expanduser().resolve()
+        if not tag_data.is_dir():
+            print(f"--tag-data {tag_data} is not a directory", file=sys.stderr)
+            return 2
+        report = vanilla_tags_markdown(workspace, vanilla_tags_fleet(workspace, tag_data), tag_data)
+        print(report, end="")
+        if args.output:
+            args.output.expanduser().resolve().write_text(report, encoding="utf-8")
+        return 0
+
+    if args.command == "world-height":
+        report = world_height_markdown(workspace, world_height_fleet(workspace))
         print(report, end="")
         if args.output:
             args.output.expanduser().resolve().write_text(report, encoding="utf-8")

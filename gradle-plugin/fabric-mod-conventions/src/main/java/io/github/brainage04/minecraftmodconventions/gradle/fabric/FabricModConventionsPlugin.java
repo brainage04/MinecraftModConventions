@@ -1,6 +1,8 @@
 package io.github.brainage04.minecraftmodconventions.gradle.fabric;
 
 import io.github.brainage04.minecraftmodconventions.gradle.quality.VanillaIdentityCheck;
+import io.github.brainage04.minecraftmodconventions.gradle.quality.VanillaTagIdentitiesCheck;
+import io.github.brainage04.minecraftmodconventions.gradle.quality.WorldHeightCheck;
 import net.fabricmc.loom.api.LoomGradleExtensionAPI;
 
 import org.gradle.api.GradleException;
@@ -53,8 +55,10 @@ public final class FabricModConventionsPlugin implements Plugin<Project> {
         configureStandardDependencies(project);
         configureSourceLayout(project, modSide);
         configureUnitTests(project, modSide);
-        VanillaIdentityCheck.register(project);
         LoomGradleExtensionAPI loom = project.getExtensions().getByType(LoomGradleExtensionAPI.class);
+        VanillaIdentityCheck.register(project);
+        VanillaTagIdentitiesCheck.register(project, loom.getNamedMinecraftJars());
+        WorldHeightCheck.register(project);
         // Read the run configuration at execution time so custom GameTest run directories are respected.
         project.getTasks().matching(task -> task.getName().equals("runGameTest"))
                 .configureEach(task -> task.doFirst("resetGameTestWorld", _ ->

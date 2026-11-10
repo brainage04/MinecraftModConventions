@@ -275,7 +275,9 @@ class MultiLoaderModConventionsTest {
                     doLast {
                         ['common', 'fabric', 'neoforge'].each { path ->
                             def check = project(":$path").tasks.check
-                            assert check.taskDependencies.getDependencies(check)*.name.contains('checkVanillaIdentity')
+                            ['checkVanillaIdentity', 'checkVanillaTagIdentities', 'checkWorldHeight'].each { name ->
+                                assert check.taskDependencies.getDependencies(check)*.name.contains(name)
+                            }
                         }
                     }
                 }
@@ -286,9 +288,25 @@ class MultiLoaderModConventionsTest {
         write("neoforge/src/main/java/fixture/OptedOutGate.java",
                 "class OptedOutGate {\n// vanilla-identity: the mod only changes the vanilla Overworld\n" + gate + "\n}\n");
         write("common/src/gametest/java/fixture/GameTestGate.java", "class GameTestGate {\n" + gate + "\n}\n");
+        write("common/src/main/java/fixture/CommonBed.java", """
+                class CommonBed {
+                    static boolean bed(net.minecraft.world.level.block.Block block) {
+                        return block == net.minecraft.world.level.block.Blocks.RED_BED;
+                    }
+                }
+                """);
+        write("common/src/main/java/fixture/CommonHeight.java", """
+                class CommonHeight {
+                    static boolean below(int y) {
+                        return y < -64;
+                    }
+                }
+                """);
 
         BuildResult result = runGradle(":common:checkVanillaIdentity", ":fabric:checkVanillaIdentity",
-                ":neoforge:checkVanillaIdentity", "verifyVanillaIdentityWiring");
+                ":neoforge:checkVanillaIdentity", ":common:checkVanillaTagIdentities", ":fabric:checkVanillaTagIdentities",
+                ":neoforge:checkVanillaTagIdentities", ":common:checkWorldHeight", ":fabric:checkWorldHeight",
+                ":neoforge:checkWorldHeight", "verifyVanillaIdentityWiring");
 
         String output = result.getOutput();
         assertEquals(TaskOutcome.SUCCESS, result.task(":common:checkVanillaIdentity").getOutcome(), output);
@@ -300,11 +318,27 @@ class MultiLoaderModConventionsTest {
         assertTrue(output.contains("EnvironmentAttributes.BED_RULE"), output);
         assertFalse(output.contains("GameTestGate"), output);
         assertFalse(output.contains("OptedOutGate"), output);
+        assertFalse(output.contains("No vanilla tag data"), output);
         assertTrue(Files.readString(projectDir.resolve("common/build/reports/vanilla-identity.txt"))
                 .contains("CommonGate.java:2"), output);
         assertTrue(Files.readString(projectDir.resolve("fabric/build/reports/vanilla-identity.txt"))
                 .contains("ClientGate.java:2"), output);
         assertEquals("", Files.readString(projectDir.resolve("neoforge/build/reports/vanilla-identity.txt")));
+
+        for (String module : new String[] {"common", "fabric", "neoforge"}) {
+            assertEquals(TaskOutcome.SUCCESS, result.task(":" + module + ":checkVanillaTagIdentities").getOutcome(),
+                    output);
+            assertEquals(TaskOutcome.SUCCESS, result.task(":" + module + ":checkWorldHeight").getOutcome(), output);
+        }
+        assertTrue(output.contains("common/src/main/java/fixture/CommonBed.java:3: return block == "
+                + "net.minecraft.world.level.block.Blocks.RED_BED;"), output);
+        assertTrue(output.contains("block tag #minecraft:beds"), output);
+        assertTrue(output.contains("common/src/main/java/fixture/CommonHeight.java:3: return y < -64;"), output);
+        assertTrue(Files.readString(projectDir.resolve("common/build/reports/vanilla-tag-identities.txt"))
+                .contains("block tag #minecraft:beds"), output);
+        assertTrue(Files.readString(projectDir.resolve("common/build/reports/world-height.txt"))
+                .contains("CommonHeight.java:3"), output);
+        assertFalse(output.contains("GameTestGate"), output);
     }
 
     @Test

@@ -12,6 +12,7 @@ import org.gradle.api.tasks.PathSensitive;
 import org.gradle.api.tasks.PathSensitivity;
 import org.gradle.api.tasks.SkipWhenEmpty;
 import org.gradle.api.tasks.TaskAction;
+import org.gradle.work.DisableCachingByDefault;
 
 import java.io.File;
 import java.io.IOException;
@@ -26,6 +27,7 @@ import java.util.List;
  * Reports lines of mod sources that compare with a vanilla dimension identity instead of asking the game's data.
  * The hits go to the report file and to a warning; a place that is about the dimension by name keeps its comparison.
  */
+@DisableCachingByDefault(because = "It scans source lines and rewrites a small report; a cache entry saves nothing.")
 public abstract class CheckVanillaIdentityTask extends DefaultTask {
     static final String GUIDANCE = """
             A comparison with a vanilla dimension identity is right when the feature is about that dimension by name, \
