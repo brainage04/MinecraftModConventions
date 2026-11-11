@@ -152,6 +152,9 @@ public final class ClientGameTestPlayerActions {
     /**
      * Holds the attack key until the block is gone. Fails the test when the block is not under the
      * crosshair, when it is out of vanilla reach, or when an interaction-range attribute was changed.
+     *
+     * <p>The client removes the block before the server confirms the break, and only the server hands
+     * out the drops: wait for the server's own state before asserting on them.
      */
     public static void mine(ClientGameTestContext context, BlockPos pos) {
         Objects.requireNonNull(pos, "pos");

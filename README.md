@@ -270,7 +270,7 @@ The helpers act on the client thread themselves, so a test calls them in order b
 ClientGameTestPlayerActions.walkWithinReach(context, Vec3.atCenterOf(ore));
 ClientGameTestPlayerActions.lookAtBlock(context, ore);
 ClientGameTestPlayerActions.mine(context, ore);
-context.waitFor(client -> client.level.getBlockState(ore).isAir(), 100);
+// then assert on the server that the drops reached the inventory
 ```
 
 To use an unreleased build of this library, publish it into a sibling checkout's local repository and point the mod at that repository:
@@ -298,7 +298,7 @@ Every positive case has a matching negative case in the same suite, showing the 
 
 ### The recording standard
 
-Every recording is 1920x1080 with GUI scale 3, a 640x360 GUI (`ClientGameTestOptions` sets it, so no mod overrides it), with the caption panel in the top-right corner 5 pixels from the edge and nothing cut off: the panel is at most 368 pixels wide and a diagnostic step's 10 lines are 116 pixels tall, both inside a 640x360 GUI. Game sound is on, except for the master and music categories, and the recording fails without it. The same panel position and scale in every mod is the point: a viewer switching between videos sees the same overlay.
+Every recording is 1920x1080 with GUI scale 3, a 640x360 GUI (`ClientGameTestOptions` sets it, so no mod overrides it), with the caption panel in the top-right corner 5 pixels from the edge and nothing cut off: the panel is at most 368 pixels wide and a diagnostic step's 10 lines are 116 pixels tall, both inside a 640x360 GUI. Game sound is on at 0.7 master volume with background music off, and the recording fails without it. The same panel position and scale in every mod is the point: a viewer switching between videos sees the same overlay.
 
 ## Client GameTest recording
 
