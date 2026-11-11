@@ -65,8 +65,11 @@ public abstract class CheckDeprecatedGameTestApisTask extends DefaultTask {
             }
             for (DeprecatedGameTestApiScanner.Suppression suppression
                     : DeprecatedGameTestApiScanner.scanSuppressions(lines)) {
+                if (!suppression.missingReason()) {
+                    continue;
+                }
                 suppressions.add("  " + path + ":" + suppression.line() + ": " + suppression.source()
-                        + (suppression.missingReason() ? "  (the deprecated-api marker needs a reason)" : ""));
+                        + "  (the deprecated-api marker needs a reason)");
             }
         }
         if (calls.isEmpty() && suppressions.isEmpty()) {
