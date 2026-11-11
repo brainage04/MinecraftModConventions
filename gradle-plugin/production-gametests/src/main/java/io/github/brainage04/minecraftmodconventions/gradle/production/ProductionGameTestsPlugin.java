@@ -8,8 +8,10 @@ import org.gradle.api.Task;
 import org.gradle.api.artifacts.Configuration;
 import org.gradle.api.plugins.JavaPluginExtension;
 import org.gradle.api.tasks.SourceSet;
+import org.gradle.api.tasks.SourceSetContainer;
 import org.gradle.api.tasks.TaskProvider;
 import org.gradle.api.tasks.bundling.Jar;
+import org.gradle.api.tasks.compile.JavaCompile;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -20,6 +22,10 @@ public final class ProductionGameTestsPlugin implements Plugin<Project> {
     public static final String PLUGIN_ID = "io.github.brainage04.production-gametests";
     /** The production client GameTests against a plain vanilla server; see {@link VanillaServerClientGameTestRunTask}. */
     public static final String VANILLA_SERVER_CLIENT_GAMETEST_TASK = "runVanillaServerClientGameTest";
+    /** The source set of the real tests. */
+    public static final String GAMETEST_SOURCE_SET = "gametest";
+    /** The source set of film-only code: scene staging, cameras, captions and film-only mixins. */
+    public static final String RECORDING_SOURCE_SET = "recording";
     private static final String RUNTIME_LIBRARIES_CONFIGURATION = "productionGameTestRuntimeLibraries";
     private static final String CLIENT_GAMETEST_ENABLED_PROPERTY = "minecraftmodconventions.clientGameTest";
     /**
@@ -67,6 +73,10 @@ public final class ProductionGameTestsPlugin implements Plugin<Project> {
     }
 
     private static void configureProductionGameTests(Project project, ProductionGameTestExtension extension) {
+        SourceSet gameTest = sourceSets(project).findByName(GAMETEST_SOURCE_SET);
+        if (gameTest != null) {
+            registerRecordingSourceSet(project, gameTest);
+        }
         if (!extension.getIncludeClient().get() && !extension.getIncludeServer().get()) {
             return;
         }
@@ -223,10 +233,7 @@ public final class ProductionGameTestsPlugin implements Plugin<Project> {
     }
 
     private static TaskProvider<Jar> registerProductionGameTestJar(Project project) {
-        SourceSet gameTestSourceSet = project.getExtensions()
-                .getByType(JavaPluginExtension.class)
-                .getSourceSets()
-                .findByName("gametest");
+        SourceSet gameTestSourceSet = sourceSets(project).findByName(GAMETEST_SOURCE_SET);
         if (gameTestSourceSet == null) {
             throw new GradleException(
                     "productionGameTests requires the 'gametest' source set. "
@@ -238,7 +245,51 @@ public final class ProductionGameTestsPlugin implements Plugin<Project> {
             task.setDescription("Packages the consumer GameTest source set for production runs.");
             task.getArchiveClassifier().set("production-gametest");
             task.from(gameTestSourceSet.getOutput());
+            SourceSet recording = sourceSets(project).findByName(RECORDING_SOURCE_SET);
+            if (recording != null) {
+                task.from(recording.getOutput());
+            }
         });
+    }
+
+    /**
+     * Registers the film-only {@code recording} source set beside the GameTest one: scene staging,
+     * cameras, captions and film-only mixins live in {@code src/recording}, so the GameTest source set
+     * counts and runs only real tests.
+     *
+     * <p>The film compiles against a GameTest's libraries, and a GameTest compiles against the film.
+     * That is wired through the classpath configurations and the GameTest compiler rather than through
+     * the source sets' own classpaths, because a source set's classpath carries the task dependency on
+     * its own output and the two source sets would wait on each other. The film's output is packaged
+     * into the production GameTest JAR, so a recorded run loads it. Loom's mixin annotation processor
+     * is not applied here: the existing film mixins carry no refmap, and a source set that needs one
+     * adds it in the mod's build file.
+     */
+    private static void registerRecordingSourceSet(Project project, SourceSet gameTest) {
+        if (sourceSets(project).findByName(RECORDING_SOURCE_SET) != null) {
+            return;
+        }
+        SourceSet recording = sourceSets(project).create(RECORDING_SOURCE_SET);
+        recording.getJava().setSrcDirs(List.of("src/" + RECORDING_SOURCE_SET + "/java"));
+        recording.getResources().setSrcDirs(List.of("src/" + RECORDING_SOURCE_SET + "/resources"));
+        recording.setCompileClasspath(project.files(
+                project.getConfigurations().getByName(gameTest.getCompileClasspathConfigurationName())));
+        recording.setRuntimeClasspath(project.files(
+                project.getConfigurations().getByName(gameTest.getRuntimeClasspathConfigurationName())));
+        project.getConfigurations()
+                .getByName(recording.getAnnotationProcessorConfigurationName())
+                .extendsFrom(project.getConfigurations().getByName(gameTest.getAnnotationProcessorConfigurationName()));
+        project.getTasks().named(gameTest.getCompileJavaTaskName(), JavaCompile.class).configure(task -> {
+            task.setClasspath(project.files(task.getClasspath(), recording.getJava().getClassesDirectory()));
+            task.dependsOn(recording.getClassesTaskName());
+        });
+        project.getDependencies()
+                .add(gameTest.getRuntimeOnlyConfigurationName(), project.files(recording.getOutput()));
+        project.getTasks().named("check").configure(task -> task.dependsOn(recording.getClassesTaskName()));
+    }
+
+    private static SourceSetContainer sourceSets(Project project) {
+        return project.getExtensions().getByType(JavaPluginExtension.class).getSourceSets();
     }
 
     private static TaskProvider<PrepareProductionGameTestRunsTask> registerPrepareProductionGameTestRuns(
