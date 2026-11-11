@@ -155,9 +155,17 @@ public final class ClientGameTestRecorderPlugin implements Plugin<Project> {
         return hostDisplay(project).map(ClientGpuCapture.HostDisplay::expectedRenderer);
     }
 
-    /** Whether the recorded client renders on the card, from the display the recorder is given. */
+    /**
+     * Whether the client this build launches renders on the card. Only the recorder's own child build
+     * is given a display: the recorder writes {@code GTR_RECORDING_DISPLAY} for it, blank when it fell
+     * back to its virtual display. A plain run therefore keeps the capture's own frame cap, and a
+     * recorded one follows the display the recorder really used, not the property or the host's file.
+     */
     private static Provider<Boolean> gpuRendering(Project project) {
-        return recordingDisplay(project).map(value -> ClientGpuCapture.display(value) != null);
+        return project.getProviders()
+                .environmentVariable(ClientGpuCapture.DISPLAY_ENV)
+                .map(value -> ClientGpuCapture.display(value) != null)
+                .orElse(false);
     }
 
     private static void addRuntimeHelperDependencies(Project project) {
