@@ -277,16 +277,18 @@ class PluginComponentIsolationTest {
     }
 
     @Test
-    void qualityChecksAreStagedByDefault() throws IOException {
+    void qualityChecksAreStrictByDefaultAndTheOptOutStagesThem() throws IOException {
         writeFixture(QUALITY_PLUGIN_ID, false, "apply plugin: 'java'\nrepositories { mavenCentral() }");
         Path source = projectDir.resolve("src/main/java/BadlyFormatted.java");
         Files.createDirectories(source.getParent());
         Files.writeString(source, "final class BadlyFormatted{}");
 
-        var result = runGradle("check");
+        var strict = runGradleAndFail("check");
+        assertEquals(TaskOutcome.FAILED, strict.task(":spotlessJavaCheck").getOutcome(), strict.getOutput());
 
-        assertEquals(TaskOutcome.SKIPPED, result.task(":spotlessJavaCheck").getOutcome());
-        assertEquals(TaskOutcome.SKIPPED, result.task(":checkstyleMain").getOutcome());
+        var optedOut = runGradle("check", "-PstrictQuality=false");
+        assertEquals(TaskOutcome.SKIPPED, optedOut.task(":spotlessJavaCheck").getOutcome());
+        assertEquals(TaskOutcome.SKIPPED, optedOut.task(":checkstyleMain").getOutcome());
     }
 
 
@@ -448,6 +450,14 @@ class PluginComponentIsolationTest {
                 .withPluginClasspath()
                 .withArguments(arguments)
                 .build();
+    }
+
+    private BuildResult runGradleAndFail(String... arguments) {
+        return GradleRunner.create()
+                .withProjectDir(projectDir.toFile())
+                .withPluginClasspath()
+                .withArguments(arguments)
+                .buildAndFail();
     }
 
     private void writeLoomFixture(String pluginIds, String configuration) throws IOException {

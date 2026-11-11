@@ -16,16 +16,16 @@ import java.util.List;
 public final class JavaQualityConventionsPlugin implements Plugin<Project> {
     public static final String PLUGIN_ID = "io.github.brainage04.java-quality-conventions";
     /**
-     * The default of {@code -PstrictQuality}. Flip this one constant to make formatting, Checkstyle and
-     * a deprecated API call fail every build; {@code -PstrictQuality=false} still opts a project out.
+     * The default of {@code -PstrictQuality}: formatting, Checkstyle, and deprecation, unchecked and
+     * rawtypes warnings as errors. {@code -PstrictQuality=false} turns all of it off.
      */
-    private static final boolean DEFAULT_STRICT_QUALITY = false;
+    static final boolean DEFAULT_STRICT_QUALITY = true;
     /**
-     * The default of {@code -PstrictUnchecked}: whether unchecked and rawtypes warnings are errors too.
-     * It is a separate switch because Minecraft's generics (registries, mixins, NBT) produce them with
-     * no mechanical fix, while the deprecation warnings usually have one.
+     * The default of {@code -PstrictUnchecked} while strict quality is on: whether unchecked and
+     * rawtypes warnings are errors too. {@code -PstrictUnchecked=false} keeps formatting, Checkstyle
+     * and the deprecation group while leaving those two as warnings, which is the finer opt-out.
      */
-    private static final boolean DEFAULT_STRICT_UNCHECKED = false;
+    static final boolean DEFAULT_STRICT_UNCHECKED = true;
 
     private static final String GOOGLE_JAVA_FORMAT_VERSION = "1.36.1";
     private static final String CHECKSTYLE_VERSION = "13.9.0";
@@ -61,11 +61,16 @@ public final class JavaQualityConventionsPlugin implements Plugin<Project> {
         Provider<Boolean> strictUnchecked = root.getProviders()
                 .gradleProperty("strictUnchecked")
                 .map(Boolean::parseBoolean)
-                .orElse(DEFAULT_STRICT_UNCHECKED);
+                .orElse(strictQuality.map(quality -> uncheckedDefault(quality)));
         root.allprojects(project -> project.getPluginManager().withPlugin(
                 "java",
                 applied -> configureJavaProject(project, strictQuality, strictUnchecked)
         ));
+    }
+
+    /** Whether the unchecked group is on when only {@code strictQuality} decides: with it, and with the group. */
+    static boolean uncheckedDefault(boolean strictQuality) {
+        return strictQuality && DEFAULT_STRICT_UNCHECKED;
     }
 
     private static void configureJavaProject(

@@ -12,7 +12,7 @@ Shared Gradle plugins, GitHub workflows and client GameTest helpers for my Minec
 | `production-gametests` | Fabric project | Creates the `gametest` source set, the film-only [`recording`](#film-only-code-in-the-recording-source-set) source set, and runs GameTests against the packaged mod through Loom's production client and server. |
 | `integration-gametests` | Fabric or NeoForge Loom project with a `gametest` source set | Named GameTest suites that run with extra mods (Maven artifacts or pinned Git commits) loaded, in their own source set and runs. |
 | `workspace-dependencies` | any project | Prefers sibling checkouts' `build/local-repo` over Maven Central, and can share one dev-client `options.txt`. |
-| `java-quality-conventions` | root project | Spotless (google-java-format, AOSP), Checkstyle and javac lint, under the two [strict switches](#java-quality-switches); both default to off, and a deprecated API is a warning in an ordinary build. |
+| `java-quality-conventions` | root project | Spotless (google-java-format, AOSP), Checkstyle and javac lint as errors, under the two [strict switches](#java-quality-switches); strict is the default, `-PstrictQuality=false` opts a project out, `-PstrictUnchecked=false` leaves unchecked and rawtypes as warnings. |
 | `mod-publishing` | Fabric/NeoForge project | Opt-in GitHub, Modrinth and CurseForge release tasks around the Mod Publish Plugin. |
 | `maven-central-publishing` | libraries only | POM metadata, signing and Central Portal upload. |
 
@@ -229,22 +229,22 @@ A `@SuppressWarnings("removal")` or `@SuppressWarnings("deprecation")`, on a met
 
 ## Java quality switches
 
-Two Gradle properties, both off by default:
+Strict quality is on by default: `spotlessCheck`, Checkstyle, and `-Werror` on the three javac lints this library enables, so a deprecated API call, an unchecked cast and a raw type each fail the build.
 
-| Property | What it enforces |
-| --- | --- |
-| `strictQuality` | Spotless `spotlessCheck`, Checkstyle, and `-Werror` on `-Xlint:deprecation`, so a call to a deprecated API fails the build. |
-| `strictUnchecked` | `-Werror` on `-Xlint:unchecked` and `-Xlint:rawtypes`. |
+| Property | Default | What it controls |
+| --- | --- | --- |
+| `strictQuality` | `true` | The whole policy: `spotlessCheck`, Checkstyle and `-Xlint:deprecation`, `-Xlint:unchecked` and `-Xlint:rawtypes` as errors. `false` turns all of it off and leaves the three lints as warnings. |
+| `strictUnchecked` | `true` while strict quality is on | The unchecked and rawtypes lints as errors. `false` keeps formatting, Checkstyle and the deprecation group, and leaves unchecked and rawtypes as warnings. |
 
 ```shell
-./gradlew build -PstrictQuality=true
-./gradlew build -PstrictQuality=true -PstrictUnchecked=true
-./gradlew build -PstrictQuality=false
+./gradlew build                              # strict, the default
+./gradlew build -PstrictQuality=false        # nothing enforced, three lints as warnings
+./gradlew build -PstrictUnchecked=false      # no unchecked/rawtypes errors
 ```
 
-javac's `-Werror` promotes every enabled warning and has no per-category severity, so the two switches decide which lints are enabled. An ordinary build shows deprecation, unchecked and rawtypes as warnings. With `strictQuality` alone, unchecked and rawtypes are not enabled, so that build does not show them. A project whose Minecraft generics (registries, mixins, NBT) produce unchecked warnings without a mechanical fix leaves `strictUnchecked` off.
+javac's `-Werror` promotes every enabled warning and has no per-category severity, so the switches decide which lints are enabled. With `strictQuality` on and `strictUnchecked` off, the unchecked and rawtypes lints are not enabled, so that build does not show them; the all-off build shows all three as warnings.
 
-The two defaults are the constants `DEFAULT_STRICT_QUALITY` and `DEFAULT_STRICT_UNCHECKED` in `JavaQualityConventionsPlugin.java`, so turning strict quality on for the fleet is a one-line change, and `-PstrictQuality=false` still opts a project out.
+The defaults are the constants `DEFAULT_STRICT_QUALITY` and `DEFAULT_STRICT_UNCHECKED` in `JavaQualityConventionsPlugin.java`, and `uncheckedDefault(strictQuality)` ties the unchecked group to the master switch, so `-PstrictQuality=false` cannot leave it on. A project that cannot take unchecked or rawtypes errors, such as one whose Minecraft generics have no mechanical fix, passes `-PstrictUnchecked=false`.
 
 ## Workspace dependencies
 

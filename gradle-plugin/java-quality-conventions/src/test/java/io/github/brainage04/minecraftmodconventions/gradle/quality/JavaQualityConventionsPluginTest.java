@@ -44,4 +44,35 @@ class JavaQualityConventionsPluginTest {
                 arguments);
         assertTrue(arguments.contains("-Werror"));
     }
+
+    @Test
+    void strictQualityIsOnByDefaultAndEveryLintIsAnError() {
+        assertTrue(JavaQualityConventionsPlugin.DEFAULT_STRICT_QUALITY);
+        assertTrue(JavaQualityConventionsPlugin.DEFAULT_STRICT_UNCHECKED);
+        assertTrue(JavaQualityConventionsPlugin.uncheckedDefault(true));
+
+        assertEquals(
+                List.of("-Xlint:deprecation", "-Xlint:unchecked", "-Xlint:rawtypes", "-Werror"),
+                JavaQualityConventionsPlugin.lintArguments(
+                        JavaQualityConventionsPlugin.DEFAULT_STRICT_QUALITY,
+                        JavaQualityConventionsPlugin.uncheckedDefault(
+                                JavaQualityConventionsPlugin.DEFAULT_STRICT_QUALITY)));
+    }
+
+    @Test
+    void strictQualityFalseTurnsTheWholePolicyOff() {
+        assertFalse(JavaQualityConventionsPlugin.uncheckedDefault(false), "the opt-out covers the unchecked group too");
+
+        assertEquals(
+                List.of("-Xlint:deprecation", "-Xlint:unchecked", "-Xlint:rawtypes"),
+                JavaQualityConventionsPlugin.lintArguments(
+                        false, JavaQualityConventionsPlugin.uncheckedDefault(false)));
+    }
+
+    @Test
+    void strictUncheckedFalseKeepsTheFormattingAndDeprecationGroup() {
+        assertEquals(
+                List.of("-Xlint:deprecation", "-Werror"),
+                JavaQualityConventionsPlugin.lintArguments(true, false));
+    }
 }
