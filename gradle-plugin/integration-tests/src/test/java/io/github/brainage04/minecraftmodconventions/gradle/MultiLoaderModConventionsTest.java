@@ -340,6 +340,37 @@ class MultiLoaderModConventionsTest {
     }
 
     @Test
+    void recordingSourcesCompileAgainstTheModsOwnMainAndClientClasses() throws IOException {
+        writeFixture("both", "");
+        write("fabric/src/main/java/fixture/StageNames.java", """
+                package fixture;
+
+                public final class StageNames {
+                    public static final String OPENING = "opening";
+                }
+                """);
+        write("fabric/src/client/java/fixture/FilmCamera.java", """
+                package fixture;
+
+                public final class FilmCamera {
+                    public static final int FIELD_OF_VIEW = 70;
+                }
+                """);
+        write("fabric/src/recording/java/fixture/OpeningScene.java", """
+                package fixture;
+
+                // A film names the mod's classes, so the film's classpath must carry the mod's own output.
+                final class OpeningScene {
+                    static final String NAME = StageNames.OPENING;
+                    static final int FIELD_OF_VIEW = FilmCamera.FIELD_OF_VIEW;
+                }
+                """);
+        BuildResult result = runGradle(":fabric:compileRecordingJava");
+        assertEquals(TaskOutcome.SUCCESS, result.task(":fabric:compileRecordingJava").getOutcome(),
+                result.getOutput());
+    }
+
+    @Test
     void clientModWithoutNeoForgeGameTestsSkipsTheProductionServerRunWithoutInstallingAServer() throws IOException {
         writeFixture("client", """
                 multiLoaderModConventions {

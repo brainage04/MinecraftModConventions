@@ -257,11 +257,15 @@ public final class ProductionGameTestsPlugin implements Plugin<Project> {
      * cameras, captions and film-only mixins live in {@code src/recording}, so the GameTest source set
      * counts and runs only real tests.
      *
-     * <p>The film compiles against a GameTest's libraries, and a GameTest compiles against the film.
-     * That is wired through the classpath configurations and the GameTest compiler rather than through
-     * the source sets' own classpaths, because a source set's classpath carries the task dependency on
-     * its own output and the two source sets would wait on each other. The film's output is packaged
-     * into the production GameTest JAR, so a recorded run loads it. Loom's mixin annotation processor
+     * <p>The film compiles against everything a GameTest compiles against, the mod's own classes
+     * included. {@code gameTest.getCompileClasspath()} carries them because Loom builds it as the
+     * GameTest compile configuration plus the mod's main output, and the client split's output when the
+     * mod splits its environment sources ({@code FabricApiAbstractSourceSet#dependsOn}); the
+     * configuration is added on its own as well, for a GameTest source set that Loom did not build. A
+     * GameTest compiles against the film through the GameTest compiler's own classpath, which keeps the
+     * film's classpath free of the GameTest output and the two source sets from waiting on each other.
+     * The film's output is packaged into the production GameTest JAR, so a recorded run loads it, and
+     * its runtime classpath is the GameTest one for the same reason. Loom's mixin annotation processor
      * is not applied here: the existing film mixins carry no refmap, and a source set that needs one
      * adds it in the mod's build file.
      */
@@ -273,7 +277,8 @@ public final class ProductionGameTestsPlugin implements Plugin<Project> {
         recording.getJava().setSrcDirs(List.of("src/" + RECORDING_SOURCE_SET + "/java"));
         recording.getResources().setSrcDirs(List.of("src/" + RECORDING_SOURCE_SET + "/resources"));
         recording.setCompileClasspath(project.files(
-                project.getConfigurations().getByName(gameTest.getCompileClasspathConfigurationName())));
+                project.getConfigurations().getByName(gameTest.getCompileClasspathConfigurationName()),
+                gameTest.getCompileClasspath()));
         recording.setRuntimeClasspath(project.files(
                 project.getConfigurations().getByName(gameTest.getRuntimeClasspathConfigurationName())));
         project.getConfigurations()
