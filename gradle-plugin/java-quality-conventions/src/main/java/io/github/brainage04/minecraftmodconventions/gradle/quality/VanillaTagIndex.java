@@ -114,7 +114,6 @@ public final class VanillaTagIndex {
         return new VanillaTagIndex(members);
     }
 
-    /** The vanilla tags naming that identity, sorted by path; empty when no tag names it. */
     public List<Member> members(String registry, String id) {
         return members.getOrDefault(registry + "/" + id, List.of());
     }
@@ -123,7 +122,6 @@ public final class VanillaTagIndex {
         return members.isEmpty();
     }
 
-    /** The number of (registry, id) pairs a tag names, for the check's diagnostics. */
     public int size() {
         return members.size();
     }
@@ -212,7 +210,6 @@ public final class VanillaTagIndex {
         return value.startsWith(VANILLA_NAMESPACE) ? value.substring(VANILLA_NAMESPACE.length()) : null;
     }
 
-    /** Whether the tag's own name ends the identity, as {@code beds} ends {@code red_bed}. */
     private static boolean namesTheIdentity(String tag, String id) {
         String path = tag.substring(tag.lastIndexOf('/') + 1);
         if (path.startsWith("is_")) {

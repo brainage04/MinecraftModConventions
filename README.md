@@ -191,7 +191,7 @@ A mod that really targets one vanilla dimension, or a client mod with no synced 
 if (level.dimension() != Level.END) return;
 ```
 
-The marker is optional. A marker without a reason does not silence anything and still warns. The warning prints when the task runs: a second build finds the task up to date and only rewrites the report.
+The marker is optional. A marker without a reason does not silence anything and still warns. The warning prints only when the task runs: a second build with unchanged sources finds the task up to date, prints no warning and keeps the report from the last run.
 
 ## Vanilla tag identity check
 
