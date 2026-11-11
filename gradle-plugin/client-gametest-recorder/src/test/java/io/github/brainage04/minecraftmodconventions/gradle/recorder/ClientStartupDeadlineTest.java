@@ -87,12 +87,12 @@ class ClientStartupDeadlineTest {
     void aLaunchThatEndsBeforeTheClientLoadedFailsAndOneThatLoadedPasses() {
         Project project = ProjectBuilder.builder().withProjectDir(directory.toFile()).build();
         Path ready = directory.resolve("ready");
-        Task neverLoads = project.getTasks().create("neverLoads");
+        Task neverLoads = project.getTasks().register("neverLoads").get();
         ClientStartupDeadline.install(neverLoads, ready, project.provider(() -> 60), _ -> { });
         GradleException failure = assertThrows(GradleException.class, () -> run(neverLoads));
         assertTrue(failure.getMessage().contains("exited before it finished loading"), failure.getMessage());
 
-        Task loads = project.getTasks().create("loads");
+        Task loads = project.getTasks().register("loads").get();
         loads.doLast(_ -> {
             try {
                 Files.writeString(ready, "loaded");
@@ -110,14 +110,14 @@ class ClientStartupDeadlineTest {
         Path ready = directory.resolve("ready");
         RuntimeException exitValue = new RuntimeException("Process finished with non-zero exit value 1");
 
-        Task crashesBeforeLoading = project.getTasks().create("crashesBeforeLoading");
+        Task crashesBeforeLoading = project.getTasks().register("crashesBeforeLoading").get();
         crashesBeforeLoading.doLast(_ -> { throw exitValue; });
         ClientStartupDeadline.install(crashesBeforeLoading, ready, project.provider(() -> 60), _ -> { });
         GradleException failure = assertThrows(GradleException.class, () -> run(crashesBeforeLoading));
         assertTrue(failure.getMessage().contains("exited before it finished loading"), failure.getMessage());
         assertSame(exitValue, failure.getCause());
 
-        Task crashesAfterLoading = project.getTasks().create("crashesAfterLoading");
+        Task crashesAfterLoading = project.getTasks().register("crashesAfterLoading").get();
         crashesAfterLoading.doLast(_ -> {
             try {
                 Files.writeString(ready, "loaded");
