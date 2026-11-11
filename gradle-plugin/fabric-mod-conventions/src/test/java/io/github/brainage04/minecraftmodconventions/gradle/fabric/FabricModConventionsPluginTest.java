@@ -418,6 +418,23 @@ class FabricModConventionsPluginTest {
         BuildResult reasoned = runGradle("checkDeprecatedGameTestApis");
         assertEquals(
                 TaskOutcome.SUCCESS, reasoned.task(":checkDeprecatedGameTestApis").getOutcome(), reasoned.getOutput());
+
+        // The full opt-out skips the check too, so an upgrade can turn it off with the rest of the policy.
+        Files.writeString(gameTest, """
+                package example;
+                import net.minecraft.gametest.framework.GameTestHelper;
+                import net.minecraft.server.level.ServerPlayer;
+                final class MockPlayerGameTest {
+                    static ServerPlayer player(GameTestHelper helper) {
+                        return helper.makeMockServerPlayerInLevel();
+                    }
+                }
+                """);
+        BuildResult optedOut = runGradle("checkDeprecatedGameTestApis", "-PstrictQuality=false");
+        assertEquals(
+                TaskOutcome.SKIPPED,
+                optedOut.task(":checkDeprecatedGameTestApis").getOutcome(),
+                optedOut.getOutput());
     }
 
     private BuildResult runGradleAndFail(String... arguments) {
