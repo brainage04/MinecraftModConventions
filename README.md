@@ -165,10 +165,12 @@ Every option defaults to `true`. `fabric.mod.json` expansion fails on a missing 
 
 Other uses of the keys, such as `server.getLevel(Level.END)`, and comparisons with a mod's own dimensions pass. GameTest and other source sets are not checked. The patterns are in `gradle-plugin/java-quality-conventions/src/main/resources/…/vanilla-identity-patterns.txt`.
 
-A comparison is right when the feature is about that dimension by name, and wrong when it stands in for a property the game reads from data. Ask: would a datapack dimension, or another mod's dimension, that behaves like this one need the same treatment?
+A comparison is right when the feature is about that dimension by name. It is wrong when it stands in for a property
+the game reads from data. A datapack dimension, or another mod's dimension, that behaves like this one needs the same
+treatment in that case.
 
-- **Yes, a property:** sleeping, water evaporating, fog, terrain. Ask the data the game itself reads: environment attributes (`level.environmentAttributes().getValue(EnvironmentAttributes.BED_RULE, pos)`, `RESPAWN_ANCHOR_WORKS`, `WATER_EVAPORATES`, …), `level.dimensionType()` properties, tags and game rules. On the client, confirm the attribute is synced (`EnvironmentAttribute.isSyncable()`) or decide it server-side: an attribute that is not synced, such as `BED_RULE` in 1.21.11, 26.2 and 26.3, reads its default value on the client.
-- **No, a place:** a Nether kill score, a dungeon theme per vanilla dimension, a command that lists the players in the Nether. The identity check is right.
+- **A property:** sleeping, water evaporating, fog, terrain. Read the data the game itself reads: environment attributes (`level.environmentAttributes().getValue(EnvironmentAttributes.BED_RULE, pos)`, `RESPAWN_ANCHOR_WORKS`, `WATER_EVAPORATES`, …), `level.dimensionType()` properties, tags and game rules. On the client, confirm the attribute is synced (`EnvironmentAttribute.isSyncable()`) or decide it server-side: an attribute that is not synced, such as `BED_RULE` in 1.21.11, 26.2 and 26.3, reads its default value on the client.
+- **A place:** a Nether kill score, a dungeon theme per vanilla dimension, a command that lists the players in the Nether. The identity check is right.
 
 Two examples from the fleet:
 
@@ -206,7 +208,9 @@ The identities come from the named Minecraft jars Loom builds for the project (`
 
 The report names the tag id (`block tag #minecraft:beds`) rather than a Java constant, because 26.x moved many tags into `BlockItemTags` and a constant minted from the path would not compile there.
 
-The place-or-property question decides the warning: a comparison is right when the feature is about that particular block or item by name, and wrong when it stands in for a property of the tag (`#minecraft:beds`, `#minecraft:swords`, `#minecraft:is_forest`, …) that a datapack can extend. `// vanilla-tag: <reason>` silences the line or the line above it, and a marker without a reason still warns.
+A comparison is right when the feature is about that particular block or item by name, and wrong when it stands in for
+a property of the tag (`#minecraft:beds`, `#minecraft:swords`, `#minecraft:is_forest`, …) that a datapack can extend.
+`// vanilla-tag: <reason>` silences the line or the line above it, and a marker without a reason still warns.
 
 ## Hardcoded world height check
 
