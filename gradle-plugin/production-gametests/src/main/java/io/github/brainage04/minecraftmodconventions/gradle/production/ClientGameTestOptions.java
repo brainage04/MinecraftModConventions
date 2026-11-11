@@ -27,6 +27,10 @@ public final class ClientGameTestOptions {
     public static final String RECORDER_SCREEN_ENV = "GTR_RECORDING_XVFB_SCREEN";
     /** The recorder's screen when {@value #RECORDER_SCREEN_ENV} is not set. */
     public static final String DEFAULT_RECORDER_SCREEN = "1920x1080x24";
+    /** The GUI scale of a recording: 1920x1080 at scale 3 is a 640x360 GUI, the shared overlay standard. */
+    public static final String SHOWCASE_GUI_SCALE = "3";
+    /** The GUI scale of a test run: an 854x480 window at scale 2 still fits the caption panel. */
+    public static final String TEST_GUI_SCALE = "2";
     /**
      * The options format version: Minecraft 26.3's data version. A client of a later Minecraft version upgrades
      * the file with its own data fixers.
@@ -92,10 +96,17 @@ public final class ClientGameTestOptions {
     /**
      * The options of a profile in file order. {@code soundDevice} and {@code recorderScreen} (see
      * {@link #recorderScreen}) are only used by {@link Profile#SHOWCASE}: the test profile is silent, keeps the
-     * default device and has an 854x480 window. {@code joinedFirstServer} suppresses the social interactions toast.
+     * default device and has an 854x480 window. {@code joinedFirstServer} suppresses the social interactions
+     * toast. {@code gpuRendering} is a recording that renders on the machine's graphics card (see
+     * {@code GTR_RECORDING_DISPLAY} in the client GameTest recorder): it raises the frame cap above the capture rate.
      */
     public static Map<String, String> options(
-            Profile profile, String soundDevice, boolean joinedFirstServer, String recorderScreen) {
+            Profile profile,
+            String soundDevice,
+            boolean joinedFirstServer,
+            String recorderScreen,
+            boolean gpuRendering
+    ) {
         boolean showcase = profile == Profile.SHOWCASE;
         String[] window = showcase ? windowOfScreen(recorderScreen) : new String[] {"854", "480"};
         Map<String, String> options = new LinkedHashMap<>();
@@ -107,11 +118,14 @@ public final class ClientGameTestOptions {
         options.put("fullscreen", "false");
         options.put("overrideWidth", window[0]);
         options.put("overrideHeight", window[1]);
-        options.put("guiScale", "2");
+        // Every recording shares one overlay standard: the same GUI scale, and a caption panel that still fits.
+        options.put("guiScale", showcase ? SHOWCASE_GUI_SCALE : TEST_GUI_SCALE);
         // Performance: a fixed frame cap, and no throttling when no input arrives (GameTest input does not count).
         options.put("renderDistance", showcase ? "12" : "5");
         options.put("simulationDistance", "5");
-        options.put("maxFps", "30");
+        // A card presents faster than the 30 frames a second the recorder captures, so every captured image is
+        // a fresh one.
+        options.put("maxFps", gpuRendering ? "60" : "30");
         options.put("enableVsync", "false");
         options.put("inactivityFpsLimit", "\"minimized\"");
         options.put("graphicsPreset", showcase ? "\"fancy\"" : "\"fast\"");
@@ -154,8 +168,15 @@ public final class ClientGameTestOptions {
     }
 
     public static void write(
-            Path file, Profile profile, String soundDevice, boolean joinedFirstServer, String recorderScreen) {
-        String contents = options(profile, soundDevice, joinedFirstServer, recorderScreen).entrySet().stream()
+            Path file,
+            Profile profile,
+            String soundDevice,
+            boolean joinedFirstServer,
+            String recorderScreen,
+            boolean gpuRendering
+    ) {
+        String contents = options(profile, soundDevice, joinedFirstServer, recorderScreen, gpuRendering)
+                .entrySet().stream()
                 .map(entry -> entry.getKey() + ":" + entry.getValue())
                 .collect(Collectors.joining("\n", "", "\n"));
         try {

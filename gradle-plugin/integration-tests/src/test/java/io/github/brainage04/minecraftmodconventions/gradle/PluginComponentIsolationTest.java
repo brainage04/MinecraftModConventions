@@ -396,6 +396,8 @@ class PluginComponentIsolationTest {
         String expected = testOptions(true)
                 .replace("overrideWidth:854", "overrideWidth:1920")
                 .replace("overrideHeight:480", "overrideHeight:1080")
+                // Every recording uses the overlay standard: 1920x1080 at GUI scale 3.
+                .replace("guiScale:2", "guiScale:3")
                 .replace("renderDistance:5", "renderDistance:12")
                 .replace("graphicsPreset:\"fast\"", "graphicsPreset:\"fancy\"")
                 .replace("ao:false", "ao:true")

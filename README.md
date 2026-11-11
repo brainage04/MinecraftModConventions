@@ -245,10 +245,10 @@ Client GameTests (`runClientGameTest`), production client GameTests (`runProduct
 | `lang` | `en_us` | same |
 | `fullscreen` | `false` | `false` (SDL3 cannot go fullscreen on Xvfb, which has no window manager) |
 | `overrideWidth`, `overrideHeight` | `854`, `480` | the recorder display, `1920`, `1080` by default (`GTR_RECORDING_XVFB_SCREEN`) |
-| `guiScale` | `2` | same |
+| `guiScale` | `2` | `3` (the overlay standard: 1920x1080 at scale 3 is a 640x360 GUI) |
 | `renderDistance` | `5` | `12` |
 | `simulationDistance` | `5` | same |
-| `maxFps`, `enableVsync`, `inactivityFpsLimit` | `30`, `false`, `"minimized"` | same |
+| `maxFps`, `enableVsync`, `inactivityFpsLimit` | `30`, `false`, `"minimized"` | same, `60` for a recording that renders on a card |
 | `graphicsPreset` | `"fast"` | `"fancy"` |
 | `ao`, `cutoutLeaves`, `entityShadows` | `false` | `true` |
 | `improvedTransparency`, `renderClouds` | `false`, `"false"` | same |
@@ -268,12 +268,75 @@ Client GameTests (`runClientGameTest`), production client GameTests (`runProduct
 | `autoJump`, `toggleSprint`, `toggleCrouch` | `false` | same |
 
 - `showcase` is used when the recorder gives the run its private PulseAudio sink (`recordClientGameTest` passes it as `GTR_RECORDING_AUDIO_DEVICE`), `test` otherwise, including runs that only bring their own display (`GTR_RECORDING_MANAGED_XVFB=true`). Its sound only reaches that sink.
-- Client GameTests see the `overrideWidth` x `overrideHeight` window whatever the display size, so the GUI scale and layout are the same in every run of a profile. A `showcase` window covers the whole recorder display, so a recorded run has a larger GUI (960x540 at `guiScale` 2) than the same test's `test` run (427x240): a test that depends on screen coordinates or text wrapping can behave differently while recorded.
+- Client GameTests see the `overrideWidth` x `overrideHeight` window whatever the display size, so the GUI scale and layout are the same in every run of a profile. A `showcase` recording is always 1920x1080 at `guiScale` 3, a 640x360 GUI, whatever size its recorder display is; the same test's `test` run uses an 854x480 window at `guiScale` 2 (427x240). A test that depends on screen coordinates or text wrapping can behave differently while recorded.
 - On Linux, every automated client launch (production and development client GameTests, every Loom run task with `GameTest` in its name on `:fabric` and `:neoforge`, and the recorder) sets `SDL_VIDEO_DRIVER=x11` and removes `WAYLAND_DISPLAY`. Minecraft 26.3 opens its window through SDL3, which otherwise prefers a Wayland desktop over `DISPLAY` (Xvfb). Interactive runs such as `runClient` are left alone.
 
 With `client-gametest-recorder` and `production-gametests` both applied, the runtime helper joins both client runs, and each launch has a startup deadline: the client must finish loading (the point where its GameTests start) within 300 seconds. Otherwise the task stops the client and every process it started (`xvfb-run` and its `Xvfb` included) and fails with a message naming them. Change the deadline with `clientGameTestRecorder.clientStartupTimeoutSeconds` or the Gradle property `minecraftmodconventions.clientStartupTimeoutSeconds`.
 
 With both plugins applied, a launch that ends before the client finished loading fails as well, whatever its exit code, with a message saying so (the launch's own failure is its cause): a client that cannot open its window (no display, or no working graphics driver under Xvfb) exits without running any GameTest.
+
+## Client GameTest rules
+
+A client GameTest films a player playing, so everything it does must be something a player can do with a keyboard and a mouse. These rules apply to every client GameTest in every mod, recorded or not, and a review checks them.
+
+### Only what a player can do
+
+- **Vanilla reach.** A break, place, use, ignite or attack happens within the reach a survival player has: 4.5 blocks to a block, 3.0 to an entity (`Player.DEFAULT_BLOCK_INTERACTION_RANGE`, `Player.DEFAULT_ENTITY_INTERACTION_RANGE`). A test never raises `BLOCK_INTERACTION_RANGE` or `ENTITY_INTERACTION_RANGE`, neither its base value nor with a modifier, and never calls `gameMode.destroyBlock` or `gameMode.useItemOn` on the server to get around a range.
+- **The crosshair.** The player turns to the target first, and then breaks, places, uses, ignites or attacks the block or entity its crosshair is on. Never something beside the player, behind it, or further away than reach. Two stages of one tree are fine; a swing at the air next to the tree is not.
+- **Real input.** Break and attack with the attack key, use with the use key, walk with the movement keys. Turning the player's rotation is what a mouse turn does, and the client sends it with its next tick; the keys are real presses, held for as long as a player would hold them.
+- **Server-side calls are for what the camera never shows**: building the scene, spawning entities and items, game rules, time and weather, and teleports between stages before the filmed part of that stage starts.
+
+`ClientGameTestPlayerActions` in this library does all of that, and fails a test that breaks the rule instead of recording something a player could not do. The guard behind `mine`, `useOnBlock` and `attackEntity` requires the crosshair hit to be the test's target, the target to be inside vanilla reach, and both interaction-range attributes to be untouched; it names what was wrong when it fails.
+
+| Call | What it does |
+| --- | --- |
+| `lookAt(context, point)`, `lookAtBlock(context, pos)` | Turns the player to look at a point or the middle of a block |
+| `lookStraightUp(context)` | Looks straight up, for a block above the head |
+| `walkWithinReach(context, point)` | Walks to the point with the forward key and stops 2 blocks from it |
+| `walkTo(context, point, blocks)` | The same, stopping at a chosen distance |
+| `walkAwayFrom(context, point, blocks)` | Steps back with the back key, for a stage that lights something explosive |
+| `mine(context, pos)` | Guard, then holds the attack key until the block is gone |
+| `useOnBlock(context, pos)` | Guard, then presses the use key once |
+| `attackEntity(context, entityId)` | Guard, then presses the attack key once |
+| `requireLookingAtBlock(context, pos)` | Fails unless the crosshair is on the block, in reach, with untouched range attributes |
+| `requireLookingAtEntity(context, entityId)` | The same for an entity |
+| `requireVanillaInteractionRanges(context)` | Fails when a range attribute has a modifier or exceeds vanilla's |
+
+The helpers act on the client thread themselves, so a test calls them in order between its own steps and keeps its server-side assertions where they are:
+
+```java
+ClientGameTestPlayerActions.walkWithinReach(context, Vec3.atCenterOf(ore));
+ClientGameTestPlayerActions.lookAtBlock(context, ore);
+ClientGameTestPlayerActions.mine(context, ore);
+// then assert on the server that the drops reached the inventory
+```
+
+To use an unreleased build of this library, publish it into a sibling checkout's local repository and point the mod at that repository:
+
+```shell
+# in ../MinecraftModConventions, on the branch being tested
+./gradlew publishAllPublicationsToLocalRepository
+```
+
+```gradle
+// in the mod's root build.gradle
+workspaceDependencies {
+    siblingMaven('MinecraftModConventions') {
+        coordinate.set("io.github.brainage04:minecraftmodconventions:${rootProject.minecraftmodconventions_version}")
+        siblingDirectory.set(rootProject.layout.projectDirectory.dir('../MinecraftModConventions'))
+    }
+}
+```
+
+and pin `minecraftmodconventions_version` to the version that repository holds (`gradle.properties`' `mod_version` of that checkout). `publishAllPublicationsToLocalRepository` publishes the runtime library and every Gradle plugin under it, so the plugin repositories in `settings.gradle` find the same build.
+
+### A positive case and a negative case
+
+Every positive case has a matching negative case in the same suite, showing the difference: the feature turned off, the wrong condition, or a vanilla server that lacks the mod. The recording shows the negative case where the difference is visible on screen, and a positive case that asserts nothing about the wrong condition does not count.
+
+### The recording standard
+
+Every recording is 1920x1080 with GUI scale 3, a 640x360 GUI (`ClientGameTestOptions` sets it, so no mod overrides it), with the caption panel in the top-right corner 5 pixels from the edge and nothing cut off: the panel is at most 368 pixels wide and a diagnostic step's 10 lines are 116 pixels tall, both inside a 640x360 GUI. Game sound is on at 0.7 master volume with background music off, and the recording fails without it. The same panel position and scale in every mod is the point: a viewer switching between videos sees the same overlay.
 
 ## Client GameTest recording
 
@@ -300,6 +363,9 @@ clientGameTestRecorder {
 - Each recording writes metadata with tick and frame boundaries, effective padding and any capture gaps. A run fails if game audio is not routed to the recorder's sink or cannot be decoded.
 - `scripts/trim_stages.py LOG VIDEO.mp4 OUT.mp4 META.json` cuts a recording down to its filmed stages. The test prints `STAGE_START <epoch ms> <id>` and `STAGE_END <epoch ms> <id>` around what should be on screen; the script keeps 0.10 s before each start and 0.12 s after each end, joins stages that touch, and drops the join, the dimension change and the off-camera rehearsal between them. `LOG` is the run's log and `META.json` the recording's metadata, whose `boundaries.selectedStartEpochSeconds` is where the video starts. Beside `OUT.mp4` it writes `OUT.stages.json`, the first and end (exclusive) frame of each clip in the trimmed video.
 - The raw capture's muxer queues up to 4096 encoded packets (over a minute of capture), so a write that waits on a busy disk does not stop the screen grab and leave a frame gap.
+- `GTR_RECORDING_DISPLAY=:1` records an X display that already has the machine's graphics card behind its GLX (an `Xorg` running on the card) instead of starting its own `Xvfb`, whose `llvmpipe` presents a busy scene at a handful of frames a second and leaves every second captured frame a repeat; the client's window is visible on that display while it runs. x11grab, the boundary trimming and the audio route are unchanged, the frame cap rises to 60 so the 30 frames a second the capture takes are all fresh images, and the metadata records the graphics device, the presented frame rate and the host. A display that does not answer falls back to the recorder's own virtual display and `gpu.fallbackReason` says why. `GTR_RECORDING_FPS` stays the capture rate. VirtualGL's `vglrun` is not a way to do this: its faker advertises OpenGL 3.3, and Minecraft 26.3's OpenGL backend then draws nothing (`GL_INVALID_FRAMEBUFFER_OPERATION` throughout, a black capture).
+- The metadata records the client's graphics device (`glRenderer`), its SDL video driver, the presented frame rate of the recorded world (`presentedFps`) and the host, and `gpu.active` says whether the card rendered the run.
+- The client always starts with `SDL_VIDEO_DRIVER=x11`: SDL3 otherwise finds a Wayland compositor through `XDG_RUNTIME_DIR` and opens its window there, where the capture cannot see it and where it may appear on someone's screen. A run whose log names another driver fails.
 - When the job runs in a cgroup of its own with a memory limit (a job runner's slot, such as a systemd scope), the recording sets that cgroup's `memory.low` to the limit for the run, so the kernel reclaims sibling jobs first instead of evicting ffmpeg's and the game's files, whose reads from a busy disk stall the capture. A cgroup without a limit is left alone.
 
 ### Dedicated-server harness

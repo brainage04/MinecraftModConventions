@@ -24,12 +24,15 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
@@ -71,6 +74,7 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
         String fps = env("GTR_RECORDING_FPS", "30");
         int startWaitSeconds = parsePositiveInt(env("GTR_RECORDING_START_WAIT_SECONDS", "90"), "GTR_RECORDING_START_WAIT_SECONDS");
         String xvfbScreen = env(ClientGameTestOptions.RECORDER_SCREEN_ENV, ClientGameTestOptions.DEFAULT_RECORDER_SCREEN);
+        String gpuDisplayRequest = env(ClientGpuCapture.DISPLAY_ENV, "");
         double prePadding = parsePadding(env("GTR_RECORDING_PRE_PADDING_SECONDS", "0.5"));
         double postPadding = parsePadding(env("GTR_RECORDING_POST_PADDING_SECONDS", "0.5"));
         int frameRate = parsePositiveInt(fps, "GTR_RECORDING_FPS");
@@ -114,6 +118,10 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
         AtomicBoolean soundFailed = new AtomicBoolean();
         Map<String, Object> boundaryEvidence = new LinkedHashMap<>();
         boolean audioRouteVerified = false;
+        String gpuDisplay = null;
+        String gpuFallback = null;
+        String glRenderer = "";
+        String sdlVideoDriver = "";
         boolean audioDecoded = false;
         boolean audioNonSilent = false;
         String captureFailure = null;
@@ -139,23 +147,12 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
             getLogger().lifecycle("Protecting the recording job's memory up to its limit from sibling reclaim ({}).", memoryCgroup);
         }
         try {
-            if (xvfbDisplay.isBlank()) {
-                xvfbDisplay = findFreeXvfbDisplay();
-            }
-            if (!xvfbDisplay.startsWith(":")) {
-                xvfbDisplay = ":" + xvfbDisplay;
-            }
-            String displayNumber = xvfbDisplay.substring(1);
-            if (!displayNumber.matches("[0-9]+")
-                    || new File("/tmp/.X" + displayNumber + "-lock").exists()
-                    || new File("/tmp/.X11-unix/X" + displayNumber).exists()) {
-                throw new GradleException("Refusing to attach to an existing or invalid X display: " + xvfbDisplay);
-            }
-            getLogger().lifecycle("Starting virtual X display {} ({})...", xvfbDisplay, xvfbScreen);
-            xvfbProcess = new ProcessBuilder("Xvfb", xvfbDisplay, "-screen", "0", xvfbScreen, "-nolisten", "tcp")
-                    .redirectErrorStream(true)
-                    .start();
-            waitForXDisplay(xvfbDisplay, xvfbProcess);
+            DisplayResolution display = startDisplay(gpuDisplayRequest, xvfbDisplay, xvfbScreen);
+            xvfbDisplay = display.display();
+            xvfbScreen = display.screen();
+            xvfbProcess = display.process();
+            gpuDisplay = display.gpuDisplay();
+            gpuFallback = display.fallbackReason();
 
             audioSinkId = createVirtualAudioSink(audioSinkName);
 
@@ -183,6 +180,8 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
             // Vanilla selects an enumerated OpenAL device; environment defaults alone do not pin it.
             processEnvironment.put("GTR_RECORDING_AUDIO_DEVICE", audioSinkName);
             processEnvironment.put("GTR_RECORDING_MANAGED_XVFB", "true");
+            // The client's options take their window size from this, so a named display's own size wins.
+            processEnvironment.put("GTR_RECORDING_XVFB_SCREEN", xvfbScreen);
             processEnvironment.put("GTR_RECORDING_NAME", recordingName);
             processEnvironment.put("GTR_RECORDING_PROFILE", recordingProfile);
             processEnvironment.put("GTR_RECORDING_TRACE", recordingTrace);
@@ -361,6 +360,10 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
             getLogger().lifecycle("Client GameTest run directory saved: {}", keptRunDir.getAbsolutePath());
         }
 
+        String clientLog = readClientLog(resolvedRunDir);
+        glRenderer = ClientGpuCapture.rendererIn(clientLog);
+        sdlVideoDriver = ClientGpuCapture.sdlVideoDriverIn(clientLog);
+
         List<String> recordingFailures = recordingFailureMessages(
                 gradleStatus,
                 recordingStartObserved,
@@ -378,6 +381,14 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
         if (!audioRouteVerified || !soundInitialized.get() || soundFailed.get() || !audioDecoded) {
             recordingFailures.add("Game audio must initialize successfully on the isolated sink and decode to PCM samples.");
         }
+        if (!sdlVideoDriver.isEmpty() && !sdlVideoDriver.equals("x11")) {
+            recordingFailures.add("The client used SDL's " + sdlVideoDriver
+                    + " video driver: a recording must render on the recorder's own x11 display.");
+        }
+        if (gpuDisplay != null && ClientGpuCapture.isSoftwareRenderer(glRenderer)) {
+            getLogger().error("The recording display {} renders with {}; the recording is the software path.",
+                    gpuDisplay, glRenderer);
+        }
         if (boundaryEvidence.containsKey("clockDriftUs")
                 && Math.abs(Long.parseLong(boundaryEvidence.get("clockDriftUs").toString())) > 10_000L) {
             recordingFailures.add("Wall clock drift exceeded 10ms during capture; boundary timing requires review.");
@@ -391,7 +402,17 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
         metadataModel.put("startedAt", recordingStartedAt);
         metadataModel.put("finishedAt", DateTimeFormatter.ISO_INSTANT.format(Instant.now()));
         metadataModel.put("gradleStatus", gradleStatus);
-        metadataModel.put("captureMode", "xvfb");
+        metadataModel.put("captureMode", gpuDisplay == null ? "xvfb" : "x11");
+        metadataModel.put("glRenderer", glRenderer.isEmpty() ? null : glRenderer);
+        metadataModel.put("sdlVideoDriver", sdlVideoDriver.isEmpty() ? null : sdlVideoDriver);
+        metadataModel.put("presentedFps", ClientGpuCapture.presentedFps(boundaryEvidence));
+        metadataModel.put("host", hostName());
+        Map<String, Object> gpuModel = new LinkedHashMap<>();
+        gpuModel.put("requestedDisplay", gpuDisplayRequest.isEmpty() ? null : gpuDisplayRequest);
+        gpuModel.put("display", gpuDisplay);
+        gpuModel.put("fallbackReason", gpuFallback);
+        gpuModel.put("active", gpuDisplay != null && !ClientGpuCapture.isSoftwareRenderer(glRenderer));
+        metadataModel.put("gpu", gpuModel);
         metadataModel.put("fps", fps);
         metadataModel.put("xvfbScreen", xvfbScreen);
         metadataModel.put("video", output.getAbsolutePath());
@@ -535,6 +556,82 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
             Files.writeString(cgroup.resolve("memory.low"), previous, StandardCharsets.UTF_8);
         } catch (IOException exception) {
             // The job's cgroup is gone with its last process; there is nothing left to restore.
+        }
+    }
+
+    /**
+     * The display this recording captures, and the process that serves it when the recorder started
+     * one. A display named by {@code GTR_RECORDING_DISPLAY} is used as it is: the machine's card is
+     * behind its GLX, which is what makes the client present as fast as the card does. A named display
+     * that does not answer falls back to the recorder's own virtual one, so an unattended run on a host
+     * without a card still records.
+     */
+    private DisplayResolution startDisplay(String requested, String configuredDisplay, String configuredScreen) {
+        String gpuDisplay = ClientGpuCapture.display(requested);
+        String fallback = null;
+        if (gpuDisplay != null) {
+            CommandResult info = runCommand(List.of("xdpyinfo", "-display", gpuDisplay), Map.of(), true);
+            String screen = ClientGpuCapture.screen(info.output());
+            if (info.status() == 0 && !screen.isEmpty()) {
+                getLogger().lifecycle("Recording X display {} ({}), which renders with the machine's graphics card.",
+                        gpuDisplay, screen);
+                getLogger().lifecycle("The client's window is visible on that display while it runs.");
+                return new DisplayResolution(gpuDisplay, screen, null, gpuDisplay, null);
+            }
+            fallback = "X display " + gpuDisplay + " does not answer: "
+                    + info.output().lines().findFirst().orElse("");
+            getLogger().warn("{}={} was ignored; recording on the recorder's own virtual display. {}",
+                    ClientGpuCapture.DISPLAY_ENV, requested, fallback);
+        }
+        String display = configuredDisplay;
+        if (display.isBlank()) {
+            display = findFreeXvfbDisplay();
+        }
+        if (!display.startsWith(":")) {
+            display = ":" + display;
+        }
+        String displayNumber = display.substring(1);
+        if (!displayNumber.matches("[0-9]+")
+                || new File("/tmp/.X" + displayNumber + "-lock").exists()
+                || new File("/tmp/.X11-unix/X" + displayNumber).exists()) {
+            throw new GradleException("Refusing to attach to an existing or invalid X display: " + display);
+        }
+        getLogger().lifecycle("Starting virtual X display {} ({})...", display, configuredScreen);
+        Process xvfb = null;
+        try {
+            xvfb = new ProcessBuilder("Xvfb", display, "-screen", "0", configuredScreen, "-nolisten", "tcp")
+                    .redirectErrorStream(true)
+                    .start();
+        } catch (IOException exception) {
+            throw new UncheckedIOException("Failed to start Xvfb: " + display, exception);
+        }
+        waitForXDisplay(display, xvfb);
+        return new DisplayResolution(display, configuredScreen, xvfb, null, fallback);
+    }
+
+    /** The start of the client's own log, where it names the graphics device and the SDL video driver. */
+    private static String readClientLog(File runDirectory) {
+        if (runDirectory == null) {
+            return "";
+        }
+        File log = new File(runDirectory, "logs/latest.log");
+        if (!log.isFile()) {
+            return "";
+        }
+        try (var reader = new InputStreamReader(new java.io.FileInputStream(log), StandardCharsets.UTF_8)) {
+            char[] buffer = new char[2 * 1024 * 1024];
+            int read = reader.read(buffer);
+            return read <= 0 ? "" : new String(buffer, 0, read);
+        } catch (IOException exception) {
+            return "";
+        }
+    }
+
+    private static String hostName() {
+        try {
+            return Files.readString(Path.of("/etc/hostname"), StandardCharsets.UTF_8).strip();
+        } catch (IOException exception) {
+            return env("HOSTNAME", "");
         }
     }
 
@@ -775,18 +872,45 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
                 "after-last-world-tick", Math.max(0, (Double.isNaN(afterLastTickFrame) ? lastTickFrame : afterLastTickFrame) - selectedStart));
         evidence.put("boundaryFrameVideoSeconds", boundaryFrames);
         evidence.put("boundaryFramePolicy", "First/last images use captured frames at or before each tick boundary. Adjacent images clamp to retained video when padding excludes the neighboring frame; inspect their actual PTS rather than assuming they lie outside the tick interval.");
-        boundaryFrames.forEach((marker, seconds) -> saveBoundaryFrame(output, marker, seconds));
+        Map<String, File> boundaryImages = new LinkedHashMap<>();
+        boundaryFrames.forEach((marker, seconds) -> boundaryImages.put(marker, saveBoundaryFrame(output, marker, seconds)));
+        requireChangingPicture(output, selectedEnd - selectedStart, boundaryImages);
         getLogger().lifecycle("[CLIENT_GAMETEST_BOUNDARY] VIDEO_WINDOW pre={}s post={}s; raw frame interval [{}, {})",
                 firstTick - selectedStart, selectedEnd - lastTick, startIndex, endIndex);
     }
 
-    private void saveBoundaryFrame(File video, String marker, double seconds) {
+    /**
+     * Fails a capture whose images never change. A client whose frames never reach the display — the
+     * faker library of a GPU recording that the client's OpenGL backend cannot drive, for example —
+     * otherwise records a black still and reports nothing wrong.
+     */
+    private void requireChangingPicture(File video, double seconds, Map<String, File> boundaryImages) {
+        if (seconds < 3 || boundaryImages.size() < 2) {
+            return;
+        }
+        Set<Integer> pictures = new HashSet<>();
+        for (File frame : boundaryImages.values()) {
+            try {
+                pictures.add(Arrays.hashCode(Files.readAllBytes(frame.toPath())));
+            } catch (IOException exception) {
+                throw new UncheckedIOException(exception);
+            }
+            if (pictures.size() > 1) {
+                return;
+            }
+        }
+        throw new GradleException("Every captured frame is identical: the client's pictures never reached the "
+                + "recording display. " + video.getName());
+    }
+
+    private File saveBoundaryFrame(File video, String marker, double seconds) {
         File frame = new File(video.getParentFile(), video.getName() + "-" + marker + ".png");
         runCommand(List.of("ffmpeg", "-y", "-v", "error", "-ss", String.format(Locale.ROOT, "%.6f", Math.max(0, seconds)),
                 "-i", video.getAbsolutePath(), "-frames:v", "1", frame.getAbsolutePath()));
         if (!frame.isFile() || frame.length() == 0) {
             throw new GradleException("No decoded frame for recording boundary " + marker + " at " + seconds + "s.");
         }
+        return frame;
     }
 
     private static double parsePadding(String value) {
@@ -934,5 +1058,13 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
 
 
     private record CommandResult(int status, String output) {
+    }
+
+    /**
+     * The display a recording captures, the process serving it when the recorder started one, the
+     * display it was asked to use, and why that one was not used.
+     */
+    private record DisplayResolution(String display, String screen, Process process, String gpuDisplay,
+            String fallbackReason) {
     }
 }
