@@ -6,13 +6,13 @@ Shared Gradle plugins, GitHub workflows and client GameTest helpers for my Minec
 
 | Plugin (`io.github.brainage04.…`) | Apply to | Purpose |
 | --- | --- | --- |
-| `multiloader-mod-conventions` | root of a `common`/`fabric` mod, optionally with `neoforge` | **The standard entry point.** Configures the included modules with Architectury Loom and applies every plugin below except `fabric-mod-conventions` and `maven-central-publishing`. Adds the [vanilla dimension identity](#vanilla-dimension-identity-check), [tag identity](#vanilla-tag-identity-check) and [world height](#hardcoded-world-height-check) checks to every module. |
-| `fabric-mod-conventions` | single-loader Fabric project | Fabric Loom, project identity, standard dependencies and repositories, Java settings, side-aware source layout, access widener, sources JAR, `fabric.mod.json` expansion, license in the JAR, and the [vanilla dimension identity](#vanilla-dimension-identity-check), [tag identity](#vanilla-tag-identity-check) and [world height](#hardcoded-world-height-check) checks. |
+| `multiloader-mod-conventions` | root of a `common`/`fabric` mod, optionally with `neoforge` | **The standard entry point.** Configures the included modules with Architectury Loom and applies every plugin below except `fabric-mod-conventions` and `maven-central-publishing`. Adds the [vanilla dimension identity](#vanilla-dimension-identity-check), [tag identity](#vanilla-tag-identity-check) and [world height](#hardcoded-world-height-check) checks, and the [deprecated GameTest API](#deprecated-gametest-api-check) check, to every module. |
+| `fabric-mod-conventions` | single-loader Fabric project | Fabric Loom, project identity, standard dependencies and repositories, Java settings, side-aware source layout, access widener, sources JAR, `fabric.mod.json` expansion, license in the JAR, and the [vanilla dimension identity](#vanilla-dimension-identity-check), [tag identity](#vanilla-tag-identity-check) and [world height](#hardcoded-world-height-check) checks, plus the [deprecated GameTest API](#deprecated-gametest-api-check) check. |
 | `client-gametest-recorder` | Fabric project | `recordClientGameTest`: records client GameTests to MP4 in an isolated Xvfb display and audio sink. Adds the runtime helpers to the `gametest` source set. |
-| `production-gametests` | Fabric project | Creates the `gametest` source set and runs GameTests against the packaged mod through Loom's production client and server. |
+| `production-gametests` | Fabric project | Creates the `gametest` source set, the film-only [`recording`](#film-only-code-in-the-recording-source-set) source set, and runs GameTests against the packaged mod through Loom's production client and server. |
 | `integration-gametests` | Fabric or NeoForge Loom project with a `gametest` source set | Named GameTest suites that run with extra mods (Maven artifacts or pinned Git commits) loaded, in their own source set and runs. |
 | `workspace-dependencies` | any project | Prefers sibling checkouts' `build/local-repo` over Maven Central, and can share one dev-client `options.txt`. |
-| `java-quality-conventions` | root project | Spotless (google-java-format, AOSP), Checkstyle and javac lint; enforced only with `-PstrictQuality=true`. |
+| `java-quality-conventions` | root project | Spotless (google-java-format, AOSP), Checkstyle and javac lint, under the two [strict switches](#java-quality-switches); both default to off, and a deprecated API is a warning in an ordinary build. |
 | `mod-publishing` | Fabric/NeoForge project | Opt-in GitHub, Modrinth and CurseForge release tasks around the Mod Publish Plugin. |
 | `maven-central-publishing` | libraries only | POM metadata, signing and Central Portal upload. |
 
@@ -219,6 +219,33 @@ a property of the tag (`#minecraft:beds`, `#minecraft:swords`, `#minecraft:is_fo
 
 A world's build limits come from its dimension type, so a datapack dimension can be 256 blocks tall or start at 0. `level.getMinY()`, `level.getMaxY()` and `level.getHeight()` answer for the level the code runs in, and `level.dimensionType().minY()` and `height()` when no level is at hand. `// world-height: <reason>` silences the line or the line above it, and a marker without a reason still warns.
 
+## Deprecated GameTest API check
+
+`fabric-mod-conventions` and `multiloader-mod-conventions` (in `common`, `fabric` and `neoforge`) register `checkDeprecatedGameTestApis` under `check` over every Java source set. It **fails** the build on `GameTestHelper#makeMockServerPlayerInLevel()`, which is `@Deprecated(forRemoval = true)` in 26.3 (`net/minecraft/gametest/framework/GameTestHelper.java:395` in the 26.3 sources) and deleted in a later release. A comment or a string literal about the method is not a call and does not fail the build.
+
+A `@SuppressWarnings("removal")` or `@SuppressWarnings("deprecation")`, on a method, a class or a local declaration, hides a deprecated call from javac, so `-Werror` alone cannot fail on it; the check also reports every such annotation in the scanned sources. A suppression that is understood and still needed keeps a reason on the annotation's line or the line above it, `// deprecated-api: <reason>`; a marker without a reason still fails.
+
+`GameTestHelper#makeMockServerPlayer(GameType)` (`GameTestHelper.java:372`) builds the same server player without joining it to the level, so it is not in the player list: chat, permissions and player-list lookups do not see it. A test that needs a joined player joins one through a supported API; BrainageLib's `testSupport` source set has `GameTestPlayer`, which joins a real player and keeps the clientbound packets.
+
+## Java quality switches
+
+Two Gradle properties, both off by default:
+
+| Property | What it enforces |
+| --- | --- |
+| `strictQuality` | Spotless `spotlessCheck`, Checkstyle, and `-Werror` on `-Xlint:deprecation`, so a call to a deprecated API fails the build. |
+| `strictUnchecked` | `-Werror` on `-Xlint:unchecked` and `-Xlint:rawtypes`. |
+
+```shell
+./gradlew build -PstrictQuality=true
+./gradlew build -PstrictQuality=true -PstrictUnchecked=true
+./gradlew build -PstrictQuality=false
+```
+
+javac's `-Werror` promotes every enabled warning and has no per-category severity, so the two switches decide which lints are enabled. An ordinary build shows deprecation, unchecked and rawtypes as warnings. With `strictQuality` alone, unchecked and rawtypes are not enabled, so that build does not show them. A project whose Minecraft generics (registries, mixins, NBT) produce unchecked warnings without a mechanical fix leaves `strictUnchecked` off.
+
+The two defaults are the constants `DEFAULT_STRICT_QUALITY` and `DEFAULT_STRICT_UNCHECKED` in `JavaQualityConventionsPlugin.java`, so turning strict quality on for the fleet is a one-line change, and `-PstrictQuality=false` still opts a project out.
+
 ## Workspace dependencies
 
 ```gradle
@@ -341,6 +368,39 @@ Every positive case has a matching negative case in the same suite, showing the 
 ### The recording standard
 
 Every recording is 1920x1080 with GUI scale 3, a 640x360 GUI (`ClientGameTestOptions` sets it, so no mod overrides it), with the caption panel in the top-right corner 5 pixels from the edge and nothing cut off: the panel is at most 368 pixels wide and a diagnostic step's 10 lines are 116 pixels tall, both inside a 640x360 GUI. Game sound is on at 0.7 master volume with background music off, and the recording fails without it. The same panel position and scale in every mod is the point: a viewer switching between videos sees the same overlay.
+
+### Stage markers, waits and captions
+
+A recorded test prints the markers `scripts/trim_stages.py` reads and waits for the world to be ready through the library:
+
+| Call | What it does |
+| --- | --- |
+| `ClientGameTestStages.markStage(id)`, `endStage(id)` | Prints `STAGE_START <epoch ms> <id>` and `STAGE_END <epoch ms> <id>`, the one format the trim scripts parse. The id is one non-blank token. |
+| `ClientGameTestStages.endStage(context, id, holdAfterTicks)` | The end marker, then leaves the scene as it is for that many ticks, for the picture a cut keeps after the end. |
+| `ClientGameTestWaits.waitForChunkWindow(context, radius, timeoutTicks)` | Polls the client's chunk cache until every chunk in a circle of `radius` chunks around the player is fully loaded; pass the server's view distance minus two. |
+| `ClientGameTestWaits.waitForRenderSettled(context, idleTicks, timeoutTicks)` | Until the renderer has finished every chunk mesh for that many idle ticks. |
+| `ClientGameTestWaits.waitForRegionLoaded(context, minChunkX, minChunkZ, maxChunkX, maxChunkZ, timeoutTicks)` | The same for a rectangle a camera looks at. |
+| `ClientGameTestWaits.waitForServer(context, server, condition, timeoutTicks, description)` | Until the server satisfies a predicate, for state the client's own copy does not prove, such as the drops after a break. |
+| `ClientGameTestWaits.holdFor(context, millis)` | Waits by the clock, as the film runs, not by ticks, which run slower under load. |
+| `ClientGameTestRecorder.showStepAndHold(context, id, title, subtitle, holdTicks)` | The caption and its shot length in one call. |
+
+Each wait fails the test naming what was still missing, so a frame is never filmed half-built.
+
+### Commands and chat
+
+| Call | What it does |
+| --- | --- |
+| `ClientGameTestCommands.assertCommandTree(context, commands…)` | Fails unless the connected client's command tree has each of these root commands. |
+| `ClientGameTestCommands.runCommand(context, command)` | Sends a command as the client player. |
+| `ClientGameTestCommands.typeCommand(context, command, visibleTicks)` | Opens the chat screen, types the command whole, and submits it, so no parse error is filmed over a partial command. |
+| `ClientGameTestCommands.clearChat(context)` | Clears the chat panel before a stage. |
+| `ClientGameTestCommands.awaitChat(context[, timeoutTicks], texts…)` | Waits until each text appears in some chat message, then fails naming what the panel holds instead. |
+| `ClientGameTestCommands.chatLines(context)` | The text of every message the panel holds. |
+| `ClientGameTestCommands.clickChatCommand(context, command, settleTicks)` | Clicks a chat line's run-command link, such as `[ACCEPT]`, with the cursor resting over it first. |
+
+### Film-only code in the `recording` source set
+
+Scene staging, cameras, captions and film-only mixins go in `src/recording/java` and `src/recording/resources`, so the `gametest` source set holds only real tests and a test count is a count of tests. The plugin compiles that source set against everything a GameTest compiles against, except the GameTests themselves; a GameTest calls the film, and the film's classes and resources are on the GameTest run's classpath and in the production GameTest JAR. A film-only mixin config goes beside the other resources in `src/recording/resources`. The source set carries no mixin annotation processor, so a mixin that needs a refmap adds that processor in the mod's build file.
 
 ## Client GameTest recording
 
