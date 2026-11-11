@@ -19,6 +19,8 @@ public final class ClientGameTestRecordingHud {
     private static final int SCREEN_MARGIN = 5;
     private static final int PANEL_PADDING = 4;
     private static final int LINE_GAP = 2;
+    /** Minecraft's default font line height, which the panel's height is computed from. */
+    static final int FONT_LINE_HEIGHT = 9;
     private static final int MAX_WIDTH = 360;
     private static final int MAX_LOG_LINES = 6;
     private static final int BACKGROUND_COLOR = 0xA0000000;
@@ -104,9 +106,9 @@ public final class ClientGameTestRecordingHud {
             width = Math.max(width, Math.min(MAX_WIDTH, font.width(line.text())));
         }
 
-        int lineHeight = font.lineHeight + LINE_GAP;
-        int panelWidth = width + PANEL_PADDING * 2;
-        int panelHeight = lines.size() * lineHeight + PANEL_PADDING * 2 - LINE_GAP;
+        int lineHeight = FONT_LINE_HEIGHT + LINE_GAP;
+        int panelWidth = panelWidth(width);
+        int panelHeight = panelHeight(lines.size());
         int panelX = client.getWindow().getGuiScaledWidth() - panelWidth - SCREEN_MARGIN;
         int panelY = SCREEN_MARGIN;
         graphics.fill(
@@ -155,6 +157,26 @@ public final class ClientGameTestRecordingHud {
         }
 
         return lines;
+    }
+
+    /**
+     * Whether the caption panel fits a GUI of this size. The overlay standard is 1920x1080 at GUI scale 3,
+     * a 640x360 GUI; a test run uses 854x480 at scale 2, a 427x240 GUI. The widest text the panel draws is
+     * {@link #MAX_WIDTH} pixels and a diagnostic step fills {@link #MAX_LOG_LINES} log lines, so this is
+     * the worst case the panel has to fit.
+     */
+    static boolean fits(int guiWidth, int guiHeight, int textWidth, int lineCount) {
+        return panelWidth(textWidth) + SCREEN_MARGIN <= guiWidth
+                && panelHeight(lineCount) + SCREEN_MARGIN <= guiHeight;
+    }
+
+    static int panelWidth(int textWidth) {
+        return Math.min(MAX_WIDTH, textWidth) + PANEL_PADDING * 2;
+    }
+
+    static int panelHeight(int lineCount) {
+        int lineHeight = FONT_LINE_HEIGHT + LINE_GAP;
+        return lineCount * lineHeight + PANEL_PADDING * 2 - LINE_GAP;
     }
 
     private static String fit(Font font, String text, int maxWidth) {

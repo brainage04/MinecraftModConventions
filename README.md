@@ -237,6 +237,69 @@ With `client-gametest-recorder` and `production-gametests` both applied, the run
 
 With both plugins applied, a launch that ends before the client finished loading fails as well, whatever its exit code, with a message saying so (the launch's own failure is its cause): a client that cannot open its window (no display, or no working graphics driver under Xvfb) exits without running any GameTest.
 
+## Client GameTest rules
+
+A client GameTest films a player playing, so everything it does must be something a player can do with a keyboard and a mouse. These rules apply to every client GameTest in every mod, recorded or not, and a review checks them.
+
+### Only what a player can do
+
+- **Vanilla reach.** A break, place, use, ignite or attack happens within the reach a survival player has: 4.5 blocks to a block, 3.0 to an entity (`Player.DEFAULT_BLOCK_INTERACTION_RANGE`, `Player.DEFAULT_ENTITY_INTERACTION_RANGE`). A test never raises `BLOCK_INTERACTION_RANGE` or `ENTITY_INTERACTION_RANGE`, neither its base value nor with a modifier, and never calls `gameMode.destroyBlock` or `gameMode.useItemOn` on the server to get around a range.
+- **The crosshair.** The player turns to the target first, and then breaks, places, uses, ignites or attacks the block or entity its crosshair is on. Never something beside the player, behind it, or further away than reach. Two stages of one tree are fine; a swing at the air next to the tree is not.
+- **Real input.** Break and attack with the attack key, use with the use key, walk with the movement keys. Turning the player's rotation is what a mouse turn does, and the client sends it with its next tick; the keys are real presses, held for as long as a player would hold them.
+- **Server-side calls are for what the camera never shows**: building the scene, spawning entities and items, game rules, time and weather, and teleports between stages before the filmed part of that stage starts.
+
+`ClientGameTestPlayerActions` in this library does all of that, and fails a test that breaks the rule instead of recording something a player could not do. The guard behind `mine`, `useOnBlock` and `attackEntity` requires the crosshair hit to be the test's target, the target to be inside vanilla reach, and both interaction-range attributes to be untouched; it names what was wrong when it fails.
+
+| Call | What it does |
+| --- | --- |
+| `lookAt(context, point)`, `lookAtBlock(context, pos)` | Turns the player to look at a point or the middle of a block |
+| `lookStraightUp(context)` | Looks straight up, for a block above the head |
+| `walkWithinReach(context, point)` | Walks to the point with the forward key and stops 2 blocks from it |
+| `walkTo(context, point, blocks)` | The same, stopping at a chosen distance |
+| `walkAwayFrom(context, point, blocks)` | Steps back with the back key, for a stage that lights something explosive |
+| `mine(context, pos)` | Guard, then holds the attack key until the block is gone |
+| `useOnBlock(context, pos)` | Guard, then presses the use key once |
+| `attackEntity(context, entityId)` | Guard, then presses the attack key once |
+| `requireLookingAtBlock(context, pos)` | Fails unless the crosshair is on the block, in reach, with untouched range attributes |
+| `requireLookingAtEntity(context, entityId)` | The same for an entity |
+| `requireVanillaInteractionRanges(context)` | Fails when a range attribute has a modifier or exceeds vanilla's |
+
+The helpers act on the client thread themselves, so a test calls them in order between its own steps and keeps its server-side assertions where they are:
+
+```java
+ClientGameTestPlayerActions.walkWithinReach(context, Vec3.atCenterOf(ore));
+ClientGameTestPlayerActions.lookAtBlock(context, ore);
+ClientGameTestPlayerActions.mine(context, ore);
+context.waitFor(client -> client.level.getBlockState(ore).isAir(), 100);
+```
+
+To use an unreleased build of this library, publish it into a sibling checkout's local repository and point the mod at that repository:
+
+```shell
+# in ../MinecraftModConventions, on the branch being tested
+./gradlew publishAllPublicationsToLocalRepository
+```
+
+```gradle
+// in the mod's root build.gradle
+workspaceDependencies {
+    siblingMaven('MinecraftModConventions') {
+        coordinate.set("io.github.brainage04:minecraftmodconventions:${rootProject.minecraftmodconventions_version}")
+        siblingDirectory.set(rootProject.layout.projectDirectory.dir('../MinecraftModConventions'))
+    }
+}
+```
+
+and pin `minecraftmodconventions_version` to the version that repository holds (`gradle.properties`' `mod_version` of that checkout). `publishAllPublicationsToLocalRepository` publishes the runtime library and every Gradle plugin under it, so the plugin repositories in `settings.gradle` find the same build.
+
+### A positive case and a negative case
+
+Every positive case has a matching negative case in the same suite, showing the difference: the feature turned off, the wrong condition, or a vanilla server that lacks the mod. The recording shows the negative case where the difference is visible on screen, and a positive case that asserts nothing about the wrong condition does not count.
+
+### The recording standard
+
+Every recording is 1920x1080 with GUI scale 3, a 640x360 GUI (`ClientGameTestOptions` sets it, so no mod overrides it), with the caption panel in the top-right corner 5 pixels from the edge and nothing cut off: the panel is at most 368 pixels wide and a diagnostic step's 10 lines are 116 pixels tall, both inside a 640x360 GUI. Game sound is on, except for the master and music categories, and the recording fails without it. The same panel position and scale in every mod is the point: a viewer switching between videos sees the same overlay.
+
 ## Client GameTest recording
 
 ```shell
