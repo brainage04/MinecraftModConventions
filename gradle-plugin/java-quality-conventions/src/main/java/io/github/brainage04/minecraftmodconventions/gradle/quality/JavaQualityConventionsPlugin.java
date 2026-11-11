@@ -26,6 +26,8 @@ public final class JavaQualityConventionsPlugin implements Plugin<Project> {
      * and the deprecation group while leaving those two as warnings, which is the finer opt-out.
      */
     static final boolean DEFAULT_STRICT_UNCHECKED = true;
+    /** The Gradle property that turns the whole strict policy, and the deprecated API check, off. */
+    static final String STRICT_QUALITY_PROPERTY = "strictQuality";
 
     private static final String GOOGLE_JAVA_FORMAT_VERSION = "1.36.1";
     private static final String CHECKSTYLE_VERSION = "13.9.0";
@@ -54,10 +56,7 @@ public final class JavaQualityConventionsPlugin implements Plugin<Project> {
         if (root != root.getRootProject()) {
             throw new GradleException(PLUGIN_ID + " must be applied to the root project.");
         }
-        Provider<Boolean> strictQuality = root.getProviders()
-                .gradleProperty("strictQuality")
-                .map(Boolean::parseBoolean)
-                .orElse(DEFAULT_STRICT_QUALITY);
+        Provider<Boolean> strictQuality = strictQuality(root);
         Provider<Boolean> strictUnchecked = root.getProviders()
                 .gradleProperty("strictUnchecked")
                 .map(Boolean::parseBoolean)
@@ -66,6 +65,14 @@ public final class JavaQualityConventionsPlugin implements Plugin<Project> {
                 "java",
                 applied -> configureJavaProject(project, strictQuality, strictUnchecked)
         ));
+    }
+
+    /** The {@code strictQuality} switch of this build, with the plugin's default when it is not set. */
+    static Provider<Boolean> strictQuality(Project project) {
+        return project.getProviders()
+                .gradleProperty(STRICT_QUALITY_PROPERTY)
+                .map(Boolean::parseBoolean)
+                .orElse(DEFAULT_STRICT_QUALITY);
     }
 
     /** Whether the unchecked group is on when only {@code strictQuality} decides: with it, and with the group. */

@@ -1,6 +1,7 @@
 package io.github.brainage04.minecraftmodconventions.gradle.quality;
 
 import org.gradle.api.Project;
+import org.gradle.api.provider.Provider;
 import org.gradle.api.tasks.SourceSetContainer;
 import org.gradle.api.tasks.TaskProvider;
 
@@ -21,6 +22,7 @@ public final class DeprecatedGameTestApiCheck {
             if (project.getTasks().getNames().contains(TASK_NAME)) {
                 return;
             }
+            Provider<Boolean> strictQuality = JavaQualityConventionsPlugin.strictQuality(project);
             TaskProvider<CheckDeprecatedGameTestApisTask> check = project.getTasks().register(
                     TASK_NAME,
                     CheckDeprecatedGameTestApisTask.class,
@@ -28,6 +30,8 @@ public final class DeprecatedGameTestApiCheck {
                         task.setGroup("verification");
                         task.setDescription("Fails on GameTest APIs that Minecraft marks for removal.");
                         task.getRootDirectory().set(project.getRootDir().getAbsolutePath());
+                        // The switch that turns the rest of the strict policy off turns this off too.
+                        task.onlyIf(_ -> strictQuality.get());
                     }
             );
             project.getExtensions().getByType(SourceSetContainer.class)
