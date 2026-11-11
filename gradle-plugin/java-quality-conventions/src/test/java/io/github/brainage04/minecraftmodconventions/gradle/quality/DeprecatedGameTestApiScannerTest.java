@@ -108,6 +108,26 @@ class DeprecatedGameTestApiScannerTest {
     }
 
     @Test
+    void aCommentMarkerAfterAStringWithSlashesStillCounts() {
+        List<DeprecatedGameTestApiScanner.Suppression> suppressions = DeprecatedGameTestApiScanner.scanSuppressions(List.of(
+                "    String docs = \"https://example.invalid/docs\"; // deprecated-api: the API is still present",
+                "    @SuppressWarnings(\"removal\")"));
+
+        assertFalse(
+                suppressions.get(0).missingReason(),
+                "the comment starts after the string literal, and its marker carries a reason");
+    }
+
+    @Test
+    void aMarkerInsideAStringLiteralIsNotAComment() {
+        List<DeprecatedGameTestApiScanner.Suppression> suppressions = DeprecatedGameTestApiScanner.scanSuppressions(List.of(
+                "    String marker = \"// deprecated-api: only text\";",
+                "    @SuppressWarnings(\"removal\")"));
+
+        assertTrue(suppressions.get(0).missingReason(), "slashes inside a literal do not start a comment");
+    }
+
+    @Test
     void aMarkerWithoutAReasonOrFurtherAwayDoesNotClearTheSuppression() {
         List<DeprecatedGameTestApiScanner.Suppression> reasonless = DeprecatedGameTestApiScanner.scanSuppressions(List.of(
                 "    // deprecated-api:",

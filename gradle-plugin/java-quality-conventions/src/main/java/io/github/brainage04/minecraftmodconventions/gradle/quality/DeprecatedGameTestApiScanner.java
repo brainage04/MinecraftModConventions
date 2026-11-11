@@ -50,6 +50,7 @@ public final class DeprecatedGameTestApiScanner {
 
     public static List<Suppression> scanSuppressions(List<String> lines) {
         JavaSourceLine lexer = new JavaSourceLine();
+        List<String> comments = comments(lines);
         List<Suppression> suppressions = new ArrayList<>();
         for (int index = 0; index < lines.size(); index++) {
             lexer.split(lines.get(index));
@@ -70,11 +71,25 @@ public final class DeprecatedGameTestApiScanner {
                 sawParen = sawParen || lexer.code().indexOf('(') >= 0;
             }
             if (HIDDEN_LINT.matcher(annotation).find()) {
-                suppressions.add(new Suppression(index + 1, lines.get(index).strip(), !reasoned(lines, index)));
+                suppressions.add(new Suppression(index + 1, lines.get(index).strip(), !reasoned(comments, index)));
             }
             index = end;
         }
         return suppressions;
+    }
+
+    /**
+     * Each line's {@code //} comment as the lexer finds it, so a {@code //} inside a string or a text
+     * block is not taken for the start of one.
+     */
+    private static List<String> comments(List<String> lines) {
+        JavaSourceLine lexer = new JavaSourceLine();
+        List<String> comments = new ArrayList<>(lines.size());
+        for (String line : lines) {
+            lexer.split(line);
+            comments.add(lexer.comment());
+        }
+        return comments;
     }
 
     private static int parens(String code) {
@@ -90,16 +105,12 @@ public final class DeprecatedGameTestApiScanner {
         return depth;
     }
 
-    private static boolean reasoned(List<String> lines, int index) {
-        return hasReason(lines.get(index)) || (index > 0 && hasReason(lines.get(index - 1)));
+    private static boolean reasoned(List<String> comments, int index) {
+        return hasReason(comments.get(index)) || (index > 0 && hasReason(comments.get(index - 1)));
     }
 
-    private static boolean hasReason(String line) {
-        int at = line.indexOf("//");
-        if (at < 0) {
-            return false;
-        }
-        Matcher matcher = REASON.matcher(line.substring(at).strip());
+    private static boolean hasReason(String comment) {
+        Matcher matcher = REASON.matcher(comment);
         return matcher.matches() && !matcher.group(1).strip().isEmpty();
     }
 }
