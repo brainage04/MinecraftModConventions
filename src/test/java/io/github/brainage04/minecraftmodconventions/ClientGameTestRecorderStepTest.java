@@ -1,0 +1,49 @@
+package io.github.brainage04.minecraftmodconventions;
+
+import org.junit.jupiter.api.Test;
+
+import java.io.ByteArrayOutputStream;
+import java.io.PrintStream;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+class ClientGameTestRecorderStepTest {
+    @Test
+    void showStepAndHoldShowsTheStepAndHoldsItForItsTicks() {
+        RecordingTestContext context = new RecordingTestContext();
+
+        String printed = capture(() -> ClientGameTestRecorder.showStepAndHold(
+                context, "simpletpa.request", "Teleport request", "You ask Friend", 15));
+
+        assertTrue(
+                printed.startsWith("[CLIENT_GAMETEST_RECORDER] simpletpa.request | Teleport request | You ask Friend"),
+                printed);
+        assertEquals(List.of(15), context.waits());
+    }
+
+    @Test
+    void aNegativeHoldIsRejected() {
+        RecordingTestContext context = new RecordingTestContext();
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> ClientGameTestRecorder.showStepAndHold(context, "id", "title", "subtitle", -1));
+        assertEquals(List.of(), context.waits());
+    }
+
+    private static String capture(Runnable step) {
+        PrintStream original = System.out;
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        System.setOut(new PrintStream(out, true, StandardCharsets.UTF_8));
+        try {
+            step.run();
+        } finally {
+            System.setOut(original);
+        }
+        return out.toString(StandardCharsets.UTF_8);
+    }
+}

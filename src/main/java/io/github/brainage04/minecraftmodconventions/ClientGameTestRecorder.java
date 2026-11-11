@@ -53,6 +53,17 @@ public final class ClientGameTestRecorder {
         context.runOnClient(_ -> ClientGameTestRecordingHud.showStep(id, title, subtitle));
     }
 
+    /** Shows a step and keeps it on screen for {@code holdTicks}, the length of its shot. */
+    public static void showStepAndHold(
+            ClientGameTestContext context, String id, String title, String subtitle, int holdTicks) {
+        Objects.requireNonNull(context, "context");
+        if (holdTicks < 0) {
+            throw new IllegalArgumentException("holdTicks must not be negative: " + holdTicks);
+        }
+        showStep(context, id, title, subtitle);
+        context.waitTicks(holdTicks);
+    }
+
     public static void log(ClientGameTestContext context, String message) {
         Objects.requireNonNull(context, "context");
         context.runOnClient(_ -> ClientGameTestRecordingHud.log(message));
