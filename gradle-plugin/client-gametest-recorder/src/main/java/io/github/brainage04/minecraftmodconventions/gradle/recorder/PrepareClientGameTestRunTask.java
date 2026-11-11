@@ -15,6 +15,7 @@ public abstract class PrepareClientGameTestRunTask extends DefaultTask {
     public PrepareClientGameTestRunTask() {
         // Also for instances a build script registers itself (a NeoForge client GameTest run).
         getRecorderScreen().convention(ClientGameTestOptions.recorderScreen(getProject().getProviders()));
+        getGpuRendering().convention(false);
     }
 
     /** {@code test} or {@code showcase}; see {@link ClientGameTestOptions.Profile}. */
@@ -32,6 +33,10 @@ public abstract class PrepareClientGameTestRunTask extends DefaultTask {
     @Input
     public abstract Property<Boolean> getDisableSocialInteractionsToast();
 
+    /** A recording that renders on the machine's graphics card; see {@link ClientGameTestOptions#options}. */
+    @Input
+    public abstract Property<Boolean> getGpuRendering();
+
     @OutputFile
     public abstract RegularFileProperty getOptionsFile();
 
@@ -42,7 +47,8 @@ public abstract class PrepareClientGameTestRunTask extends DefaultTask {
                 ClientGameTestOptions.Profile.named(getProfile().get()),
                 getRecordingAudioDevice().get(),
                 getDisableSocialInteractionsToast().get(),
-                getRecorderScreen().get()
+                getRecorderScreen().get(),
+                getGpuRendering().get()
         );
     }
 }

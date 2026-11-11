@@ -111,6 +111,7 @@ public final class ClientGameTestRecorderPlugin implements Plugin<Project> {
         project.getTasks().withType(PrepareProductionGameTestRunsTask.class).configureEach(task -> {
             task.getClientSoundDevice().set(recordingAudioDevice(project, extension));
             task.getDisableSocialInteractionsToast().set(extension.getDisableSocialInteractionsToast());
+            task.getGpuRendering().set(gpuRendering(project));
         });
         project.getTasks().withType(ClientGameTestProductionRunTask.class).configureEach(task ->
                 ClientStartupDeadline.install(
@@ -135,6 +136,14 @@ public final class ClientGameTestRecorderPlugin implements Plugin<Project> {
                 .orElse("");
     }
 
+    /** Whether the recorded client renders on the card, from the display the recorder is given. */
+    private static Provider<Boolean> gpuRendering(Project project) {
+        return project.getProviders()
+                .environmentVariable(ClientGpuCapture.DISPLAY_ENV)
+                .map(value -> ClientGpuCapture.display(value) != null)
+                .orElse(false);
+    }
+
     private static void addRuntimeHelperDependencies(Project project) {
         Object version = project.findProperty("minecraftmodconventions_version");
         if (version == null || version.toString().isBlank()) {
@@ -152,6 +161,7 @@ public final class ClientGameTestRecorderPlugin implements Plugin<Project> {
         task.getRecordingAudioDevice().convention(recordingAudioDevice(project, extension));
         task.getProfile().convention(ClientGameTestOptions.profile(task.getRecordingAudioDevice()));
         task.getDisableSocialInteractionsToast().convention(extension.getDisableSocialInteractionsToast());
+        task.getGpuRendering().convention(gpuRendering(project));
         task.getOptionsFile().convention(extension.getRunDir().file("options.txt"));
     }
 

@@ -22,6 +22,18 @@ from pathlib import Path
 from typing import Any, Iterable
 
 SCRIPT_DIR = Path(__file__).resolve().parent
+# Shared with the Gradle checkVanillaIdentity task, so the fleet report and the build flag the same lines.
+VANILLA_IDENTITY_PATTERNS = (
+    SCRIPT_DIR.parent
+    / "gradle-plugin/java-quality-conventions/src/main/resources/io/github/brainage04"
+    / "minecraftmodconventions/gradle/quality/vanilla-identity-patterns.txt"
+)
+VANILLA_IDENTITY_CHECK_PLUGINS = (
+    "io.github.brainage04.fabric-mod-conventions",
+    "io.github.brainage04.multiloader-mod-conventions",
+)
+VANILLA_IDENTITY_OPT_OUT = re.compile(r"^//\s*vanilla-identity:(.*)$")
+SKIPPED_SOURCE_DIRECTORIES = {"build", ".gradle", "run", "node_modules"}
 DEFAULT_MANIFEST = SCRIPT_DIR / "mod-fleet.json"
 RECORDER_CAPABLE_PLUGINS = (
     "io.github.brainage04.client-gametest-recorder",
@@ -307,6 +319,161 @@ def audit_fleet(
     }
 
 
+def vanilla_identity_patterns(path: Path = VANILLA_IDENTITY_PATTERNS) -> list[re.Pattern[str]]:
+    fragments: dict[str, str] = {}
+    hits: list[re.Pattern[str]] = []
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        definition = re.fullmatch(r"([a-z]\w*)\s*=\s*(.+)", line)
+        if definition is None:
+            raise ValueError(f"Malformed line in {path}: {line}")
+
+        def expand(reference: re.Match[str]) -> str:
+            if reference.group(1) not in fragments:
+                raise ValueError(f"Undefined {{{reference.group(1)}}} in {path}")
+            return "(?:" + fragments[reference.group(1)] + ")"
+
+        regex = re.sub(r"\{([a-z]\w*)}", expand, definition.group(2))
+        if definition.group(1) == "hit":
+            hits.append(re.compile(regex))
+        else:
+            fragments[definition.group(1)] = regex
+    return hits
+
+
+class JavaLineSplitter:
+    """Splits Java lines into code (comments removed, literal contents blanked) and the `//` comment."""
+
+    def __init__(self) -> None:
+        self.in_block_comment = False
+        self.in_text_block = False
+
+    def split(self, line: str) -> tuple[str, str]:
+        code: list[str] = []
+        index = 0
+        while index < len(line):
+            if self.in_block_comment:
+                if line.startswith("*/", index):
+                    self.in_block_comment = False
+                    code.append(" ")
+                    index += 2
+                else:
+                    index += 1
+            elif self.in_text_block:
+                if line.startswith('"""', index):
+                    self.in_text_block = False
+                    code.append('"""')
+                    index += 3
+                else:
+                    index += 2 if line[index] == "\\" else 1
+            elif line.startswith('"""', index):
+                self.in_text_block = True
+                code.append('"""')
+                index += 3
+            elif line[index] in "\"'":
+                quote = line[index]
+                index += 1
+                while index < len(line) and line[index] != quote:
+                    index += 2 if line[index] == "\\" else 1
+                code.append(quote * 2)
+                index += 1
+            elif line.startswith("//", index):
+                return "".join(code), line[index:].strip()
+            elif line.startswith("/*", index):
+                self.in_block_comment = True
+                index += 2
+            else:
+                code.append(line[index])
+                index += 1
+        return "".join(code), ""
+
+
+def vanilla_identity_opt_out(comment: str) -> bool | None:
+    """None without a marker, otherwise whether the marker gives a reason."""
+    marker = VANILLA_IDENTITY_OPT_OUT.match(comment)
+    return None if marker is None else bool(marker.group(1).strip())
+
+
+def scan_vanilla_identity(lines: list[str], patterns: list[re.Pattern[str]]) -> list[dict[str, Any]]:
+    """Mirrors VanillaIdentityScanner.scan: a reasoned marker clears its own line and the next."""
+    splitter = JavaLineSplitter()
+    findings: list[dict[str, Any]] = []
+    previous: bool | None = None
+    for number, line in enumerate(lines, start=1):
+        code, comment = splitter.split(line)
+        current = vanilla_identity_opt_out(comment)
+        if any(pattern.search(code) for pattern in patterns) and current is not True and previous is not True:
+            findings.append({
+                "line": number,
+                "source": line.strip(),
+                "missingReason": current is not None or previous is not None,
+            })
+        previous = current
+    return findings
+
+
+def mod_source_files(root: Path) -> list[Path]:
+    """Java files of every `main` and `client` source set below root (GameTests excluded)."""
+    files: list[Path] = []
+    for source_set in ("main", "client"):
+        for path in root.glob(f"**/src/{source_set}/java/**/*.java"):
+            relative = path.relative_to(root).parts
+            if not SKIPPED_SOURCE_DIRECTORIES.intersection(relative):
+                files.append(path)
+    return sorted(set(files))
+
+
+def vanilla_identity_fleet(workspace: Path) -> list[dict[str, Any]]:
+    patterns = vanilla_identity_patterns()
+    repositories: list[dict[str, Any]] = []
+    for child in sorted(workspace.iterdir()):
+        if not child.is_dir() or not (child / ".git").exists():
+            continue
+        build_text = combined_text(text_files(child, ("build.gradle", "build.gradle.kts")))
+        hits: list[dict[str, Any]] = []
+        for path in mod_source_files(child):
+            try:
+                lines = path.read_text(encoding="utf-8").splitlines()
+            except UnicodeDecodeError:
+                continue
+            for finding in scan_vanilla_identity(lines, patterns):
+                hits.append({"path": str(path.relative_to(child)), **finding})
+        repositories.append({
+            "name": child.name,
+            "checked": any(plugin in build_text for plugin in VANILLA_IDENTITY_CHECK_PLUGINS),
+            "hits": hits,
+        })
+    return repositories
+
+
+def vanilla_identity_markdown(workspace: Path, repositories: list[dict[str, Any]]) -> str:
+    hit_count = sum(len(repo["hits"]) for repo in repositories)
+    with_hits = [repo for repo in repositories if repo["hits"]]
+    lines = [
+        "# Hardcoded vanilla dimension identities",
+        "",
+        f"{hit_count} lines in {len(with_hits)} of {len(repositories)} checkouts under `{workspace}`, "
+        "from the `main` and `client` source sets (GameTests excluded), with the patterns of the "
+        "`checkVanillaIdentity` build check. *Checked* means the build applies a conventions plugin "
+        "that runs the check, once it uses a release that has it.",
+        "",
+        "| Repository | Checked | Location | Line |",
+        "|---|---|---|---|",
+    ]
+    for repo in with_hits:
+        for hit in repo["hits"]:
+            note = " *(opt-out without a reason)*" if hit["missingReason"] else ""
+            lines.append(
+                f"| {repo['name']} | {'yes' if repo['checked'] else 'no'} | `{hit['path']}:{hit['line']}` "
+                f"| `{escape_table(hit['source'])}`{note} |"
+            )
+    clean = [repo["name"] for repo in repositories if not repo["hits"]]
+    lines.extend(["", "No hits: " + (", ".join(clean) if clean else "none") + "."])
+    return "\n".join(lines) + "\n"
+
+
 def markdown_report(audit: dict[str, Any], recording_results: list[dict[str, Any]] | None = None) -> str:
     lines = [
         "# Minecraft mod fleet report",
@@ -590,6 +757,13 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     list_parser = subparsers.add_parser("list", help="List recording policy")
     add_shared_arguments(list_parser)
 
+    identity_parser = subparsers.add_parser(
+        "vanilla-identity",
+        help="List hardcoded vanilla dimension identities in every checkout's main and client sources",
+    )
+    identity_parser.add_argument("--workspace", type=Path, default=SCRIPT_DIR.parents[1])
+    identity_parser.add_argument("--output", type=Path, help="Also write the Markdown report here")
+
     record_parser = subparsers.add_parser("record", help="Audit and record every eligible repository")
     add_shared_arguments(record_parser)
     record_parser.add_argument("--output", type=Path, default=None)
@@ -606,8 +780,15 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv or sys.argv[1:])
-    manifest = load_json(args.manifest.resolve())
     workspace = args.workspace.expanduser().resolve()
+    if args.command == "vanilla-identity":
+        report = vanilla_identity_markdown(workspace, vanilla_identity_fleet(workspace))
+        print(report, end="")
+        if args.output:
+            args.output.expanduser().resolve().write_text(report, encoding="utf-8")
+        return 0
+
+    manifest = load_json(args.manifest.resolve())
     audit = audit_fleet(manifest, workspace, baseline_overrides(args), args.github)
 
     if args.command == "list":

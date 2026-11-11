@@ -49,3 +49,6 @@ replay_*.log
 # python
 
 __pycache__/
+
+# job runners
+.gametest.lock

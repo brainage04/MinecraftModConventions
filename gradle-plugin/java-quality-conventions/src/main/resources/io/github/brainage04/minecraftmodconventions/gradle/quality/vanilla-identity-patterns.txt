@@ -1,0 +1,26 @@
+# Patterns of the vanilla dimension identity check, read by VanillaIdentityScanner and by
+# scripts/mod_fleet.py. Keep every regex inside the syntax Java and Python share.
+#
+# `name = regex` defines a fragment that later lines use as {name}.
+# `hit = regex` is searched in each line of Java code, after comments are removed and the
+# contents of string and character literals are blanked; a match makes the line a hit.
+
+# The keys of the three vanilla levels (Level, inherited by ServerLevel and ClientLevel) and of
+# the vanilla dimension types.
+key = (?:\b(?:Server|Client)?Level|\bBuiltinDimensionTypes)\.(?:OVERWORLD|NETHER|END|OVERWORLD_CAVES)\b
+# The same level keys through a static import.
+static = (?<![\w.])(?:OVERWORLD|NETHER|END)\b
+dimension = \bdimension(?:Type|TypeRegistration)?\s*\(\s*\)
+
+# Compared with == or !=.
+hit = {key}\s*[!=]=
+hit = [!=]=\s*{key}
+# Compared with equals(...) or Holder.is(...), either way round, including Objects.equals(a, b).
+hit = {key}\s*\.\s*(?:equals|is)\s*\(
+hit = \b(?:equals|is)\s*\((?:[^()]|\([^()]*\))*{key}
+# Passed together with the level's dimension, as in matches(Level.NETHER, level.dimension()).
+hit = {key}.*{dimension}
+hit = {dimension}.*{key}
+# dimension() compared with a statically imported key.
+hit = \bdimension\s*\(\s*\)\s*(?:[!=]=|\.\s*equals\s*\()\s*{static}
+hit = {static}\s*(?:[!=]=\s*|\.\s*equals\s*\(\s*)[\w.]*(?:\([^()]*\)[\w.]*)*dimension\s*\(\s*\)

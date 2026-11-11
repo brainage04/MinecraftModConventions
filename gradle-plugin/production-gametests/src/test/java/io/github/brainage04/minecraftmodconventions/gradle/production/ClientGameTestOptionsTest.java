@@ -11,10 +11,14 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class ClientGameTestOptionsTest {
+    private static Map<String, String> options(ClientGameTestOptions.Profile profile, String screen) {
+        return ClientGameTestOptions.options(profile, "sink", true, screen, false);
+    }
+
     @Test
-    void showcaseIsTheTestProfileWithViewGraphicsAndSoundChanges() {
-        Map<String, String> test = ClientGameTestOptions.options(ClientGameTestOptions.Profile.TEST, "sink", true, "1920x1080");
-        Map<String, String> showcase = ClientGameTestOptions.options(ClientGameTestOptions.Profile.SHOWCASE, "sink", true, "1920x1080");
+    void showcaseIsTheTestProfileWithViewGraphicsSoundAndScaleChanges() {
+        Map<String, String> test = options(ClientGameTestOptions.Profile.TEST, "1920x1080");
+        Map<String, String> showcase = options(ClientGameTestOptions.Profile.SHOWCASE, "1920x1080");
 
         assertEquals(test.keySet().stream().toList(), showcase.keySet().stream().toList());
         Map<String, String> changed = new TreeMap<>();
@@ -24,6 +28,8 @@ class ClientGameTestOptionsTest {
             }
         });
         Map<String, String> expected = new TreeMap<>(Map.ofEntries(
+                // Every recording uses the overlay standard: 1920x1080 at GUI scale 3.
+                Map.entry("guiScale", "3"),
                 Map.entry("overrideWidth", "1920"),
                 Map.entry("overrideHeight", "1080"),
                 Map.entry("renderDistance", "12"),
@@ -48,7 +54,7 @@ class ClientGameTestOptionsTest {
 
     @Test
     void theTestProfileIsSilentWhateverTheSoundDevice() {
-        Map<String, String> test = ClientGameTestOptions.options(ClientGameTestOptions.Profile.TEST, "sink", true, "1920x1080");
+        Map<String, String> test = options(ClientGameTestOptions.Profile.TEST, "1920x1080");
 
         assertEquals("\"\"", test.get("soundDevice"));
         test.forEach((key, value) -> {
@@ -56,6 +62,28 @@ class ClientGameTestOptionsTest {
                 assertEquals("0.0", value, key);
             }
         });
+    }
+
+    @Test
+    void aTestRunKeepsTheSmallWindowAndItsOwnGuiScale() {
+        Map<String, String> test = options(ClientGameTestOptions.Profile.TEST, "2560x1440x24");
+
+        assertEquals(List.of("854", "480"), List.of(test.get("overrideWidth"), test.get("overrideHeight")));
+        assertEquals("2", test.get("guiScale"));
+        assertEquals("false", test.get("fullscreen"));
+    }
+
+    @Test
+    void aRecordingOnACardPresentsFasterThanTheCapture() {
+        Map<String, String> software = ClientGameTestOptions.options(
+                ClientGameTestOptions.Profile.SHOWCASE, "sink", true, "1920x1080", false);
+        Map<String, String> card = ClientGameTestOptions.options(
+                ClientGameTestOptions.Profile.SHOWCASE, "sink", true, "1920x1080", true);
+
+        assertEquals("30", software.get("maxFps"));
+        // A capture at 30 frames a second needs a fresh image for every one of them.
+        assertEquals("60", card.get("maxFps"));
+        assertEquals(software.keySet(), card.keySet());
     }
 
     @Test
@@ -67,8 +95,8 @@ class ClientGameTestOptionsTest {
 
     @Test
     void theShowcaseWindowCoversTheRecorderScreenWithOrWithoutDepth() {
-        Map<String, String> hd = ClientGameTestOptions.options(ClientGameTestOptions.Profile.SHOWCASE, "sink", true, "1280x720x24");
-        Map<String, String> qhd = ClientGameTestOptions.options(ClientGameTestOptions.Profile.SHOWCASE, "sink", true, "2560x1440");
+        Map<String, String> hd = options(ClientGameTestOptions.Profile.SHOWCASE, "1280x720x24");
+        Map<String, String> qhd = options(ClientGameTestOptions.Profile.SHOWCASE, "2560x1440");
 
         assertEquals(List.of("1280", "720"), List.of(hd.get("overrideWidth"), hd.get("overrideHeight")));
         assertEquals(List.of("2560", "1440"), List.of(qhd.get("overrideWidth"), qhd.get("overrideHeight")));
@@ -79,8 +107,8 @@ class ClientGameTestOptionsTest {
     void aBadRecorderScreenFailsOnlyTheShowcaseProfile() {
         for (String screen : new String[] {"wide", "0x0x24", "1920"}) {
             assertThrows(GradleException.class,
-                    () -> ClientGameTestOptions.options(ClientGameTestOptions.Profile.SHOWCASE, "sink", true, screen), screen);
-            Map<String, String> test = ClientGameTestOptions.options(ClientGameTestOptions.Profile.TEST, "", true, screen);
+                    () -> options(ClientGameTestOptions.Profile.SHOWCASE, screen), screen);
+            Map<String, String> test = options(ClientGameTestOptions.Profile.TEST, screen);
             assertEquals(List.of("854", "480"), List.of(test.get("overrideWidth"), test.get("overrideHeight")), screen);
         }
     }

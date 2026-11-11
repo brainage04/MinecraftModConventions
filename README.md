@@ -6,8 +6,8 @@ Shared Gradle plugins, GitHub workflows and client GameTest helpers for my Minec
 
 | Plugin (`io.github.brainage04.…`) | Apply to | Purpose |
 | --- | --- | --- |
-| `multiloader-mod-conventions` | root of a `common`/`fabric` mod, optionally with `neoforge` | **The standard entry point.** Configures the included modules with Architectury Loom and applies every plugin below except `fabric-mod-conventions` and `maven-central-publishing`. |
-| `fabric-mod-conventions` | single-loader Fabric project | Fabric Loom, project identity, standard dependencies and repositories, Java settings, side-aware source layout, access widener, sources JAR, `fabric.mod.json` expansion, license in the JAR. |
+| `multiloader-mod-conventions` | root of a `common`/`fabric` mod, optionally with `neoforge` | **The standard entry point.** Configures the included modules with Architectury Loom and applies every plugin below except `fabric-mod-conventions` and `maven-central-publishing`. Adds the [vanilla dimension identity check](#vanilla-dimension-identity-check) to every module. |
+| `fabric-mod-conventions` | single-loader Fabric project | Fabric Loom, project identity, standard dependencies and repositories, Java settings, side-aware source layout, access widener, sources JAR, `fabric.mod.json` expansion, license in the JAR, the [vanilla dimension identity check](#vanilla-dimension-identity-check). |
 | `client-gametest-recorder` | Fabric project | `recordClientGameTest`: records client GameTests to MP4 in an isolated Xvfb display and audio sink. Adds the runtime helpers to the `gametest` source set. |
 | `production-gametests` | Fabric project | Creates the `gametest` source set and runs GameTests against the packaged mod through Loom's production client and server. |
 | `integration-gametests` | Fabric or NeoForge Loom project with a `gametest` source set | Named GameTest suites that run with extra mods (Maven artifacts or pinned Git commits) loaded, in their own source set and runs. |
@@ -157,6 +157,26 @@ fabricModConventions {
 
 Every option defaults to `true`. `fabric.mod.json` expansion fails on a missing or blank property.
 
+## Vanilla dimension identity check
+
+`fabric-mod-conventions` and `multiloader-mod-conventions` (in `common`, `fabric` and `neoforge`) register `checkVanillaIdentity` under `check`. It fails when the Java sources of the `main` and `client` source sets compare with a vanilla dimension, and names each `file:line`:
+
+- `Level.OVERWORLD`, `Level.NETHER` or `Level.END` (also through `ServerLevel`/`ClientLevel` or a static import) or a `BuiltinDimensionTypes` key, compared with `==`, `!=`, `equals(…)` or `is(…)`;
+- such a key on the same line as `dimension()`, `dimensionType()` or `dimensionTypeRegistration()`, as in `matches(Level.NETHER, level.dimension())`.
+
+Other uses of the keys, such as `server.getLevel(Level.END)`, and comparisons with a mod's own dimensions pass. GameTest and other source sets are not checked. The patterns are in `gradle-plugin/java-quality-conventions/src/main/resources/…/vanilla-identity-patterns.txt`.
+
+Datapacks and other mods change what a dimension allows, so ask the data the game itself reads: environment attributes (`level.environmentAttributes().getValue(EnvironmentAttributes.BED_RULE, pos)`, `RESPAWN_ANCHOR_WORKS`, `WATER_EVAPORATES`, …), `level.dimensionType()` properties, tags and game rules. On the client, confirm the attribute is synced (`EnvironmentAttribute.isSyncable()`) or decide it server-side: an attribute that is not synced, such as `BED_RULE` in 1.21.11, 26.2 and 26.3, reads its default value on the client.
+
+A mod that really targets one vanilla dimension, or a client mod with no synced rule to read, marks the line or the line above it:
+
+```java
+// vanilla-identity: the mod floods only the vanilla End
+if (level.dimension() != Level.END) return;
+```
+
+The reason after `vanilla-identity:` is required; a marker without one still fails.
+
 ## Workspace dependencies
 
 ```gradle
@@ -187,10 +207,10 @@ Client GameTests (`runClientGameTest`), production client GameTests (`runProduct
 | `lang` | `en_us` | same |
 | `fullscreen` | `false` | `false` (SDL3 cannot go fullscreen on Xvfb, which has no window manager) |
 | `overrideWidth`, `overrideHeight` | `854`, `480` | the recorder display, `1920`, `1080` by default (`GTR_RECORDING_XVFB_SCREEN`) |
-| `guiScale` | `2` | same |
+| `guiScale` | `2` | `3` (the overlay standard: 1920x1080 at scale 3 is a 640x360 GUI) |
 | `renderDistance` | `5` | `12` |
 | `simulationDistance` | `5` | same |
-| `maxFps`, `enableVsync`, `inactivityFpsLimit` | `30`, `false`, `"minimized"` | same |
+| `maxFps`, `enableVsync`, `inactivityFpsLimit` | `30`, `false`, `"minimized"` | same, `60` for a recording that renders on a card |
 | `graphicsPreset` | `"fast"` | `"fancy"` |
 | `ao`, `cutoutLeaves`, `entityShadows` | `false` | `true` |
 | `improvedTransparency`, `renderClouds` | `false`, `"false"` | same |
@@ -210,7 +230,7 @@ Client GameTests (`runClientGameTest`), production client GameTests (`runProduct
 | `autoJump`, `toggleSprint`, `toggleCrouch` | `false` | same |
 
 - `showcase` is used when the recorder gives the run its private PulseAudio sink (`recordClientGameTest` passes it as `GTR_RECORDING_AUDIO_DEVICE`), `test` otherwise, including runs that only bring their own display (`GTR_RECORDING_MANAGED_XVFB=true`). Its sound only reaches that sink.
-- Client GameTests see the `overrideWidth` x `overrideHeight` window whatever the display size, so the GUI scale and layout are the same in every run of a profile. A `showcase` window covers the whole recorder display, so a recorded run has a larger GUI (960x540 at `guiScale` 2) than the same test's `test` run (427x240): a test that depends on screen coordinates or text wrapping can behave differently while recorded.
+- Client GameTests see the `overrideWidth` x `overrideHeight` window whatever the display size, so the GUI scale and layout are the same in every run of a profile. A `showcase` recording is always 1920x1080 at `guiScale` 3, a 640x360 GUI, whatever size its recorder display is; the same test's `test` run uses an 854x480 window at `guiScale` 2 (427x240). A test that depends on screen coordinates or text wrapping can behave differently while recorded.
 - On Linux, every automated client launch (production and development client GameTests, every Loom run task with `GameTest` in its name on `:fabric` and `:neoforge`, and the recorder) sets `SDL_VIDEO_DRIVER=x11` and removes `WAYLAND_DISPLAY`. Minecraft 26.3 opens its window through SDL3, which otherwise prefers a Wayland desktop over `DISPLAY` (Xvfb). Interactive runs such as `runClient` are left alone.
 
 With `client-gametest-recorder` and `production-gametests` both applied, the runtime helper joins both client runs, and each launch has a startup deadline: the client must finish loading (the point where its GameTests start) within 300 seconds. Otherwise the task stops the client and every process it started (`xvfb-run` and its `Xvfb` included) and fails with a message naming them. Change the deadline with `clientGameTestRecorder.clientStartupTimeoutSeconds` or the Gradle property `minecraftmodconventions.clientStartupTimeoutSeconds`.
@@ -241,6 +261,9 @@ clientGameTestRecorder {
 - `GTR_RECORDING_PRE_PADDING_SECONDS` / `GTR_RECORDING_POST_PADDING_SECONDS`: `0`–`60`, default `0.5`.
 - Each recording writes metadata with tick and frame boundaries, effective padding and any capture gaps. A run fails if game audio is not routed to the recorder's sink or cannot be decoded.
 - The raw capture's muxer queues up to 4096 encoded packets (over a minute of capture), so a write that waits on a busy disk does not stop the screen grab and leave a frame gap.
+- `GTR_RECORDING_DISPLAY=:1` records an X display that already has the machine's graphics card behind its GLX (an `Xorg` running on the card) instead of starting its own `Xvfb`, whose `llvmpipe` presents a busy scene at a handful of frames a second and leaves every second captured frame a repeat; the client's window is visible on that display while it runs. x11grab, the boundary trimming and the audio route are unchanged, the frame cap rises to 60 so the 30 frames a second the capture takes are all fresh images, and the metadata records the graphics device, the presented frame rate and the host. A display that does not answer falls back to the recorder's own virtual display and `gpu.fallbackReason` says why. `GTR_RECORDING_FPS` stays the capture rate. VirtualGL's `vglrun` is not a way to do this: its faker advertises OpenGL 3.3, and Minecraft 26.3's OpenGL backend then draws nothing (`GL_INVALID_FRAMEBUFFER_OPERATION` throughout, a black capture).
+- The metadata records the client's graphics device (`glRenderer`), its SDL video driver, the presented frame rate of the recorded world (`presentedFps`) and the host, and `gpu.active` says whether the card rendered the run.
+- The client always starts with `SDL_VIDEO_DRIVER=x11`: SDL3 otherwise finds a Wayland compositor through `XDG_RUNTIME_DIR` and opens its window there, where the capture cannot see it and where it may appear on someone's screen. A run whose log names another driver fails.
 - When the job runs in a cgroup of its own with a memory limit (a job runner's slot, such as a systemd scope), the recording sets that cgroup's `memory.low` to the limit for the run, so the kernel reclaims sibling jobs first instead of evicting ffmpeg's and the game's files, whose reads from a busy disk stall the capture. A cgroup without a limit is left alone.
 
 ### Dedicated-server harness
@@ -368,6 +391,9 @@ Self-hosted runners keep their work tree between jobs, so every reusable workflo
 ```shell
 ./scripts/mod_fleet.py audit --github --strict
 ./scripts/mod_fleet.py record [--include <repository>] [--dry-run]
+./scripts/mod_fleet.py vanilla-identity [--output hits.md]
 ```
 
 `record` writes to a timestamped `~/Downloads/minecraft-mod-gametest-recordings-*` directory; `--output <dir> --resume` reruns only the repositories that failed. For a new Minecraft release, pass `--minecraft-version`, `--loader-version`, `--fabric-api-version`, `--java-version` and `--conventions-version` to `audit`, then update the manifest.
+
+`vanilla-identity` lists the lines `checkVanillaIdentity` would flag in every git checkout beside this one, including mods that do not use the conventions plugins.
