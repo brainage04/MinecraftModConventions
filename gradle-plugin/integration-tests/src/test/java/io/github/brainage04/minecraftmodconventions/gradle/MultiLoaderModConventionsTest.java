@@ -341,7 +341,17 @@ class MultiLoaderModConventionsTest {
 
     @Test
     void recordingSourcesCompileAgainstTheModsOwnMainAndClientClasses() throws IOException {
-        writeFixture("both", "");
+        // The film compiles against the GameTest classpath, which the recorder's runtime helper is part
+        // of; a consumer resolves the published jar, so the fixture serves a stub of it.
+        Path stubRepository = projectDir.resolve("stub-maven");
+        writeRuntimeHelperStub(stubRepository);
+        writeFixture("both", """
+                allprojects {
+                    repositories {
+                        maven { url = uri('%s') }
+                    }
+                }
+                """.formatted(stubRepository.toUri()));
         write("fabric/src/main/java/fixture/StageNames.java", """
                 package fixture;
 
@@ -546,6 +556,29 @@ class MultiLoaderModConventionsTest {
                 .start();
         assertEquals(0, clone.waitFor());
         return repository.toUri().toString();
+    }
+
+    /**
+     * A stub of the published runtime helper jar. The recorder plugin adds it to the GameTest source
+     * set, so resolving a classpath that carries the GameTest one needs the artifact to exist; the
+     * fixture's repositories have the plugins under test, not the helper.
+     */
+    private void writeRuntimeHelperStub(Path repository) throws IOException {
+        Path directory = repository.resolve("io/github/brainage04/minecraftmodconventions/" + VERSION);
+        Files.createDirectories(directory);
+        Files.writeString(directory.resolve("minecraftmodconventions-" + VERSION + ".pom"), """
+                <project xmlns="http://maven.apache.org/POM/4.0.0">
+                  <modelVersion>4.0.0</modelVersion>
+                  <groupId>io.github.brainage04</groupId>
+                  <artifactId>minecraftmodconventions</artifactId>
+                  <version>%s</version>
+                </project>
+                """.formatted(VERSION));
+        try (JarOutputStream jar = new JarOutputStream(
+                Files.newOutputStream(directory.resolve("minecraftmodconventions-" + VERSION + ".jar")))) {
+            jar.putNextEntry(new JarEntry("META-INF/minecraftmodconventions.txt"));
+            jar.closeEntry();
+        }
     }
 
     private static void writeMavenJar(Path repository, String artifact) throws IOException {
