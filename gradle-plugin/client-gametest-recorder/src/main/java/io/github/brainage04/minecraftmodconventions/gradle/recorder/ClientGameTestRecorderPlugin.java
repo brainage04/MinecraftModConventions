@@ -65,6 +65,8 @@ public final class ClientGameTestRecorderPlugin implements Plugin<Project> {
             task.getRunDirectory().convention(extension.getRunDir());
             task.getRecordingAudioDeviceProjectProperty().convention(extension.getRecordingAudioDeviceProperty());
             task.getRunTaskName().convention(clientGameTestTaskPath(project.getPath()));
+            task.getRecordingDisplay().convention(recordingDisplay(project));
+            task.getExpectedRenderer().convention(expectedRenderer(project));
             task.getOutputs().upToDateWhen(_ -> false);
         });
 
@@ -127,12 +129,35 @@ public final class ClientGameTestRecorderPlugin implements Plugin<Project> {
                 .orElse("");
     }
 
+    /**
+     * The recording display in force: the {@code recordingDisplay} Gradle property, else
+     * {@code GTR_RECORDING_DISPLAY}, else the display the host declares in
+     * {@code /etc/gametest-recording-display}. An explicit blank value forces the virtual display.
+     */
+    private static Provider<String> recordingDisplay(Project project) {
+        Provider<String> property = project.getProviders().gradleProperty(ClientGpuCapture.DISPLAY_PROPERTY);
+        Provider<String> environment = project.getProviders().environmentVariable(ClientGpuCapture.DISPLAY_ENV);
+        return property.orElse(environment)
+                .orElse(hostDisplay(project).map(ClientGpuCapture.HostDisplay::display))
+                .map(String::strip);
+    }
+
+    /** The host file's declaration, read once per query; the file is absent on most hosts. */
+    private static Provider<ClientGpuCapture.HostDisplay> hostDisplay(Project project) {
+        File hostFile = new File(project.getProviders()
+                .environmentVariable(ClientGpuCapture.DISPLAY_FILE_ENV)
+                .getOrElse(ClientGpuCapture.DISPLAY_FILE));
+        return project.getProviders().provider(() -> ClientGpuCapture.readHostFile(hostFile));
+    }
+
+    /** The renderer a recording on this host's display must name, or an empty string. */
+    private static Provider<String> expectedRenderer(Project project) {
+        return hostDisplay(project).map(ClientGpuCapture.HostDisplay::expectedRenderer);
+    }
+
     /** Whether the recorded client renders on the card, from the display the recorder is given. */
     private static Provider<Boolean> gpuRendering(Project project) {
-        return project.getProviders()
-                .environmentVariable(ClientGpuCapture.DISPLAY_ENV)
-                .map(value -> ClientGpuCapture.display(value) != null)
-                .orElse(false);
+        return recordingDisplay(project).map(value -> ClientGpuCapture.display(value) != null);
     }
 
     private static void addRuntimeHelperDependencies(Project project) {

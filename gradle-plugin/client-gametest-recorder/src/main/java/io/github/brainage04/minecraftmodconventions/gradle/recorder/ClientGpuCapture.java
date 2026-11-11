@@ -1,5 +1,9 @@
 package io.github.brainage04.minecraftmodconventions.gradle.recorder;
 
+import java.io.File;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -22,6 +26,12 @@ import java.util.regex.Pattern;
 final class ClientGpuCapture {
     /** Environment variable naming a display that already has the card's GLX; the recorder's own otherwise. */
     static final String DISPLAY_ENV = "GTR_RECORDING_DISPLAY";
+    /** Gradle property that does the same as the environment variable and wins over it. */
+    static final String DISPLAY_PROPERTY = "recordingDisplay";
+    /** The file a host writes to declare its recording display, so a run needs no environment. */
+    static final String DISPLAY_FILE = "/etc/gametest-recording-display";
+    /** Environment variable naming another file to read, for a test or a host without root. */
+    static final String DISPLAY_FILE_ENV = "GTR_RECORDING_DISPLAY_FILE";
 
     private static final List<String> SOFTWARE_VALUES = List.of("", "0", "false", "no", "off", "disabled");
 
@@ -44,6 +54,74 @@ final class ClientGpuCapture {
             "(?i)llvmpipe|softpipe|swrast|software rasterizer|microsoft basic render");
 
     private ClientGpuCapture() {
+    }
+
+    /**
+     * The display in force: the Gradle property, else the environment variable, else the host's file.
+     * A present but blank value (or {@code 0}, {@code false}, ...) forces the recorder's virtual display.
+     */
+    static String resolveDisplay(String propertyValue, String environmentValue, String hostFileValue) {
+        if (propertyValue != null) {
+            return propertyValue.strip();
+        }
+        if (environmentValue != null) {
+            return environmentValue.strip();
+        }
+        return hostFileValue == null ? "" : hostFileValue.strip();
+    }
+
+    /** A host's declaration: the display to record on, and optionally the renderer it must name. */
+    record HostDisplay(String display, String expectedRenderer) {
+        static final HostDisplay NONE = new HostDisplay("", "");
+    }
+
+    /**
+     * The host's declaration, read from the first non-blank, non-comment line: the display, then
+     * optionally the renderer it must name, as in {@code :1 NVIDIA}.
+     */
+    static HostDisplay readHostFile(File file) {
+        if (file == null || !file.isFile()) {
+            return HostDisplay.NONE;
+        }
+        try {
+            for (String line : Files.readAllLines(file.toPath(), StandardCharsets.UTF_8)) {
+                String value = line.strip();
+                if (value.isEmpty() || value.startsWith("#")) {
+                    continue;
+                }
+                String[] tokens = value.split("\\s+", 2);
+                return new HostDisplay(tokens[0], tokens.length > 1 ? tokens[1].strip() : "");
+            }
+        } catch (IOException exception) {
+            return HostDisplay.NONE;
+        }
+        return HostDisplay.NONE;
+    }
+
+    /** The display a host's file declares, or an empty string. */
+    static String displayInHostFile(File file) {
+        return readHostFile(file).display();
+    }
+
+    /**
+     * Why a recording on a named display must fail, or null when the client rendered on the card the
+     * host expects. A missing renderer is a failure too: nothing then proves the frames came from the
+     * card, and a software rasterizer produces exactly the choppy take the display was chosen to avoid.
+     */
+    static String rendererFailure(String glRenderer, String expectedRenderer) {
+        String renderer = glRenderer == null ? "" : glRenderer.strip();
+        if (renderer.isEmpty()) {
+            return "the client named no graphics device, so nothing proves it rendered on the card";
+        }
+        if (isSoftwareRenderer(renderer)) {
+            return "the client rendered with " + renderer + ", a software rasterizer";
+        }
+        String expected = expectedRenderer == null ? "" : expectedRenderer.strip();
+        if (!expected.isEmpty() && !renderer.toLowerCase(Locale.ROOT).contains(expected.toLowerCase(Locale.ROOT))) {
+            return "the client rendered with " + renderer + " instead of the " + expected
+                    + " card this host records on";
+        }
+        return null;
     }
 
     /** The X display to record, or null when the recorder starts its own virtual one. */

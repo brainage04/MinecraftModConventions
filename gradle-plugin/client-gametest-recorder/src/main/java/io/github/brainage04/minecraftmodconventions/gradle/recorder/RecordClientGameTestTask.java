@@ -54,6 +54,14 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
     @Internal
     public abstract DirectoryProperty getRunDirectory();
 
+    /** The display in force, resolved from the Gradle property, the environment and the host's file. */
+    @Input
+    public abstract Property<String> getRecordingDisplay();
+
+    /** The renderer a recording on that display must name, from the host's file; empty when unknown. */
+    @Input
+    public abstract Property<String> getExpectedRenderer();
+
     @Input
     public abstract Property<String> getRecordingAudioDeviceProjectProperty();
 
@@ -74,7 +82,7 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
         String fps = env("GTR_RECORDING_FPS", "30");
         int startWaitSeconds = parsePositiveInt(env("GTR_RECORDING_START_WAIT_SECONDS", "90"), "GTR_RECORDING_START_WAIT_SECONDS");
         String xvfbScreen = env(ClientGameTestOptions.RECORDER_SCREEN_ENV, ClientGameTestOptions.DEFAULT_RECORDER_SCREEN);
-        String gpuDisplayRequest = env(ClientGpuCapture.DISPLAY_ENV, "");
+        String gpuDisplayRequest = getRecordingDisplay().getOrElse("");
         double prePadding = parsePadding(env("GTR_RECORDING_PRE_PADDING_SECONDS", "0.5"));
         double postPadding = parsePadding(env("GTR_RECORDING_POST_PADDING_SECONDS", "0.5"));
         int frameRate = parsePositiveInt(fps, "GTR_RECORDING_FPS");
@@ -146,8 +154,9 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
         if (previousMemoryLow != null) {
             getLogger().lifecycle("Protecting the recording job's memory up to its limit from sibling reclaim ({}).", memoryCgroup);
         }
+        DisplayResolution display = null;
         try {
-            DisplayResolution display = startDisplay(gpuDisplayRequest, xvfbDisplay, xvfbScreen);
+            display = startDisplay(gpuDisplayRequest, xvfbDisplay, xvfbScreen);
             xvfbDisplay = display.display();
             xvfbScreen = display.screen();
             xvfbProcess = display.process();
@@ -169,6 +178,8 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
             processEnvironment.clear();
             processEnvironment.putAll(System.getenv());
             processEnvironment.put("DISPLAY", xvfbDisplay);
+            // The child build's options follow the display that was really used, also when a named one fell back.
+            processEnvironment.put(ClientGpuCapture.DISPLAY_ENV, gpuDisplay == null ? "" : gpuDisplay);
             ClientLaunchEnvironment.useX11(processEnvironment);
             // The showcase window covers this whole display (see ClientGameTestOptions).
             processEnvironment.put(ClientGameTestOptions.RECORDER_SCREEN_ENV, xvfbScreen);
@@ -315,6 +326,10 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
                     xvfbProcess.destroyForcibly();
                 }
             }
+            if (display != null) {
+                // The display is free for another recording only after this one's capture has stopped.
+                display.release();
+            }
             deleteIfExists(startSignal.toPath());
             deleteIfExists(readySignal.toPath());
             deleteIfExists(stopSignal.toPath());
@@ -385,9 +400,13 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
             recordingFailures.add("The client used SDL's " + sdlVideoDriver
                     + " video driver: a recording must render on the recorder's own x11 display.");
         }
-        if (gpuDisplay != null && ClientGpuCapture.isSoftwareRenderer(glRenderer)) {
-            getLogger().error("The recording display {} renders with {}; the recording is the software path.",
-                    gpuDisplay, glRenderer);
+        if (gpuDisplay != null) {
+            String rendererProblem = ClientGpuCapture.rendererFailure(glRenderer, getExpectedRenderer().getOrElse(""));
+            if (rendererProblem != null) {
+                recordingFailures.add("The recording display " + gpuDisplay + " did not render the recording: "
+                        + rendererProblem + ". Record on a host without a display, or ask for the virtual display "
+                        + "with an empty " + ClientGpuCapture.DISPLAY_ENV + ".");
+            }
         }
         if (boundaryEvidence.containsKey("clockDriftUs")
                 && Math.abs(Long.parseLong(boundaryEvidence.get("clockDriftUs").toString())) > 10_000L) {
@@ -570,18 +589,36 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
         String gpuDisplay = ClientGpuCapture.display(requested);
         String fallback = null;
         if (gpuDisplay != null) {
-            CommandResult info = runCommand(List.of("xdpyinfo", "-display", gpuDisplay), Map.of(), true);
-            String screen = ClientGpuCapture.screen(info.output());
-            if (info.status() == 0 && !screen.isEmpty()) {
-                getLogger().lifecycle("Recording X display {} ({}), which renders with the machine's graphics card.",
-                        gpuDisplay, screen);
-                getLogger().lifecycle("The client's window is visible on that display while it runs.");
-                return new DisplayResolution(gpuDisplay, screen, null, gpuDisplay, null);
+            ExclusiveDisplayLock lock = null;
+            try {
+                lock = ExclusiveDisplayLock.tryAcquire(gpuDisplay);
+            } catch (UncheckedIOException exception) {
+                fallback = exception.getMessage();
             }
-            fallback = "X display " + gpuDisplay + " does not answer: "
-                    + info.output().lines().findFirst().orElse("");
-            getLogger().warn("{}={} was ignored; recording on the recorder's own virtual display. {}",
-                    ClientGpuCapture.DISPLAY_ENV, requested, fallback);
+            if (lock == null) {
+                if (fallback == null) {
+                    fallback = "X display " + gpuDisplay + " is recording for another job (its lock "
+                            + ExclusiveDisplayLock.lockFile(gpuDisplay) + " is held)";
+                }
+                getLogger().lifecycle(
+                        "Recording display {} is taken; recording on the recorder's own virtual display. {}",
+                        gpuDisplay, fallback);
+            } else {
+                CommandResult info = runCommand(List.of("xdpyinfo", "-display", gpuDisplay), Map.of(), true);
+                String screen = ClientGpuCapture.screen(info.output());
+                if (info.status() == 0 && !screen.isEmpty()) {
+                    getLogger().lifecycle("Recording X display {} ({}), which renders with the machine's graphics card.",
+                            gpuDisplay, screen);
+                    getLogger().lifecycle("The client's window is visible on that display while it runs.");
+                    return new DisplayResolution(gpuDisplay, screen, null, gpuDisplay, null, lock);
+                }
+                lock.close();
+                fallback = "X display " + gpuDisplay + " does not answer: "
+                        + info.output().lines().findFirst().orElse("");
+                getLogger().warn(
+                        "The recording display {} was ignored; recording on the recorder's own virtual display. {}",
+                        requested, fallback);
+            }
         }
         String display = configuredDisplay;
         if (display.isBlank()) {
@@ -606,7 +643,7 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
             throw new UncheckedIOException("Failed to start Xvfb: " + display, exception);
         }
         waitForXDisplay(display, xvfb);
-        return new DisplayResolution(display, configuredScreen, xvfb, null, fallback);
+        return new DisplayResolution(display, configuredScreen, xvfb, null, fallback, null);
     }
 
     /** The start of the client's own log, where it names the graphics device and the SDL video driver. */
@@ -1065,6 +1102,12 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
      * display it was asked to use, and why that one was not used.
      */
     private record DisplayResolution(String display, String screen, Process process, String gpuDisplay,
-            String fallbackReason) {
+            String fallbackReason, ExclusiveDisplayLock lock) {
+        /** Releases the display's claim, if this recording took it. */
+        private void release() {
+            if (lock != null) {
+                lock.close();
+            }
+        }
     }
 }

@@ -1,12 +1,17 @@
 package io.github.brainage04.minecraftmodconventions.gradle.recorder;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -85,5 +90,66 @@ class ClientGpuCaptureTest {
                 "lastWorldPresentBeforeUs", "2");
         assertNull(ClientGpuCapture.presentedFps(single));
         assertNull(ClientGpuCapture.presentedFps(Map.of()));
+    }
+
+    @Test
+    void theGradlePropertyWinsOverTheEnvironmentAndTheHostFile() {
+        assertEquals(":2", ClientGpuCapture.resolveDisplay(":2", ":1", ":3\n"));
+        // A present but blank value is an explicit choice of the recorder's own virtual display.
+        assertEquals("", ClientGpuCapture.resolveDisplay("", ":1", ":3\n"));
+        assertEquals("", ClientGpuCapture.resolveDisplay(null, "", ":3\n"));
+    }
+
+    @Test
+    void theEnvironmentSpeaksWhenNoPropertyIsSet() {
+        assertEquals(":1", ClientGpuCapture.resolveDisplay(null, ":1", ":3\n"));
+        assertEquals("0", ClientGpuCapture.resolveDisplay(null, "0", ":3\n"));
+    }
+
+    @Test
+    void theHostFileSpeaksWhenNothingElseDoes() {
+        assertEquals(":1", ClientGpuCapture.resolveDisplay(null, null, ":1\n"));
+        assertEquals("", ClientGpuCapture.resolveDisplay(null, null, null));
+        assertEquals("", ClientGpuCapture.resolveDisplay(null, null, ""));
+    }
+
+    @Test
+    void aHostFileNamesItsDisplayOnItsFirstNonCommentLine(@TempDir Path directory) throws IOException {
+        Path file = directory.resolve("gametest-recording-display");
+        Files.writeString(file, "# the card's Xorg\n\n:1\n:2\n");
+
+        assertEquals(":1", ClientGpuCapture.displayInHostFile(file.toFile()));
+        assertEquals("", ClientGpuCapture.displayInHostFile(directory.resolve("missing").toFile()));
+        assertEquals("", ClientGpuCapture.displayInHostFile(null));
+    }
+
+    @Test
+    void aHostFileWhoseDisplayIsFalseChoosesTheVirtualDisplay() {
+        assertEquals("false", ClientGpuCapture.resolveDisplay(null, null, "false\n"));
+        assertNull(ClientGpuCapture.display(ClientGpuCapture.resolveDisplay(null, null, "false\n")));
+    }
+
+    @Test
+    void aHostFileMayNameTheRendererItMustSee(@TempDir Path directory) throws IOException {
+        Path file = directory.resolve("gametest-recording-display");
+        Files.writeString(file, "# the card's Xorg\n:1 NVIDIA\n:2\n");
+
+        ClientGpuCapture.HostDisplay declared = ClientGpuCapture.readHostFile(file.toFile());
+
+        assertEquals(":1", declared.display());
+        assertEquals("NVIDIA", declared.expectedRenderer());
+        assertEquals("", ClientGpuCapture.readHostFile(directory.resolve("missing").toFile()).display());
+    }
+
+    @Test
+    void aRecordingOnADisplayFailsUnlessTheCardRenderedIt() {
+        assertNull(ClientGpuCapture.rendererFailure("NVIDIA GeForce GTX 1070 (NVIDIA)", "NVIDIA"));
+        assertNull(ClientGpuCapture.rendererFailure("AMD Radeon RX 6700", ""));
+
+        assertNotNull(ClientGpuCapture.rendererFailure("llvmpipe (LLVM 18.1.8, 256 bits)", "NVIDIA"),
+                "a software rasterizer is not the card");
+        assertNotNull(ClientGpuCapture.rendererFailure("", "NVIDIA"), "a missing renderer proves nothing");
+        assertNotNull(ClientGpuCapture.rendererFailure("NVIDIA GeForce GTX 1070 (NVIDIA)", "Intel"),
+                "another card than the host declares");
     }
 }
