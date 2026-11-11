@@ -1,0 +1,104 @@
+# The hardcoded world height check as ast-grep rules (language: java).
+# Same hits as WorldHeightScanner: -64/319/320 compared with y or a height name, -64/319/320 or
+# 0/256 compared with a height name, a height name assigned such a number, new BlockPos(x, 320, z),
+# and Math.min/max or Mth.clamp over y with -64/319/320.
+#
+# Run: ast-grep scan --config sgconfig.yml --globs "*.java" <source roots>
+
+id: world-height-comparison
+language: java
+severity: warning
+message: >-
+  Compares with a literal overworld build limit; the limits come from the dimension type, so ask
+  the level with getMinY(), getMaxY() or getHeight().
+rule:
+  kind: binary_expression
+  all:
+    - has:
+        field: operator
+        regex: '^(<|<=|>|>=|==|!=)$'
+    - any:
+        - all:
+            - any:
+                - has:
+                    field: left
+                    regex: '^(?:[A-Za-z_$][\w$]*\.)*(?:getY|getMinY|getMaxY|getHeight|getMinBuildHeight|getMaxBuildHeight)\(\)$|^(?:y|Y|blockY|posY|yPos|sectionY|chunkY|yLevel|yMin|yMax|minY|maxY|bottomY|topY)$'
+                - has:
+                    field: right
+                    regex: '^(?:[A-Za-z_$][\w$]*\.)*(?:getY|getMinY|getMaxY|getHeight|getMinBuildHeight|getMaxBuildHeight)\(\)$|^(?:y|Y|blockY|posY|yPos|sectionY|chunkY|yLevel|yMin|yMax|minY|maxY|bottomY|topY)$'
+            - any:
+                - has:
+                    field: left
+                    regex: '^(?:-64|319|320)$'
+                - has:
+                    field: right
+                    regex: '^(?:-64|319|320)$'
+        - all:
+            - any:
+                - has:
+                    field: left
+                    regex: '^(?:[a-z_]\w*\.)*(?:minY|maxY|minBuildHeight|maxBuildHeight|worldHeight|buildHeight|heightLimit|yMin|yMax|bottomY|topY|MIN_Y|MAX_Y|MIN_BUILD_HEIGHT|MAX_BUILD_HEIGHT|WORLD_HEIGHT)$'
+                - has:
+                    field: right
+                    regex: '^(?:[a-z_]\w*\.)*(?:minY|maxY|minBuildHeight|maxBuildHeight|worldHeight|buildHeight|heightLimit|yMin|yMax|bottomY|topY|MIN_Y|MAX_Y|MIN_BUILD_HEIGHT|MAX_BUILD_HEIGHT|WORLD_HEIGHT)$'
+            - any:
+                - has:
+                    field: left
+                    regex: '^(?:-64|319|320|0|256)$'
+                - has:
+                    field: right
+                    regex: '^(?:-64|319|320|0|256)$'
+---
+id: world-height-assignment
+language: java
+severity: warning
+message: >-
+  Stores a literal overworld build limit in a height variable.
+rule:
+  any:
+    - kind: variable_declarator
+      all:
+        - has:
+            field: name
+            regex: '^(?:[a-z_]\w*\.)*(?:minY|maxY|minBuildHeight|maxBuildHeight|worldHeight|buildHeight|heightLimit|yMin|yMax|bottomY|topY|MIN_Y|MAX_Y|MIN_BUILD_HEIGHT|MAX_BUILD_HEIGHT|WORLD_HEIGHT)$'
+        - has:
+            field: value
+            regex: '^(?:-64|319|320|0|256)$'
+    - kind: assignment_expression
+      all:
+        - has:
+            field: left
+            regex: '^(?:[a-z_]\w*\.)*(?:minY|maxY|minBuildHeight|maxBuildHeight|worldHeight|buildHeight|heightLimit|yMin|yMax|bottomY|topY|MIN_Y|MAX_Y|MIN_BUILD_HEIGHT|MAX_BUILD_HEIGHT|WORLD_HEIGHT)$'
+        - has:
+            field: right
+            regex: '^(?:-64|319|320|0|256)$'
+---
+id: world-height-blockpos
+language: java
+severity: warning
+message: >-
+  Places a BlockPos at a literal overworld build limit.
+rule:
+  any:
+    - pattern: new BlockPos($X, 320, $Z)
+    - pattern: new BlockPos($X, -64, $Z)
+    - pattern: new BlockPos($X, 319, $Z)
+---
+id: world-height-clamp
+language: java
+severity: warning
+message: >-
+  Clamps a y coordinate to literal overworld build limits.
+rule:
+  kind: method_invocation
+  all:
+    - has:
+        field: name
+        regex: '^(min|max|clamp)$'
+    - has:
+        field: arguments
+        all:
+          - has:
+              regex: '^(?:-64|319|320)$'
+          - has:
+              regex: '^(?:[A-Za-z_$][\w$]*\.)*(?:getY|getMinY|getMaxY|getHeight|getMinBuildHeight|getMaxBuildHeight)\(\)$|^(?:y|Y|blockY|posY|yPos|sectionY|chunkY|yLevel|yMin|yMax|minY|maxY|bottomY|topY)$'

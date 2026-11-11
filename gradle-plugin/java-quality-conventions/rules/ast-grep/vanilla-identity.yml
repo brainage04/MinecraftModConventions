@@ -1,0 +1,57 @@
+# The vanilla dimension identity check as ast-grep rules (language: java).
+# Same hits as VanillaIdentityScanner: a comparison (==, !=, equals, is, Objects.equals) with
+# Level/ServerLevel/ClientLevel/BuiltinDimensionTypes OVERWORLD/NETHER/END/OVERWORLD_CAVES or a
+# statically imported OVERWORLD/NETHER/END, and a vanilla key passed together with dimension(),
+# dimensionType() or dimensionTypeRegistration(). Other uses of the keys, comparisons with a mod's
+# own dimensions and comments or string literals do not match: ast-grep matches syntax, not text.
+#
+# Run: ast-grep scan --config sgconfig.yml --globs "*.java" <source roots>
+
+id: vanilla-identity-comparison
+language: java
+severity: warning
+message: >-
+  Compares with a vanilla dimension identity. A comparison is right when the feature is about that
+  dimension by name, and wrong when it stands in for a property the game reads from data.
+rule:
+  kind: binary_expression
+  all:
+    - has:
+        field: operator
+        regex: '^(==|!=)$'
+    - any:
+        - has:
+            field: left
+            regex: '^(?:(?:[a-z_]\w*\.)*(?:(?:Server|Client)?Level|BuiltinDimensionTypes)\.(?:OVERWORLD|NETHER|END|OVERWORLD_CAVES)|(?:OVERWORLD|NETHER|END))$'
+        - has:
+            field: right
+            regex: '^(?:(?:[a-z_]\w*\.)*(?:(?:Server|Client)?Level|BuiltinDimensionTypes)\.(?:OVERWORLD|NETHER|END|OVERWORLD_CAVES)|(?:OVERWORLD|NETHER|END))$'
+---
+id: vanilla-identity-call
+language: java
+severity: warning
+message: >-
+  Compares with a vanilla dimension identity through equals(...) or is(...).
+rule:
+  kind: method_invocation
+  all:
+    - has:
+        field: name
+        regex: '^(equals|is)$'
+    - has:
+        regex: '^(?:(?:[a-z_]\w*\.)*(?:(?:Server|Client)?Level|BuiltinDimensionTypes)\.(?:OVERWORLD|NETHER|END|OVERWORLD_CAVES)|(?:OVERWORLD|NETHER|END))$'
+        stopBy: end
+---
+id: vanilla-identity-dimension-pair
+language: java
+severity: warning
+message: >-
+  Passes a vanilla dimension identity together with the level's dimension, as in
+  matches(Level.NETHER, level.dimension()).
+rule:
+  kind: argument_list
+  all:
+    - has:
+        regex: '^(?:(?:[a-z_]\w*\.)*(?:(?:Server|Client)?Level|BuiltinDimensionTypes)\.(?:OVERWORLD|NETHER|END|OVERWORLD_CAVES)|(?:OVERWORLD|NETHER|END))$'
+    - has:
+        regex: '\.?dimension(?:Type|TypeRegistration)?\(\s*\)$'

@@ -1,0 +1,62 @@
+# The vanilla tag identity check as ast-grep rules (language: java).
+# Same hits as VanillaTagIdentityScanner: a comparison (==, !=, equals, is, Objects.equals) with one
+# Blocks./Items./Biomes. constant, or a Set.of/List.of/Stream.of membership list whose direct
+# arguments are constants. The tag-membership filter (only a tag that names the identity counts;
+# tool, enchantment, spawn and structure classification tags are skipped) still comes from
+# VanillaTagIndex, exactly as in the Gradle task: ast-grep cannot read the Minecraft jar itself.
+#
+# Run: ast-grep scan --config sgconfig.yml --globs "*.java" <source roots>
+
+id: vanilla-tag-comparison
+language: java
+severity: warning
+message: >-
+  Compares with one vanilla block, item or biome that a vanilla tag also lists. Ask whether the
+  code is about that thing by name or about a property the tag names.
+rule:
+  kind: binary_expression
+  all:
+    - has:
+        field: operator
+        regex: '^(==|!=)$'
+    - any:
+        - has:
+            field: left
+            regex: '^(?:[a-z_]\w*\.)*(?:Blocks|Items|Biomes)\.[A-Z][A-Z0-9_]*$'
+        - has:
+            field: right
+            regex: '^(?:[a-z_]\w*\.)*(?:Blocks|Items|Biomes)\.[A-Z][A-Z0-9_]*$'
+---
+id: vanilla-tag-call
+language: java
+severity: warning
+message: >-
+  Compares with one vanilla block, item or biome through equals(...) or is(...).
+rule:
+  kind: method_invocation
+  all:
+    - has:
+        field: name
+        regex: '^(equals|is)$'
+    - has:
+        regex: '^(?:[a-z_]\w*\.)*(?:Blocks|Items|Biomes)\.[A-Z][A-Z0-9_]*$'
+        stopBy: end
+---
+id: vanilla-tag-membership-list
+language: java
+severity: warning
+message: >-
+  Builds a membership set or list out of one vanilla block, item or biome identity.
+rule:
+  kind: method_invocation
+  all:
+    - has:
+        field: object
+        regex: '^(Set|List|Stream)$'
+    - has:
+        field: name
+        regex: '^of$'
+    - has:
+        field: arguments
+        has:
+          regex: '^(?:[a-z_]\w*\.)*(?:Blocks|Items|Biomes)\.[A-Z][A-Z0-9_]*$'
