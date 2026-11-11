@@ -7,6 +7,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.ActiveTextCollector;
 import net.minecraft.client.gui.components.ChatComponent;
 import net.minecraft.client.gui.screens.ChatScreen;
+import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.multiplayer.chat.GuiMessage;
 import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Style;
@@ -129,13 +130,27 @@ public final class ClientGameTestCommands {
 
     /**
      * Clicks a chat line's run-command link, such as the {@code [ACCEPT]} of a teleport request.
-     * The click is a real mouse click at the link's centre. {@code settleTicks} is how long the
+     * The click is a real mouse click at the link's centre, so the chat screen must be open: with no
+     * screen open the click lands on the world instead of the link. {@code settleTicks} is how long the
      * cursor rests over the link before the click, which a film uses to show the hover.
      */
     public static void clickChatCommand(ClientGameTestContext context, String command, int settleTicks) {
         Objects.requireNonNull(context, "context");
         if (settleTicks < 0) {
             throw new IllegalArgumentException("settleTicks must not be negative: " + settleTicks);
+        }
+        String wrongScreen = context.computeOnClient(client -> {
+            Screen openScreen = client.gui.screen();
+            if (openScreen instanceof ChatScreen) {
+                return null;
+            }
+            return openScreen == null
+                    ? "no screen is open, so the click would land on the world"
+                    : "the " + openScreen.getClass().getSimpleName() + " screen is open, not the chat";
+        });
+        if (wrongScreen != null) {
+            throw new AssertionError("clickChatCommand clicks a chat link, which needs the chat screen open: "
+                    + wrongScreen + ". Open it first with context.setScreen(() -> new ChatScreen(\"\", false)).");
         }
         double[] point = chatCommandScreenPoint(context, command);
         context.getInput().setCursorPos(point[0], point[1]);
