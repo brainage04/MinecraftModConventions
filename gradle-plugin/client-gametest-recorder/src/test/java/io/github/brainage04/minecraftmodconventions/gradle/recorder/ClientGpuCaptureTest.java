@@ -26,11 +26,25 @@ class ClientGpuCaptureTest {
 
     @Test
     void aDisplayIsOnlyUsedWhenOneIsNamed() {
-        for (String off : new String[] {"", "  ", "0", "false", "no", "OFF", null}) {
+        for (String off : new String[] {"", "  ", "false", "no", "OFF", null}) {
             assertNull(ClientGpuCapture.display(off), "value " + off);
         }
         assertEquals(":1", ClientGpuCapture.display(":1"));
         assertEquals(":1", ClientGpuCapture.display(" 1 "));
+        // :0 is the machine's own desktop display, and a runner may leave a host file line reading "0".
+        assertEquals(":0", ClientGpuCapture.display("0"));
+        assertEquals(":0", ClientGpuCapture.display(":0"));
+    }
+
+    @Test
+    void aCardDisplayMustHoldTheStandardRecordingSize() {
+        String standard = "1920x1080x24";
+        assertTrue(ClientGpuCapture.fits("1920x1080x24", standard), "the standard itself fits");
+        assertTrue(ClientGpuCapture.fits("2560x1440x24", standard), "a larger display is cropped to the standard");
+        assertTrue(ClientGpuCapture.fits("3840x2160x24", standard), "a 4K display is cropped too");
+        assertFalse(ClientGpuCapture.fits("1280x720x24", standard), "a smaller display has no room for it");
+        assertFalse(ClientGpuCapture.fits("1920x900x24", standard), "a display short of 1080 fits nothing");
+        assertFalse(ClientGpuCapture.fits("", standard), "an unreadable size fits nothing");
     }
 
     @Test

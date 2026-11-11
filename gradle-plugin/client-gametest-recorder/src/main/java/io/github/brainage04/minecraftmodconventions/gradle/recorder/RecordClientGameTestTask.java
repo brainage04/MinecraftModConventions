@@ -48,6 +48,9 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
      */
     static final int MUX_QUEUE_PACKETS = 4096;
 
+    /** Frames {@link #requireChangingPicture} decodes beside the four boundary images of a capture. */
+    static final int PICTURE_SAMPLES = 8;
+
     @Internal
     public abstract DirectoryProperty getProjectDirectory();
 
@@ -607,10 +610,21 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
                 CommandResult info = runCommand(List.of("xdpyinfo", "-display", gpuDisplay), Map.of(), true);
                 String screen = ClientGpuCapture.screen(info.output());
                 if (info.status() == 0 && !screen.isEmpty()) {
+                    // One overlay standard: the window and the capture stay the standard size, whatever
+                    // the card display's own size is, and a display too small to hold it is an error.
+                    String standard = ClientGameTestOptions.DEFAULT_RECORDER_SCREEN;
+                    if (!ClientGpuCapture.fits(screen, standard)) {
+                        lock.close();
+                        throw new GradleException("The recording display " + gpuDisplay + " is " + screen
+                                + ", too small to record at the standard " + standard + " window and capture. Point "
+                                + ClientGpuCapture.DISPLAY_ENV + " at a display of at least that size, or unset it to"
+                                + " record on the recorder's own virtual display.");
+                    }
                     getLogger().lifecycle("Recording X display {} ({}), which renders with the machine's graphics card.",
                             gpuDisplay, screen);
-                    getLogger().lifecycle("The client's window is visible on that display while it runs.");
-                    return new DisplayResolution(gpuDisplay, screen, null, gpuDisplay, null, lock);
+                    getLogger().lifecycle("The client's window is visible on that display while it runs; the window"
+                            + " and the capture are the standard {} at its top left.", standard);
+                    return new DisplayResolution(gpuDisplay, standard, null, gpuDisplay, null, lock);
                 }
                 lock.close();
                 fallback = "X display " + gpuDisplay + " does not answer: "
@@ -642,7 +656,17 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
         } catch (IOException exception) {
             throw new UncheckedIOException("Failed to start Xvfb: " + display, exception);
         }
-        waitForXDisplay(display, xvfb);
+        try {
+            waitForXDisplay(display, xvfb);
+        } catch (RuntimeException exception) {
+            // A display that never answered must not keep running and hold its number and lock file.
+            xvfb.destroy();
+            waitForProcess(xvfb, 2, TimeUnit.SECONDS);
+            if (xvfb.isAlive()) {
+                xvfb.destroyForcibly();
+            }
+            throw exception;
+        }
         return new DisplayResolution(display, configuredScreen, xvfb, null, fallback, null);
     }
 
@@ -917,27 +941,43 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
     }
 
     /**
-     * Fails a capture whose images never change. A client whose frames never reach the display — the
-     * faker library of a GPU recording that the client's OpenGL backend cannot drive, for example —
-     * otherwise records a black still and reports nothing wrong.
+     * Fails a capture whose images never change. A client whose frames never reach the display, such
+     * as one whose OpenGL backend cannot drive the faker library of a GPU recording, otherwise records
+     * a black still and reports nothing wrong.
+     *
+     * <p>The four boundary images alone can all fall inside a stretch of the film that stands still,
+     * such as a caption that does not change between two world ticks, so the check also decodes a frame
+     * at each of {@value #PICTURE_SAMPLES} evenly spaced points of the recorded window and fails only
+     * when every one of them is identical.
      */
     private void requireChangingPicture(File video, double seconds, Map<String, File> boundaryImages) {
         if (seconds < 3 || boundaryImages.size() < 2) {
             return;
         }
-        Set<Integer> pictures = new HashSet<>();
-        for (File frame : boundaryImages.values()) {
-            try {
-                pictures.add(Arrays.hashCode(Files.readAllBytes(frame.toPath())));
-            } catch (IOException exception) {
-                throw new UncheckedIOException(exception);
+        List<File> samples = new ArrayList<>();
+        try {
+            for (int sample = 1; sample <= PICTURE_SAMPLES; sample++) {
+                samples.add(saveBoundaryFrame(video, "sample-" + sample, seconds * sample / (PICTURE_SAMPLES + 1.0)));
             }
-            if (pictures.size() > 1) {
-                return;
+            Set<Integer> pictures = new HashSet<>();
+            List<File> frames = new ArrayList<>(boundaryImages.values());
+            frames.addAll(samples);
+            for (File frame : frames) {
+                try {
+                    pictures.add(Arrays.hashCode(Files.readAllBytes(frame.toPath())));
+                } catch (IOException exception) {
+                    throw new UncheckedIOException(exception);
+                }
+                if (pictures.size() > 1) {
+                    return;
+                }
             }
+            throw new GradleException("All " + frames.size() + " decoded frames (" + boundaryImages.size()
+                    + " boundaries and " + samples.size() + " samples) are identical: the client's pictures never"
+                    + " reached the recording display. " + video.getName());
+        } finally {
+            samples.forEach(frame -> deleteIfExists(frame.toPath()));
         }
-        throw new GradleException("Every captured frame is identical: the client's pictures never reached the "
-                + "recording display. " + video.getName());
     }
 
     private File saveBoundaryFrame(File video, String marker, double seconds) {

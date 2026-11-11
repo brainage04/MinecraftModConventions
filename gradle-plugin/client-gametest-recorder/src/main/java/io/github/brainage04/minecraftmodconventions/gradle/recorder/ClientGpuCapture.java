@@ -33,7 +33,7 @@ final class ClientGpuCapture {
     /** Environment variable naming another file to read, for a test or a host without root. */
     static final String DISPLAY_FILE_ENV = "GTR_RECORDING_DISPLAY_FILE";
 
-    private static final List<String> SOFTWARE_VALUES = List.of("", "0", "false", "no", "off", "disabled");
+    private static final List<String> SOFTWARE_VALUES = List.of("", "false", "no", "off", "disabled");
 
     /**
      * Minecraft's own record of what rendered the world: {@code Using graphics device: Name (Vendor)}
@@ -154,6 +154,26 @@ final class ClientGpuCapture {
         Matcher dimensions = DIMENSIONS.matcher(xdpyinfo == null ? "" : xdpyinfo);
         Matcher depth = ROOT_DEPTH.matcher(xdpyinfo == null ? "" : xdpyinfo);
         return dimensions.find() && depth.find() ? dimensions.group(1) + "x" + depth.group(1) : "";
+    }
+
+    /**
+     * Whether a display of this screen has room for a recording at {@code standard}: every recording is
+     * captured at that size, so a smaller display cannot hold one, and a larger one is captured at its
+     * top left, where the recorder puts the client's window.
+     */
+    static boolean fits(String screen, String standard) {
+        int[] size = size(screen);
+        int[] wanted = size(standard);
+        return size != null && wanted != null && size[0] >= wanted[0] && size[1] >= wanted[1];
+    }
+
+    /** The width and height of a {@code WIDTHxHEIGHT[xDEPTH]} screen, or null when it is not one. */
+    private static int[] size(String screen) {
+        String[] parts = screen == null ? new String[0] : screen.strip().split("x");
+        if (parts.length < 2 || !parts[0].matches("[1-9][0-9]*") || !parts[1].matches("[1-9][0-9]*")) {
+            return null;
+        }
+        return new int[] {Integer.parseInt(parts[0]), Integer.parseInt(parts[1])};
     }
 
     /**
