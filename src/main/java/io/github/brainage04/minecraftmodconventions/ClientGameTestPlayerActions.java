@@ -14,6 +14,7 @@ import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 
+import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 
@@ -133,9 +134,14 @@ public final class ClientGameTestPlayerActions {
     /**
      * Steps backwards with the back key until the player is at least {@code distance} blocks away
      * from a point, for a stage that lights something that explodes.
+     *
+     * <p>The back key moves the player opposite to its facing, so the helper turns the player to face
+     * {@code point} itself first; which way the player was facing before does not matter, and the
+     * camera keeps the point in view while the player backs away from it.
      */
     public static void walkAwayFrom(ClientGameTestContext context, Vec3 point, double distance) {
         Objects.requireNonNull(point, "point");
+        lookLevel(context, point);
         context.getInput().holdKey(options -> options.keyDown);
         try {
             context.waitFor(
@@ -285,15 +291,19 @@ public final class ClientGameTestPlayerActions {
         }
         return PlayerActionGeometry.interactionRangeViolation(
                 player.getAttributeValue(Attributes.BLOCK_INTERACTION_RANGE),
-                hasModifiers(player.getAttribute(Attributes.BLOCK_INTERACTION_RANGE)),
+                modifierIds(player.getAttribute(Attributes.BLOCK_INTERACTION_RANGE)),
                 player.getAttributeValue(Attributes.ENTITY_INTERACTION_RANGE),
-                hasModifiers(player.getAttribute(Attributes.ENTITY_INTERACTION_RANGE)),
+                modifierIds(player.getAttribute(Attributes.ENTITY_INTERACTION_RANGE)),
                 VANILLA_BLOCK_REACH,
-                VANILLA_ENTITY_REACH);
+                VANILLA_ENTITY_REACH,
+                player.isCreative());
     }
 
-    private static boolean hasModifiers(AttributeInstance instance) {
-        return instance != null && !instance.getModifiers().isEmpty();
+    private static List<String> modifierIds(AttributeInstance instance) {
+        if (instance == null) {
+            return List.of();
+        }
+        return instance.getModifiers().stream().map(modifier -> modifier.id().toString()).toList();
     }
 
     private static String describe(HitResult hit) {

@@ -2,6 +2,8 @@ package io.github.brainage04.minecraftmodconventions;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.Set;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -92,37 +94,70 @@ class PlayerActionGeometryTest {
 
     @Test
     void vanillaRangesPassTheGuard() {
-        assertEquals(
-                null,
-                PlayerActionGeometry.interactionRangeViolation(4.5D, false, 3.0D, false, 4.5D, 3.0D));
+        assertEquals(null, rangeViolation(4.5D, Set.of(), 3.0D, Set.of(), false));
     }
 
     @Test
     void aRaisedBlockRangeFailsTheGuard() {
-        String violation = PlayerActionGeometry.interactionRangeViolation(16.0D, false, 3.0D, false, 4.5D, 3.0D);
+        String violation = rangeViolation(16.0D, Set.of(), 3.0D, Set.of(), false);
         assertTrue(violation != null && violation.contains("BLOCK_INTERACTION_RANGE"), String.valueOf(violation));
         assertTrue(violation.contains("16.000"), violation);
     }
 
     @Test
     void aRaisedEntityRangeFailsTheGuard() {
-        String violation = PlayerActionGeometry.interactionRangeViolation(4.5D, false, 5.0D, false, 4.5D, 3.0D);
+        String violation = rangeViolation(4.5D, Set.of(), 5.0D, Set.of(), false);
         assertTrue(violation != null && violation.contains("ENTITY_INTERACTION_RANGE"), String.valueOf(violation));
     }
 
     @Test
     void aModifierFailsTheGuardEvenAtTheVanillaValue() {
-        String blockViolation = PlayerActionGeometry.interactionRangeViolation(4.5D, true, 3.0D, false, 4.5D, 3.0D);
+        String blockViolation = rangeViolation(4.5D, Set.of("example:longer_block_reach"), 3.0D, Set.of(), false);
         assertTrue(blockViolation != null && blockViolation.contains("modifier"), String.valueOf(blockViolation));
-        String entityViolation = PlayerActionGeometry.interactionRangeViolation(4.5D, false, 3.0D, true, 4.5D, 3.0D);
+        String entityViolation = rangeViolation(4.5D, Set.of(), 3.0D, Set.of("example:longer_entity_reach"), false);
         assertTrue(entityViolation != null && entityViolation.contains("modifier"), String.valueOf(entityViolation));
     }
 
     @Test
-    void aRangeAtTheLimitWithRoundingErrorStillPasses() {
+    void aCreativePlayersOwnRangeBonusesPassTheGuard() {
         assertEquals(
                 null,
-                PlayerActionGeometry.interactionRangeViolation(
-                        4.5D + 0.0001D, false, 3.0D + 0.0001D, false, 4.5D, 3.0D));
+                rangeViolation(
+                        4.5D + PlayerActionGeometry.CREATIVE_BLOCK_REACH_BONUS,
+                        Set.of("minecraft:creative_mode_block_range"),
+                        3.0D + PlayerActionGeometry.CREATIVE_ENTITY_REACH_BONUS,
+                        Set.of("minecraft:creative_mode_entity_range"),
+                        true));
+    }
+
+    @Test
+    void aCreativeBonusOnAPlayerThatIsNotCreativeFailsTheGuard() {
+        assertTrue(rangeViolation(4.5D, Set.of("minecraft:creative_mode_block_range"), 3.0D, Set.of(), false) != null);
+    }
+
+    @Test
+    void aModifierOnTopOfACreativeBonusFailsTheGuard() {
+        assertTrue(rangeViolation(
+                4.5D + PlayerActionGeometry.CREATIVE_BLOCK_REACH_BONUS,
+                Set.of("minecraft:creative_mode_block_range", "example:longer_block_reach"),
+                3.0D + PlayerActionGeometry.CREATIVE_ENTITY_REACH_BONUS,
+                Set.of("minecraft:creative_mode_entity_range"),
+                true) != null);
+    }
+
+    @Test
+    void aRangeAtTheLimitWithRoundingErrorStillPasses() {
+        assertEquals(null, rangeViolation(4.5D + 0.0001D, Set.of(), 3.0D + 0.0001D, Set.of(), false));
+    }
+
+    private static String rangeViolation(
+            double blockReach,
+            Set<String> blockModifierIds,
+            double entityReach,
+            Set<String> entityModifierIds,
+            boolean creative
+    ) {
+        return PlayerActionGeometry.interactionRangeViolation(
+                blockReach, blockModifierIds, entityReach, entityModifierIds, 4.5D, 3.0D, creative);
     }
 }
