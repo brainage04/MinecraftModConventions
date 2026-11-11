@@ -1,6 +1,5 @@
 package io.github.brainage04.minecraftmodconventions.gradle.quality;
 
-/** Splits one Java source line into its code and its {@code //} comment, blanking literal contents. */
 final class JavaSourceLine {
     private boolean inBlockComment;
     private boolean inTextBlock;

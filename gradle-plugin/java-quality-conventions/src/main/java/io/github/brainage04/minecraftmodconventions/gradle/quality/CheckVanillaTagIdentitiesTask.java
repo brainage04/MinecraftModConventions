@@ -51,7 +51,6 @@ public abstract class CheckVanillaTagIdentitiesTask extends DefaultTask {
     @PathSensitive(PathSensitivity.NONE)
     public abstract ConfigurableFileCollection getMinecraftJars();
 
-    /** Paths in the report are relative to this directory. */
     @Internal
     public abstract Property<String> getRootDirectory();
 

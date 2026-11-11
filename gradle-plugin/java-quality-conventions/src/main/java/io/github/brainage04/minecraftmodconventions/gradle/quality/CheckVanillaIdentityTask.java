@@ -50,7 +50,6 @@ public abstract class CheckVanillaIdentityTask extends DefaultTask {
     @PathSensitive(PathSensitivity.RELATIVE)
     public abstract ConfigurableFileCollection getSources();
 
-    /** Paths in the report are relative to this directory. */
     @Internal
     public abstract Property<String> getRootDirectory();
 
