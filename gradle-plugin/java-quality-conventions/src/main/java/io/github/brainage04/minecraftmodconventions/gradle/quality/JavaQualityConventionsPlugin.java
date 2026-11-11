@@ -9,11 +9,23 @@ import org.gradle.api.plugins.quality.CheckstyleExtension;
 import org.gradle.api.provider.Provider;
 import org.gradle.api.tasks.compile.JavaCompile;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /** Configures one staged Java quality policy across every Java project in a build. */
 public final class JavaQualityConventionsPlugin implements Plugin<Project> {
     public static final String PLUGIN_ID = "io.github.brainage04.java-quality-conventions";
+    /**
+     * The default of {@code -PstrictQuality}. Flip this one constant to make formatting, Checkstyle and
+     * a deprecated API call fail every build; {@code -PstrictQuality=false} still opts a project out.
+     */
+    private static final boolean DEFAULT_STRICT_QUALITY = false;
+    /**
+     * The default of {@code -PstrictUnchecked}: whether unchecked and rawtypes warnings are errors too.
+     * It is a separate switch because Minecraft's generics (registries, mixins, NBT) produce them with
+     * no mechanical fix, while the deprecation warnings usually have one.
+     */
+    private static final boolean DEFAULT_STRICT_UNCHECKED = false;
 
     private static final String GOOGLE_JAVA_FORMAT_VERSION = "1.36.1";
     private static final String CHECKSTYLE_VERSION = "13.9.0";
@@ -45,14 +57,19 @@ public final class JavaQualityConventionsPlugin implements Plugin<Project> {
         Provider<Boolean> strictQuality = root.getProviders()
                 .gradleProperty("strictQuality")
                 .map(Boolean::parseBoolean)
-                .orElse(false);
+                .orElse(DEFAULT_STRICT_QUALITY);
+        Provider<Boolean> strictUnchecked = root.getProviders()
+                .gradleProperty("strictUnchecked")
+                .map(Boolean::parseBoolean)
+                .orElse(DEFAULT_STRICT_UNCHECKED);
         root.allprojects(project -> project.getPluginManager().withPlugin(
                 "java",
-                applied -> configureJavaProject(project, strictQuality)
+                applied -> configureJavaProject(project, strictQuality, strictUnchecked)
         ));
     }
 
-    private static void configureJavaProject(Project project, Provider<Boolean> strictQuality) {
+    private static void configureJavaProject(
+            Project project, Provider<Boolean> strictQuality, Provider<Boolean> strictUnchecked) {
         project.getPluginManager().apply("com.diffplug.spotless");
         project.getPluginManager().apply("checkstyle");
 
@@ -76,15 +93,32 @@ public final class JavaQualityConventionsPlugin implements Plugin<Project> {
                         task.getName().startsWith("spotless") && task.getName().endsWith("Check"))
                 .configureEach(task -> task.onlyIf(spec -> strictQuality.get()));
 
-        project.getTasks().withType(JavaCompile.class).configureEach(task -> {
-            task.getOptions().getCompilerArgs().addAll(List.of(
-                    "-Xlint:deprecation",
-                    "-Xlint:unchecked",
-                    "-Xlint:rawtypes"
-            ));
-            if (strictQuality.get()) {
-                task.getOptions().getCompilerArgs().add("-Werror");
-            }
-        });
+        List<String> lintArguments = lintArguments(strictQuality.get(), strictUnchecked.get());
+        project.getTasks().withType(JavaCompile.class).configureEach(task ->
+                task.getOptions().getCompilerArgs().addAll(lintArguments));
+    }
+
+    /**
+     * The javac lint arguments of the two strict groups.
+     *
+     * <p>{@code -Werror} turns every enabled warning into an error, and javac cannot promote one
+     * lint category alone, so the groups decide which lints are enabled: the deprecation group enables
+     * {@code -Xlint:deprecation}, the unchecked group enables {@code -Xlint:unchecked} and
+     * {@code -Xlint:rawtypes}, and only then does {@code -Werror} make them fail. With neither group
+     * on, all three are warnings, which is where the fleet's counts come from.
+     */
+    static List<String> lintArguments(boolean strictQuality, boolean strictUnchecked) {
+        List<String> arguments = new ArrayList<>();
+        if (strictQuality || !strictUnchecked) {
+            arguments.add("-Xlint:deprecation");
+        }
+        if (strictUnchecked || !strictQuality) {
+            arguments.add("-Xlint:unchecked");
+            arguments.add("-Xlint:rawtypes");
+        }
+        if (strictQuality || strictUnchecked) {
+            arguments.add("-Werror");
+        }
+        return arguments;
     }
 }
