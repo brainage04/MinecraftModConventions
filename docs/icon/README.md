@@ -1,12 +1,12 @@
 # MinecraftModConventions icon
 
-## What this is
+## The icon
 
-`docs/icon/icon.png` — the mod's icon: 1024x1024 PNG, 8-bit RGBA, non-interlaced,
+`docs/icon/icon.png` – the mod's icon: 1024x1024 PNG, 8-bit RGBA, non-interlaced,
 362,931 bytes, sha256
 `4354aecbe1d341c23946cadfe205511a3e16907e86bb59e3678744fe460830ce`.
 
-## How it was made
+## Making the icon
 
 Blender render (Blender **5.1.1**, headless CLI, **Cycles on CPU**, 32 samples, 2 render
 threads, 1024x1024, orthographic camera; 2.15 s).
@@ -29,7 +29,7 @@ Verified by reopening the saved `.blend`
 (`provenance/owner-layout-verification.json`: `exact_match: true`, 7 blocks, both middle
 slots empty).
 
-Imagery provenance — **real Minecraft 26.2 client-jar block models and textures**, extracted
+Imagery provenance – **real Minecraft 26.2 client-jar block models and textures**, extracted
 byte-for-byte from the Fabric Loom merged client jar
 `/home/thomas/.gradle/caches/fabric-loom/26.2/minecraft-merged.jar` into
 `provenance/source/assets/modern/…`. `provenance/asset-provenance.json` lists every
@@ -56,7 +56,7 @@ camera is preserved exactly:
 
 `provenance/` mirrors the round-3 authoring tree `round3/blender-ab/`:
 
-| file | what it is |
+| file | description |
 |---|---|
 | `conventions2-selected-owner-layout.py` | entrypoint for this icon: `scene.render(1)` |
 | `scene.py` | author script: rebuilds the hub from the reference scene, asserts the chosen layout, renders, saves `.blend`, writes metadata + verification |
@@ -70,7 +70,7 @@ camera is preserved exactly:
 | `evidence/reference-measurements.json` | measured reference geometry used by `verify-pngs.py` |
 | `source/minecraft.py`, `source/render_hubs.py`, `source/facing-table.json`, `source/modern-hub-down-left-1.blend`, `source/modern-hub-down-left-1-metadata.json`, `source/assets/**` | the frozen reference scene + asset snapshot this icon was built from (hashes in `source-snapshot.json`) |
 
-## How to regenerate
+## Regenerating the icon
 
 From `docs/icon/provenance` (needs the shared `render-blender.service` cgroup with
 `cpu.weight == 20` and a quota <= 3 cores; the runner asserts this, and it writes its logs
