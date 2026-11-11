@@ -1,7 +1,7 @@
 package io.github.brainage04.minecraftmodconventions;
 
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
-import net.fabricmc.fabric.api.client.gametest.v1.context.TestDedicatedServerContext;
+import net.fabricmc.fabric.api.client.gametest.v1.context.TestServerContext;
 import net.minecraft.core.SectionPos;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
@@ -109,7 +109,7 @@ public final class ClientGameTestWaits {
      */
     public static void waitForServer(
             ClientGameTestContext context,
-            TestDedicatedServerContext server,
+            TestServerContext server,
             Predicate<MinecraftServer> condition,
             int timeoutTicks,
             String description) {
