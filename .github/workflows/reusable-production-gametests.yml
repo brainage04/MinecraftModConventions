@@ -39,7 +39,7 @@ on:
         default: false
         type: boolean
       prepare_siblings:
-        description: Space-separated brainage04 repositories to clone into ../<name> and publish to their build/local-repo before the consumer
+        description: Space-separated brainage04 repositories to clone into ../<name> and publish to their build/local-repo before the consumer; Name for the default branch, Name@ref (branch, tag or full sha) to pin
         required: false
         default: ''
         type: string
@@ -152,13 +152,31 @@ jobs:
         env:
           PREPARE_SIBLINGS: ${{ inputs.prepare_siblings }}
         run: |
-          for name in ${PREPARE_SIBLINGS}; do
+          # Each entry is Name (the default branch) or Name@ref, where ref is a branch, a tag or a
+          # full commit sha, so a build can pin a sibling that is not released yet.
+          for entry in ${PREPARE_SIBLINGS}; do
+            name="${entry%%@*}"
+            ref=""
+            if [[ "${entry}" == *@* ]]; then
+              ref="${entry#*@}"
+            fi
             if [[ ! "${name}" =~ ^[A-Za-z0-9._-]+$ ]]; then
               echo "Invalid sibling repository name: ${name}"
               exit 1
             fi
+            if [[ -n "${ref}" && ! "${ref}" =~ ^[A-Za-z0-9._/-]+$ ]]; then
+              echo "Invalid sibling ref: ${ref}"
+              exit 1
+            fi
             rm -rf "../${name}"
-            git clone --depth 1 "https://github.com/brainage04/${name}.git" "../${name}"
+            if [[ -n "${ref}" ]]; then
+              git init -q "../${name}"
+              git -C "../${name}" remote add origin "https://github.com/brainage04/${name}.git"
+              git -C "../${name}" fetch --depth 1 origin "${ref}"
+              git -C "../${name}" checkout -q --detach FETCH_HEAD
+            else
+              git clone --depth 1 "https://github.com/brainage04/${name}.git" "../${name}"
+            fi
             chmod +x "../${name}/gradlew"
             "../${name}/gradlew" -p "../${name}" --no-daemon publishAllPublicationsToLocalRepository
           done

@@ -84,7 +84,7 @@ on:
         default: false
         type: boolean
       prepare_siblings:
-        description: Space-separated brainage04 repositories to clone into ../<name> and publish to their build/local-repo before each Gradle build
+        description: Space-separated brainage04 repositories to clone into ../<name> and publish to their build/local-repo before each Gradle build; Name for the default branch, Name@ref (branch, tag or full sha) to pin
         required: false
         default: ''
         type: string
