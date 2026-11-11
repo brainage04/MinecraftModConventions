@@ -369,9 +369,8 @@ class FabricModConventionsPluginTest {
                 }
                 """);
 
-        BuildResult failed = runGradleAndFail("checkDeprecatedGameTestApis", "verifyDeprecatedGameTestApiWiring");
+        BuildResult failed = runGradleAndFail("checkDeprecatedGameTestApis");
         String output = failed.getOutput();
-        assertEquals(TaskOutcome.SUCCESS, failed.task(":verifyDeprecatedGameTestApiWiring").getOutcome(), output);
         assertEquals(TaskOutcome.FAILED, failed.task(":checkDeprecatedGameTestApis").getOutcome(), output);
         assertTrue(output.contains("src/main/java/example/MockPlayerGameTest.java:6"), output);
         assertTrue(output.contains("GameTestHelper#makeMockServerPlayer(GameType)"), output);
@@ -387,9 +386,11 @@ class FabricModConventionsPluginTest {
                     }
                 }
                 """);
-        BuildResult passed = runGradle("checkDeprecatedGameTestApis");
+        BuildResult passed = runGradle("checkDeprecatedGameTestApis", "verifyDeprecatedGameTestApiWiring");
         assertEquals(
                 TaskOutcome.SUCCESS, passed.task(":checkDeprecatedGameTestApis").getOutcome(), passed.getOutput());
+        assertEquals(
+                TaskOutcome.SUCCESS, passed.task(":verifyDeprecatedGameTestApiWiring").getOutcome(), passed.getOutput());
 
         // javac cannot see a call under @SuppressWarnings("removal"), so the check bans the suppression too.
         Files.writeString(gameTest, """
