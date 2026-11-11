@@ -1,5 +1,6 @@
 package io.github.brainage04.minecraftmodconventions;
 
+import com.mojang.blaze3d.platform.Window;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 
 import java.util.Objects;
@@ -18,7 +19,20 @@ public final class ClientGameTestRecorder {
             }
             ClientGameTestRecordingHud.clear();
         });
-        ClientGameTestRecordingSession.start(context::waitTick);
+        ClientGameTestRecordingSession.start(context::waitTick, windowRect(context));
+    }
+
+    /**
+     * The client window's position and screen size, which the recorder uses to place its capture on the
+     * window. The screen size, not the framebuffer size, is the region x11grab copies.
+     */
+    private static int[] windowRect(ClientGameTestContext context) {
+        return context.computeOnClient(client -> {
+            Window window = client.getWindow();
+            return new int[] {
+                    window.getX(), window.getY(), window.getScreenWidth(), window.getScreenHeight()
+            };
+        });
     }
 
     public static void signalReadyToRecord(ClientGameTestContext context) {

@@ -96,6 +96,7 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
         File output = new File(recordingDir, safeRecordingName + "-" + timestamp + ".mp4");
         File metadata = new File(recordingDir, safeRecordingName + "-" + timestamp + ".json");
         File startSignal = new File(recordingDir, "." + safeRecordingName + "-" + timestamp + ".start");
+        File windowSignal = new File(recordingDir, "." + safeRecordingName + "-" + timestamp + ".window");
         File readySignal = new File(recordingDir, "." + safeRecordingName + "-" + timestamp + ".ready");
         File stopSignal = new File(recordingDir, "." + safeRecordingName + "-" + timestamp + ".stop");
         File completeSignal = new File(recordingDir, "." + safeRecordingName + "-" + timestamp + ".complete");
@@ -146,6 +147,7 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
 
         recordingDir.mkdirs();
         deleteIfExists(startSignal.toPath());
+        deleteIfExists(windowSignal.toPath());
         deleteIfExists(readySignal.toPath());
         deleteIfExists(stopSignal.toPath());
         deleteIfExists(completeSignal.toPath());
@@ -203,6 +205,7 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
             processEnvironment.put("CLIENT_GAMETEST_RECORDING_PROFILE", recordingProfile);
             processEnvironment.put("CLIENT_GAMETEST_RECORDING_TRACE", recordingTrace);
             processEnvironment.put("CLIENT_GAMETEST_RECORDING_START_SIGNAL", startSignal.getAbsolutePath());
+            processEnvironment.put("CLIENT_GAMETEST_RECORDING_WINDOW", windowSignal.getAbsolutePath());
             processEnvironment.put("CLIENT_GAMETEST_RECORDING_READY_SIGNAL", readySignal.getAbsolutePath());
             processEnvironment.put("CLIENT_GAMETEST_RECORDING_STOP_SIGNAL", stopSignal.getAbsolutePath());
             processEnvironment.put("CLIENT_GAMETEST_RECORDING_COMPLETE_SIGNAL", completeSignal.getAbsolutePath());
@@ -235,10 +238,21 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
 
             recordingStartObserved = startSignal.exists();
             if (recordingStartObserved) {
-                getLogger().lifecycle("Recording virtual display {} to {}", xvfbDisplay, output.getAbsolutePath());
                 String videoSize = videoSizeFromXvfbScreen(xvfbScreen);
+                // Vanilla centres a windowed client on its monitor (Window.java:118-119 in the 26.3
+                // sources), so a grab from the display's origin misses the window's right and bottom edges.
+                int[] grab = gpuDisplay == null
+                        ? new int[] {0, 0}
+                        : windowGrabOffset(windowSignal, xvfbDisplay, display.displayScreen(), videoSize);
+                if (gpuDisplay != null) {
+                    boundaryEvidence.put("captureOffset", grab[0] + "," + grab[1]);
+                    getLogger().lifecycle("Capturing the client's window at +{},{} of display {}.",
+                            grab[0], grab[1], xvfbDisplay);
+                }
+                getLogger().lifecycle("Recording display {} to {}", xvfbDisplay, output.getAbsolutePath());
                 List<String> ffmpegCommand = captureCommand(fps, videoSize, xvfbDisplay, audioSource,
-                        progress.getAbsolutePath(), audioProgress.getAbsolutePath(), rawCapture.getAbsolutePath());
+                        progress.getAbsolutePath(), audioProgress.getAbsolutePath(), rawCapture.getAbsolutePath(),
+                        grab[0], grab[1]);
                 ProcessBuilder ffmpegBuilder = new ProcessBuilder(ffmpegCommand);
                 ffmpegBuilder.directory(projectDir);
                 ffmpegBuilder.redirectErrorStream(true);
@@ -334,6 +348,7 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
                 display.release();
             }
             deleteIfExists(startSignal.toPath());
+            deleteIfExists(windowSignal.toPath());
             deleteIfExists(readySignal.toPath());
             deleteIfExists(stopSignal.toPath());
             deleteIfExists(completeSignal.toPath());
@@ -522,11 +537,13 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
     }
 
     static List<String> captureCommand(String fps, String videoSize, String display, String audioSource,
-            String progress, String audioProgress, String rawCapture) {
+            String progress, String audioProgress, String rawCapture, int offsetX, int offsetY) {
+        // The grab starts at the client's window, not at the display's origin: vanilla centres the window.
+        String input = display + ".0+" + offsetX + "," + offsetY;
         // Passthrough alone still rounds timestamps into the encoder's default 1/fps timebase.
         return List.of(
                 "ffmpeg", "-y", "-copyts", "-stats_period", "0.05", "-progress", progress,
-                "-f", "x11grab", "-framerate", fps, "-video_size", videoSize, "-draw_mouse", "0", "-i", display + ".0",
+                "-f", "x11grab", "-framerate", fps, "-video_size", videoSize, "-draw_mouse", "0", "-i", input,
                 "-f", "pulse", "-thread_queue_size", "1024", "-i", audioSource,
                 "-map", "0:v:0", "-map", "1:a:0", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
                 "-pix_fmt", "yuv420p", "-fps_mode", "passthrough", "-enc_time_base:v", "demux", "-c:a", "pcm_s16le",
@@ -622,9 +639,9 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
                     }
                     getLogger().lifecycle("Recording X display {} ({}), which renders with the machine's graphics card.",
                             gpuDisplay, screen);
-                    getLogger().lifecycle("The client's window is visible on that display while it runs; the window"
-                            + " and the capture are the standard {} at its top left.", standard);
-                    return new DisplayResolution(gpuDisplay, standard, null, gpuDisplay, null, lock);
+                    getLogger().lifecycle("The client's window is visible on that display while it runs; it is the"
+                            + " standard {}, and the capture starts at the window once it shows.", standard);
+                    return new DisplayResolution(gpuDisplay, standard, screen, null, gpuDisplay, null, lock);
                 }
                 lock.close();
                 fallback = "X display " + gpuDisplay + " does not answer: "
@@ -667,7 +684,33 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
             }
             throw exception;
         }
-        return new DisplayResolution(display, configuredScreen, xvfb, null, fallback, null);
+        return new DisplayResolution(display, configuredScreen, configuredScreen, xvfb, null, fallback, null);
+    }
+
+    /**
+     * Where x11grab starts for the client's window: the window's own origin and size, reported by the
+     * recording helper from inside the client and read from the window signal. Vanilla centres a
+     * windowed client on its monitor, so the display's origin is not the window's.
+     */
+    private int[] windowGrabOffset(File windowSignal, String display, String displayScreen, String videoSize) {
+        long deadline = System.currentTimeMillis() + 5_000L;
+        while (System.currentTimeMillis() < deadline && (!windowSignal.isFile() || windowSignal.length() == 0)) {
+            sleep(50L);
+        }
+        String reported;
+        try {
+            reported = windowSignal.isFile()
+                    ? Files.readString(windowSignal.toPath(), StandardCharsets.UTF_8)
+                    : "";
+        } catch (IOException exception) {
+            throw new UncheckedIOException("Could not read the client's window position " + windowSignal, exception);
+        }
+        try {
+            return ClientGpuCapture.grabOffset(displayScreen, videoSize, ClientGpuCapture.windowRect(reported));
+        } catch (IllegalArgumentException exception) {
+            throw new GradleException(exception.getMessage() + " The client reported '" + reported.strip()
+                    + "' as x y width height on display " + display + ".");
+        }
     }
 
     /** The start of the client's own log, where it names the graphics device and the SDL video driver. */
@@ -1138,11 +1181,12 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
     }
 
     /**
-     * The display a recording captures, the process serving it when the recorder started one, the
-     * display it was asked to use, and why that one was not used.
+     * The display a recording captures, the size of the client's window and of the capture, the display's
+     * own size, the process serving it when the recorder started one, the display it was asked to use,
+     * and why that one was not used.
      */
-    private record DisplayResolution(String display, String screen, Process process, String gpuDisplay,
-            String fallbackReason, ExclusiveDisplayLock lock) {
+    private record DisplayResolution(String display, String screen, String displayScreen, Process process,
+            String gpuDisplay, String fallbackReason, ExclusiveDisplayLock lock) {
         /** Releases the display's claim, if this recording took it. */
         private void release() {
             if (lock != null) {

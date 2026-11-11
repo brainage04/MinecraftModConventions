@@ -40,6 +40,14 @@ public final class ClientGameTestRecordingSession {
 
     /** Call outside a world. The waiter must keep the client rendering while capture becomes ready. */
     public static void start(Runnable waitForClient) {
+        start(waitForClient, null);
+    }
+
+    /**
+     * Starts the session and reports the client window's {@code x, y, width, height}, so the recorder can
+     * place its capture on the window instead of on the display's origin.
+     */
+    public static void start(Runnable waitForClient, int[] window) {
         if (!ENABLED) {
             return;
         }
@@ -55,6 +63,10 @@ public final class ClientGameTestRecordingSession {
             clockEpochUs = epochMicros();
         }
         write(path("START_SIGNAL"), Long.toString(epochMicros()));
+        Path windowSignal = path("WINDOW");
+        if (windowSignal != null && window != null && window.length == 4) {
+            write(windowSignal, window[0] + " " + window[1] + " " + window[2] + " " + window[3]);
+        }
         await("READY_SIGNAL", waitForClient);
         synchronized (ClientGameTestRecordingSession.class) {
             ready = true;

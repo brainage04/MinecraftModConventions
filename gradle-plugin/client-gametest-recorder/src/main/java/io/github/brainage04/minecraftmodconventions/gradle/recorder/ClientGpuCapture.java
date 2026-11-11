@@ -158,8 +158,8 @@ final class ClientGpuCapture {
 
     /**
      * Whether a display of this screen has room for a recording at {@code standard}: every recording is
-     * captured at that size, so a smaller display cannot hold one, and a larger one is captured at its
-     * top left, where the recorder puts the client's window.
+     * captured at that size, so a smaller display cannot hold one. A larger one holds the client's
+     * window wherever the display puts it, and {@link #grabOffset} starts the capture there.
      */
     static boolean fits(String screen, String standard) {
         int[] size = size(screen);
@@ -174,6 +174,59 @@ final class ClientGpuCapture {
             return null;
         }
         return new int[] {Integer.parseInt(parts[0]), Integer.parseInt(parts[1])};
+    }
+
+    /**
+     * Where x11grab starts for the client's window on {@code screen}: the window's own origin, as the
+     * client reports it. Vanilla centres a windowed client on its monitor ({@code Window.java:118-119}
+     * in the 26.3 sources), so a capture from the display's origin misses the window's right and bottom
+     * edges.
+     *
+     * <p>Fails when the window is not the standard size or does not lie wholly on the display, since the
+     * capture would then crop it or pad it with the desktop.
+     */
+    static int[] grabOffset(String screen, String standard, int[] window) {
+        int[] display = size(screen);
+        int[] expected = size(standard);
+        if (display == null || expected == null) {
+            throw new IllegalArgumentException(
+                    "Cannot read the display size '" + screen + "' or the standard '" + standard + "'.");
+        }
+        if (window == null || window.length != 4) {
+            throw new IllegalArgumentException(
+                    "The client did not report its window position, so the capture cannot be placed on it.");
+        }
+        if (window[2] != expected[0] || window[3] != expected[1]) {
+            throw new IllegalArgumentException("The client's window is " + window[2] + "x" + window[3]
+                    + ", not the standard " + expected[0] + "x" + expected[1] + " every recording is captured at.");
+        }
+        if (window[0] < 0 || window[1] < 0
+                || window[0] + window[2] > display[0] || window[1] + window[3] > display[1]) {
+            throw new IllegalArgumentException("The client's window at +" + window[0] + "," + window[1] + " ("
+                    + window[2] + "x" + window[3] + ") does not lie wholly on the " + display[0] + "x" + display[1]
+                    + " recording display.");
+        }
+        return new int[] {window[0], window[1]};
+    }
+
+    /**
+     * The window the runtime helper reported, {@code x y width height} on one line of the recording's
+     * window signal, or null when the text is not that.
+     */
+    static int[] windowRect(String text) {
+        String[] parts = text == null ? new String[0] : text.strip().split("\\s+");
+        if (parts.length != 4) {
+            return null;
+        }
+        int[] rect = new int[4];
+        for (int index = 0; index < rect.length; index++) {
+            try {
+                rect[index] = Integer.parseInt(parts[index]);
+            } catch (NumberFormatException exception) {
+                return null;
+            }
+        }
+        return rect;
     }
 
     /**

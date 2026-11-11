@@ -31,7 +31,7 @@ class RecordClientGameTestTaskTest {
     @Test
     void captureQueuesEncodedPacketsWhileRawCaptureWritesBlock() {
         List<String> command = RecordClientGameTestTask.captureCommand(
-                "30", "1920x1080", ":90", "sink.monitor", "progress.txt", "audio.txt", "raw.mkv");
+                "30", "1920x1080", ":90", "sink.monitor", "progress.txt", "audio.txt", "raw.mkv", 0, 0);
 
         // An option after the last input and before the output file applies to the output (the muxer queue).
         int output = command.size() - 1;
@@ -43,6 +43,15 @@ class RecordClientGameTestTaskTest {
         // A one-second journal wait (about 50 packets) already froze x11grab with ffmpeg's default of 8;
         // the worst observed wait was about 12 s.
         assertTrue(packets >= 50 * 60, "muxer queue must absorb at least a minute of blocked writes: " + packets);
+    }
+
+    @Test
+    void theCaptureStartsAtTheClientsWindowRatherThanTheDisplayOrigin() {
+        List<String> command = RecordClientGameTestTask.captureCommand(
+                "30", "1920x1080", ":1", "sink.monitor", "progress.txt", "audio.txt", "raw.mkv", 320, 180);
+
+        assertEquals(":1.0+320,180", command.get(command.indexOf("-i") + 1));
+        assertEquals("1920x1080", command.get(command.indexOf("-video_size") + 1));
     }
 
     @Test

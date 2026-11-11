@@ -9,10 +9,12 @@ import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ClientGpuCaptureTest {
@@ -34,6 +36,40 @@ class ClientGpuCaptureTest {
         // :0 is the machine's own desktop display, and a runner may leave a host file line reading "0".
         assertEquals(":0", ClientGpuCapture.display("0"));
         assertEquals(":0", ClientGpuCapture.display(":0"));
+    }
+
+    @Test
+    void theClientsWindowComesFromTheRectItReports() {
+        assertArrayEquals(new int[] {320, 180, 1920, 1080}, ClientGpuCapture.windowRect("320 180 1920 1080\n"));
+        assertNull(ClientGpuCapture.windowRect(""));
+        assertNull(ClientGpuCapture.windowRect("320 180 1920"));
+        assertNull(ClientGpuCapture.windowRect("x 180 1920 1080"));
+    }
+
+    @Test
+    void aCentredWindowOnALargerDisplayIsCapturedWhereItSits() {
+        // Vanilla centres a 1920x1080 window on a 2560x1440 display at +320,+180 (Window.java:118-119).
+        assertArrayEquals(
+                new int[] {320, 180},
+                ClientGpuCapture.grabOffset("2560x1440x24", "1920x1080x24", new int[] {320, 180, 1920, 1080}));
+        assertArrayEquals(
+                new int[] {0, 0},
+                ClientGpuCapture.grabOffset("1920x1080x24", "1920x1080x24", new int[] {0, 0, 1920, 1080}));
+    }
+
+    @Test
+    void aWindowThatSticksOutOrIsNotTheStandardSizeFailsTheRecording() {
+        IllegalArgumentException off = assertThrows(IllegalArgumentException.class, () ->
+                ClientGpuCapture.grabOffset("2560x1440x24", "1920x1080x24", new int[] {700, 400, 1920, 1080}));
+        assertTrue(off.getMessage().contains("does not lie wholly"), off.getMessage());
+
+        IllegalArgumentException size = assertThrows(IllegalArgumentException.class, () ->
+                ClientGpuCapture.grabOffset("2560x1440x24", "1920x1080x24", new int[] {480, 270, 1600, 900}));
+        assertTrue(size.getMessage().contains("not the standard"), size.getMessage());
+
+        IllegalArgumentException absent = assertThrows(IllegalArgumentException.class, () ->
+                ClientGpuCapture.grabOffset("2560x1440x24", "1920x1080x24", null));
+        assertTrue(absent.getMessage().contains("did not report"), absent.getMessage());
     }
 
     @Test
