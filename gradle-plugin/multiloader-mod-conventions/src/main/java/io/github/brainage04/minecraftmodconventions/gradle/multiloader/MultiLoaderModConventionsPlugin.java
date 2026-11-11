@@ -7,6 +7,7 @@ import io.github.brainage04.minecraftmodconventions.gradle.production.ClientGame
 import io.github.brainage04.minecraftmodconventions.gradle.production.ClientLaunchEnvironment;
 import io.github.brainage04.minecraftmodconventions.gradle.production.ProductionGameTestExtension;
 import io.github.brainage04.minecraftmodconventions.gradle.production.ProductionGameTestsPlugin;
+import io.github.brainage04.minecraftmodconventions.gradle.quality.DeprecatedGameTestApiCheck;
 import io.github.brainage04.minecraftmodconventions.gradle.quality.VanillaIdentityCheck;
 import io.github.brainage04.minecraftmodconventions.gradle.quality.VanillaTagIdentitiesCheck;
 import io.github.brainage04.minecraftmodconventions.gradle.quality.WorldHeightCheck;
@@ -105,12 +106,15 @@ public final class MultiLoaderModConventionsPlugin implements Plugin<Project> {
                 fabric.getExtensions().getByType(LoomGradleExtensionAPI.class).getNamedMinecraftJars());
         WorldHeightCheck.register(common);
         WorldHeightCheck.register(fabric);
+        DeprecatedGameTestApiCheck.register(common);
+        DeprecatedGameTestApiCheck.register(fabric);
         if (neoForge != null) {
             configureNeoForge(root, common, fabric, neoForge, extension);
             VanillaIdentityCheck.register(neoForge);
             VanillaTagIdentitiesCheck.register(neoForge,
                 neoForge.getExtensions().getByType(LoomGradleExtensionAPI.class).getNamedMinecraftJars());
             WorldHeightCheck.register(neoForge);
+            DeprecatedGameTestApiCheck.register(neoForge);
         }
         configureRootTasks(root, fabric, neoForge, extension);
     }

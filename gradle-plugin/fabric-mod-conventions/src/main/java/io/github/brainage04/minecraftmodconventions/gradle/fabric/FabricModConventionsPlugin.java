@@ -1,5 +1,6 @@
 package io.github.brainage04.minecraftmodconventions.gradle.fabric;
 
+import io.github.brainage04.minecraftmodconventions.gradle.quality.DeprecatedGameTestApiCheck;
 import io.github.brainage04.minecraftmodconventions.gradle.quality.VanillaIdentityCheck;
 import io.github.brainage04.minecraftmodconventions.gradle.quality.VanillaTagIdentitiesCheck;
 import io.github.brainage04.minecraftmodconventions.gradle.quality.WorldHeightCheck;
@@ -59,6 +60,7 @@ public final class FabricModConventionsPlugin implements Plugin<Project> {
         VanillaIdentityCheck.register(project);
         VanillaTagIdentitiesCheck.register(project, loom.getNamedMinecraftJars());
         WorldHeightCheck.register(project);
+        DeprecatedGameTestApiCheck.register(project);
         // Read the run configuration at execution time so custom GameTest run directories are respected.
         project.getTasks().matching(task -> task.getName().equals("runGameTest"))
                 .configureEach(task -> task.doFirst("resetGameTestWorld", _ ->

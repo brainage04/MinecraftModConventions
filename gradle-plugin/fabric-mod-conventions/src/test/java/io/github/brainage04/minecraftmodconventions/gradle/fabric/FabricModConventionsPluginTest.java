@@ -343,6 +343,90 @@ class FabricModConventionsPluginTest {
         assertFalse(heightReport.contains("return 256;"), heightReport);
     }
 
+    @Test
+    void deprecatedGameTestApiCheckFailsOnAMockPlayerAndUnreasonedSuppressions() throws IOException {
+        writeFixture("25", false, """
+                plugins {
+                    id '%s'
+                }
+
+                tasks.register('verifyDeprecatedGameTestApiWiring') {
+                    doLast {
+                        assert tasks.check.taskDependencies.getDependencies(tasks.check)*.name.contains('checkDeprecatedGameTestApis')
+                    }
+                }
+                """.formatted(BASE_PLUGIN_ID));
+        Path gameTest = projectDir.resolve("src/main/java/example/MockPlayerGameTest.java");
+        Files.createDirectories(gameTest.getParent());
+        Files.writeString(gameTest, """
+                package example;
+                import net.minecraft.gametest.framework.GameTestHelper;
+                import net.minecraft.server.level.ServerPlayer;
+                final class MockPlayerGameTest {
+                    static ServerPlayer player(GameTestHelper helper) {
+                        return helper.makeMockServerPlayerInLevel();
+                    }
+                }
+                """);
+
+        BuildResult failed = runGradleAndFail("checkDeprecatedGameTestApis", "verifyDeprecatedGameTestApiWiring");
+        String output = failed.getOutput();
+        assertEquals(TaskOutcome.SUCCESS, failed.task(":verifyDeprecatedGameTestApiWiring").getOutcome(), output);
+        assertEquals(TaskOutcome.FAILED, failed.task(":checkDeprecatedGameTestApis").getOutcome(), output);
+        assertTrue(output.contains("src/main/java/example/MockPlayerGameTest.java:6"), output);
+        assertTrue(output.contains("GameTestHelper#makeMockServerPlayer(GameType)"), output);
+
+        Files.writeString(gameTest, """
+                package example;
+                import net.minecraft.gametest.framework.GameTestHelper;
+                import net.minecraft.server.level.ServerPlayer;
+                import net.minecraft.world.level.GameType;
+                final class MockPlayerGameTest {
+                    static ServerPlayer player(GameTestHelper helper) {
+                        return helper.makeMockServerPlayer(GameType.CREATIVE);
+                    }
+                }
+                """);
+        BuildResult passed = runGradle("checkDeprecatedGameTestApis");
+        assertEquals(
+                TaskOutcome.SUCCESS, passed.task(":checkDeprecatedGameTestApis").getOutcome(), passed.getOutput());
+
+        // javac cannot see a call under @SuppressWarnings("removal"), so the check bans the suppression too.
+        Files.writeString(gameTest, """
+                package example;
+                final class MockPlayerGameTest {
+                    @SuppressWarnings("removal")
+                    static void legacy() {
+                    }
+                }
+                """);
+        BuildResult suppressed = runGradleAndFail("checkDeprecatedGameTestApis");
+        String suppressionOutput = suppressed.getOutput();
+        assertTrue(suppressionOutput.contains("SuppressWarnings(\"removal\")"), suppressionOutput);
+        assertTrue(suppressionOutput.contains("deprecated-api: <reason>"), suppressionOutput);
+
+        Files.writeString(gameTest, """
+                package example;
+                final class MockPlayerGameTest {
+                    // deprecated-api: the mock player must be in the player list for this test
+                    @SuppressWarnings("removal")
+                    static void legacy() {
+                    }
+                }
+                """);
+        BuildResult reasoned = runGradle("checkDeprecatedGameTestApis");
+        assertEquals(
+                TaskOutcome.SUCCESS, reasoned.task(":checkDeprecatedGameTestApis").getOutcome(), reasoned.getOutput());
+    }
+
+    private BuildResult runGradleAndFail(String... arguments) {
+        return GradleRunner.create()
+                .withProjectDir(projectDir.toFile())
+                .withPluginClasspath()
+                .withArguments(arguments)
+                .buildAndFail();
+    }
+
     private void write(String path, String content) throws IOException {
         Path file = projectDir.resolve(path);
         Files.createDirectories(file.getParent());
