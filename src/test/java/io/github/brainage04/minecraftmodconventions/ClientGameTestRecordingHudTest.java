@@ -30,9 +30,10 @@ class ClientGameTestRecordingHudTest {
     }
 
     @Test
-    void aNarrowScreenWouldNotFitThePanel() {
-        // One GUI scale higher on 1920x1080 is a 480x270 GUI, too narrow for the panel's 368 pixels.
-        assertFalse(ClientGameTestRecordingHud.fits(480, 270, WIDEST_TEXT, SHOWCASE_LINES));
+    void aNarrowerGuiWouldNotFitThePanel() {
+        // The panel is 368 pixels wide with a 5 pixel margin, so a GUI narrower than 373 cannot hold it.
+        assertFalse(ClientGameTestRecordingHud.fits(360, 270, WIDEST_TEXT, SHOWCASE_LINES));
+        // A GUI too short for the panel's lines.
         assertFalse(ClientGameTestRecordingHud.fits(SHOWCASE_GUI_WIDTH, 60, WIDEST_TEXT, DIAGNOSTIC_LINES));
     }
 

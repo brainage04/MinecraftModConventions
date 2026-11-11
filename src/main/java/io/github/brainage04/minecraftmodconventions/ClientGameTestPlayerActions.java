@@ -14,6 +14,7 @@ import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 
+import java.util.Locale;
 import java.util.Objects;
 
 /**
@@ -138,7 +139,7 @@ public final class ClientGameTestPlayerActions {
         context.getInput().holdKey(options -> options.keyDown);
         try {
             context.waitFor(
-                    client -> PlayerActionGeometry.withinReach(horizontalDistance(client.player.position(), point), distance) == false,
+                    client -> !PlayerActionGeometry.withinReach(horizontalDistance(client.player.position(), point), distance),
                     WALK_TIMEOUT_TICKS);
         } finally {
             context.getInput().releaseKey(options -> options.keyDown);
@@ -298,7 +299,7 @@ public final class ClientGameTestPlayerActions {
     }
 
     private static String format(double value) {
-        return String.format(java.util.Locale.ROOT, "%.3f", value);
+        return String.format(Locale.ROOT, "%.3f", value);
     }
 
     private static double horizontalDistance(Vec3 from, Vec3 to) {
