@@ -82,13 +82,13 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
         String recordingProfile = env("GTR_RECORDING_PROFILE", env("CLIENT_GAMETEST_PROFILE", "showcase"));
         String recordingTrace = env("GTR_RECORDING_TRACE", "false");
         File runDir = getRunDirectory().get().getAsFile();
-        String fps = env("GTR_RECORDING_FPS", "30");
+        String fps = env(ClientGameTestOptions.CAPTURE_FPS_ENV, Integer.toString(ClientGameTestOptions.DEFAULT_CAPTURE_FPS));
         int startWaitSeconds = parsePositiveInt(env("GTR_RECORDING_START_WAIT_SECONDS", "90"), "GTR_RECORDING_START_WAIT_SECONDS");
         String xvfbScreen = env(ClientGameTestOptions.RECORDER_SCREEN_ENV, ClientGameTestOptions.DEFAULT_RECORDER_SCREEN);
         String gpuDisplayRequest = getRecordingDisplay().getOrElse("");
         double prePadding = parsePadding(env("GTR_RECORDING_PRE_PADDING_SECONDS", "0.5"));
         double postPadding = parsePadding(env("GTR_RECORDING_POST_PADDING_SECONDS", "0.5"));
-        int frameRate = parsePositiveInt(fps, "GTR_RECORDING_FPS");
+        int frameRate = parsePositiveInt(fps, ClientGameTestOptions.CAPTURE_FPS_ENV);
         if (truthy(env("GTR_RECORDING_AUDIO_SET_DEFAULT", "false"))) {
             throw new GradleException("Changing the desktop default audio sink is prohibited; recording uses a dedicated route.");
         }
@@ -451,6 +451,7 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
         gpuModel.put("active", gpuDisplay != null && !ClientGpuCapture.isSoftwareRenderer(glRenderer));
         metadataModel.put("gpu", gpuModel);
         metadataModel.put("fps", fps);
+        metadataModel.put("clientFrameCap", ClientGameTestOptions.frameCap(gpuDisplay != null, frameRate));
         metadataModel.put("xvfbScreen", xvfbScreen);
         metadataModel.put("video", output.getAbsolutePath());
         metadataModel.put("videoSaved", videoSaved);

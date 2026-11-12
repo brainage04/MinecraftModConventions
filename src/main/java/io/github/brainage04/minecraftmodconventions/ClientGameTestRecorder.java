@@ -61,6 +61,8 @@ public final class ClientGameTestRecorder {
 
     public static void showStep(ClientGameTestContext context, String id, String title, String subtitle) {
         Objects.requireNonNull(context, "context");
+        CaptionWording.requireDescribesTheMod(title);
+        CaptionWording.requireDescribesTheMod(subtitle);
         String message = "[CLIENT_GAMETEST_RECORDER] " + clean(id) + " | " + clean(title)
                 + (clean(subtitle).isBlank() ? "" : " | " + clean(subtitle));
         System.out.println(message);

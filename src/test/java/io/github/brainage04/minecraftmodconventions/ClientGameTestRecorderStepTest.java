@@ -35,6 +35,33 @@ class ClientGameTestRecorderStepTest {
         assertEquals(List.of(), context.waits());
     }
 
+    @Test
+    void aCaptionThatSaysWhatChangedIsRejectedBeforeItShows() {
+        RecordingTestContext context = new RecordingTestContext();
+
+        String printed = capture(() -> {
+            IllegalArgumentException title = assertThrows(IllegalArgumentException.class, () ->
+                    ClientGameTestRecorder.showStep(context, "id", "The 10 tick wind-up is gone", ""));
+            assertTrue(title.getMessage().contains("\"is gone\""), title.getMessage());
+            assertThrows(IllegalArgumentException.class, () ->
+                    ClientGameTestRecorder.showStep(context, "id", "Fast damage", "Cooldowns no longer apply"));
+            assertThrows(IllegalArgumentException.class, () ->
+                    ClientGameTestRecordingHud.showStep("id", "The limit was removed", ""));
+        });
+
+        assertEquals("", printed);
+    }
+
+    @Test
+    void aCaptionThatDescribesTheModShows() {
+        RecordingTestContext context = new RecordingTestContext();
+
+        String printed = capture(() -> ClientGameTestRecorder.showStep(
+                context, "id", "Rule on: the bed explodes", "Drops go to your inventory instead of the ground"));
+
+        assertTrue(printed.contains("Rule on: the bed explodes"), printed);
+    }
+
     private static String capture(Runnable step) {
         PrintStream original = System.out;
         ByteArrayOutputStream out = new ByteArrayOutputStream();

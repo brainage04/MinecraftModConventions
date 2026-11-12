@@ -316,6 +316,7 @@ public final class ProductionGameTestsPlugin implements Plugin<Project> {
                     task.getDisableSocialInteractionsToast().convention(true);
                     task.getClientRecorderScreen().convention(ClientGameTestOptions.recorderScreen(project.getProviders()));
                     task.getGpuRendering().convention(false);
+                    task.getCaptureFrameRate().convention(ClientGameTestOptions.captureFrameRate(project.getProviders()));
                     task.getServerEulaFile().convention(extension.getServerRunDir().file("eula.txt"));
                 }
         );

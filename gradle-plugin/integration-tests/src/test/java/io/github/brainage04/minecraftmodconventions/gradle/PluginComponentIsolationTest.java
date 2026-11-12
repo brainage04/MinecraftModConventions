@@ -413,6 +413,28 @@ class PluginComponentIsolationTest {
     }
 
     @Test
+    void aRecordingOnACardAt60FramesASecondCapsTheClientAt120() throws IOException {
+        writeLoomFixture(BASE_PLUGIN_ID + "'\n    id '" + RECORDER_PLUGIN_ID + "'\n    id '" + PRODUCTION_PLUGIN_ID,
+                "productionGameTests { includeFabricApiDependency = false }\n");
+
+        GradleRunner.create()
+                .withProjectDir(projectDir.toFile())
+                .withPluginClasspath()
+                .withEnvironment(java.util.Map.of(
+                        "GTR_RECORDING_MANAGED_XVFB", "true",
+                        "GTR_RECORDING_AUDIO_DEVICE", "gametest_recorder_fixture",
+                        "GTR_RECORDING_DISPLAY", ":1",
+                        "GTR_RECORDING_FPS", "60"
+                ))
+                .withArguments("prepareClientGameTestRun", "prepareProductionGameTestRuns")
+                .build();
+
+        assertTrue(Files.readString(projectDir.resolve("build/run/clientGameTest/options.txt")).contains("\nmaxFps:120\n"));
+        assertTrue(Files.readString(projectDir.resolve("build/run/productionClientGameTest/options.txt"))
+                .contains("\nmaxFps:120\n"));
+    }
+
+    @Test
     void bothClientLaunchesGetAStartupDeadline() throws IOException {
         writeLoomFixture(BASE_PLUGIN_ID + "'\n    id '" + RECORDER_PLUGIN_ID + "'\n    id '" + PRODUCTION_PLUGIN_ID, """
                 productionGameTests { includeFabricApiDependency = false }

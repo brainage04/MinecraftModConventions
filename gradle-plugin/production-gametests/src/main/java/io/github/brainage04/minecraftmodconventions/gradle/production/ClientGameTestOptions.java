@@ -27,6 +27,15 @@ public final class ClientGameTestOptions {
     public static final String RECORDER_SCREEN_ENV = "GTR_RECORDING_XVFB_SCREEN";
     /** The recorder's screen when {@value #RECORDER_SCREEN_ENV} is not set. */
     public static final String DEFAULT_RECORDER_SCREEN = "1920x1080x24";
+    /** Environment variable with the rate the recorder captures at, in frames a second; the recorder reads it too. */
+    public static final String CAPTURE_FPS_ENV = "GTR_RECORDING_FPS";
+    /** The capture rate when {@value #CAPTURE_FPS_ENV} is not set. */
+    public static final int DEFAULT_CAPTURE_FPS = 30;
+    /**
+     * The highest {@code maxFps} a client accepts, which vanilla treats as no limit
+     * ({@code Options.UNLIMITED_FRAMERATE_CUTOFF}, {@code Options.java:119} in the 26.3 sources).
+     */
+    static final int UNLIMITED_FRAME_CAP = 260;
     /** The GUI scale of a recording: 1920x1080 at scale 3 is a 640x360 GUI, the shared overlay standard. */
     public static final String SHOWCASE_GUI_SCALE = "3";
     /** The GUI scale of a test run: an 854x480 window at scale 2 still fits the caption panel. */
@@ -84,6 +93,36 @@ public final class ClientGameTestOptions {
                 .orElse(DEFAULT_RECORDER_SCREEN);
     }
 
+    /** The recorder's capture rate from {@value #CAPTURE_FPS_ENV}, {@value #DEFAULT_CAPTURE_FPS} when unset. */
+    public static Provider<Integer> captureFrameRate(ProviderFactory providers) {
+        return providers.environmentVariable(CAPTURE_FPS_ENV)
+                .filter(rate -> !rate.isBlank())
+                .map(ClientGameTestOptions::parseCaptureFrameRate)
+                .orElse(DEFAULT_CAPTURE_FPS);
+    }
+
+    static int parseCaptureFrameRate(String rate) {
+        int parsed;
+        try {
+            parsed = Integer.parseInt(rate.strip());
+        } catch (NumberFormatException exception) {
+            parsed = 0;
+        }
+        if (parsed <= 0) {
+            throw new GradleException("Expected " + CAPTURE_FPS_ENV + " to be a positive whole number, not " + rate);
+        }
+        return parsed;
+    }
+
+    /**
+     * The client's frame cap. A client on the card presents twice as often as the capture samples the window,
+     * so each captured image is a fresh one. The software rasterizer cannot present faster than the default
+     * capture rate, so its cap stays there.
+     */
+    public static int frameCap(boolean gpuRendering, int captureFrameRate) {
+        return gpuRendering ? Math.min(UNLIMITED_FRAME_CAP, 2 * captureFrameRate) : DEFAULT_CAPTURE_FPS;
+    }
+
     /** The width and height of a recorder screen such as {@code 1920x1080x24}. */
     static String[] windowOfScreen(String screen) {
         String[] parts = screen.split("x");
@@ -98,14 +137,16 @@ public final class ClientGameTestOptions {
      * {@link #recorderScreen}) are only used by {@link Profile#SHOWCASE}: the test profile is silent, keeps the
      * default device and has an 854x480 window. {@code joinedFirstServer} suppresses the social interactions
      * toast. {@code gpuRendering} is a recording that renders on the machine's graphics card (see
-     * {@code GTR_RECORDING_DISPLAY} in the client GameTest recorder): it raises the frame cap above the capture rate.
+     * {@code GTR_RECORDING_DISPLAY} in the client GameTest recorder): its frame cap follows
+     * {@code captureFrameRate} (see {@link #frameCap}).
      */
     public static Map<String, String> options(
             Profile profile,
             String soundDevice,
             boolean joinedFirstServer,
             String recorderScreen,
-            boolean gpuRendering
+            boolean gpuRendering,
+            int captureFrameRate
     ) {
         boolean showcase = profile == Profile.SHOWCASE;
         String[] window = showcase ? windowOfScreen(recorderScreen) : new String[] {"854", "480"};
@@ -123,9 +164,7 @@ public final class ClientGameTestOptions {
         // Performance: a fixed frame cap, and no throttling when no input arrives (GameTest input does not count).
         options.put("renderDistance", showcase ? "12" : "5");
         options.put("simulationDistance", "5");
-        // A card presents faster than the 30 frames a second the recorder captures, so every captured image is
-        // a fresh one.
-        options.put("maxFps", gpuRendering ? "60" : "30");
+        options.put("maxFps", Integer.toString(frameCap(gpuRendering, captureFrameRate)));
         options.put("enableVsync", "false");
         options.put("inactivityFpsLimit", "\"minimized\"");
         options.put("graphicsPreset", showcase ? "\"fancy\"" : "\"fast\"");
@@ -173,9 +212,10 @@ public final class ClientGameTestOptions {
             String soundDevice,
             boolean joinedFirstServer,
             String recorderScreen,
-            boolean gpuRendering
+            boolean gpuRendering,
+            int captureFrameRate
     ) {
-        String contents = options(profile, soundDevice, joinedFirstServer, recorderScreen, gpuRendering)
+        String contents = options(profile, soundDevice, joinedFirstServer, recorderScreen, gpuRendering, captureFrameRate)
                 .entrySet().stream()
                 .map(entry -> entry.getKey() + ":" + entry.getValue())
                 .collect(Collectors.joining("\n", "", "\n"));

@@ -12,7 +12,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class ClientGameTestOptionsTest {
     private static Map<String, String> options(ClientGameTestOptions.Profile profile, String screen) {
-        return ClientGameTestOptions.options(profile, "sink", true, screen, false);
+        return ClientGameTestOptions.options(profile, "sink", true, screen, false, ClientGameTestOptions.DEFAULT_CAPTURE_FPS);
     }
 
     @Test
@@ -74,16 +74,32 @@ class ClientGameTestOptionsTest {
     }
 
     @Test
-    void aRecordingOnACardPresentsFasterThanTheCapture() {
+    void aRecordingOnACardPresentsTwiceAsOftenAsTheCapture() {
         Map<String, String> software = ClientGameTestOptions.options(
-                ClientGameTestOptions.Profile.SHOWCASE, "sink", true, "1920x1080", false);
+                ClientGameTestOptions.Profile.SHOWCASE, "sink", true, "1920x1080", false, 30);
         Map<String, String> card = ClientGameTestOptions.options(
-                ClientGameTestOptions.Profile.SHOWCASE, "sink", true, "1920x1080", true);
+                ClientGameTestOptions.Profile.SHOWCASE, "sink", true, "1920x1080", true, 30);
+        Map<String, String> card60 = ClientGameTestOptions.options(
+                ClientGameTestOptions.Profile.SHOWCASE, "sink", true, "1920x1080", true, 60);
 
         assertEquals("30", software.get("maxFps"));
-        // A capture at 30 frames a second needs a fresh image for every one of them.
         assertEquals("60", card.get("maxFps"));
+        assertEquals("120", card60.get("maxFps"));
         assertEquals(software.keySet(), card.keySet());
+    }
+
+    @Test
+    void theFrameCapStaysWithinWhatTheClientAccepts() {
+        assertEquals(260, ClientGameTestOptions.frameCap(true, 200));
+        assertEquals(30, ClientGameTestOptions.frameCap(false, 60));
+    }
+
+    @Test
+    void theCaptureRateIsAPositiveWholeNumber() {
+        assertEquals(60, ClientGameTestOptions.parseCaptureFrameRate(" 60 "));
+        for (String rate : new String[] {"0", "-30", "sixty", "29.97"}) {
+            assertThrows(GradleException.class, () -> ClientGameTestOptions.parseCaptureFrameRate(rate), rate);
+        }
     }
 
     @Test

@@ -55,6 +55,8 @@ public final class ClientGameTestRecordingHud {
     }
 
     public static void showStep(String id, String title, String subtitle) {
+        CaptionWording.requireDescribesTheMod(title);
+        CaptionWording.requireDescribesTheMod(subtitle);
         if (!isEnabledForEnvironment()) {
             return;
         }
