@@ -20,8 +20,10 @@ is torn, and prints each one with the row of the tear in the full-size picture.
 --repair writes OUT.mp4 with each run of torn frames replaced by the frame before it (after it for a run
 that opens the video), as the client GameTest recorder does: a torn frame holds only parts of its two
 neighbours. The video is encoded again (libx264, CRF 18), the audio is copied, and OUT.mp4 is checked
-in turn; the exit code is that check's.
+in turn; the exit code is that check's. Any other argument exits 2 with the usage.
 """
+import argparse
+import json
 import subprocess
 import sys
 
@@ -121,11 +123,24 @@ def repair_filter(torn):
     return ";".join(parts)
 
 
+def frame_rate(average, real):
+    """The stream's frame rate as (numerator, denominator): ffprobe's avg_frame_rate, or r_frame_rate when the
+    average is 0/0, as ffprobe reports it for some streams."""
+    for rate in (average, real):
+        num, den = (int(x) for x in rate.split("/"))
+        if num > 0 and den > 0:
+            return num, den
+    raise ValueError(f"no frame rate: avg_frame_rate {average}, r_frame_rate {real}")
+
+
 def report(video):
-    height, rate = subprocess.run(
-        ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=height,avg_frame_rate",
-         "-of", "csv=p=0", video], check=True, capture_output=True, text=True).stdout.strip().split(",")
-    num, den = (int(x) for x in rate.split("/"))
+    stream = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
+         "stream=height,avg_frame_rate,r_frame_rate", "-of", "json", video],
+        check=True, capture_output=True, text=True).stdout
+    info = json.loads(stream)["streams"][0]
+    height = info["height"]
+    num, den = frame_rate(info["avg_frame_rate"], info["r_frame_rate"])
     tears = torn_frames(video)
     for frame, row in tears:
         print(f"torn frame {frame} ({frame * den / num:.3f} s), tear near row {row * int(height) // ROWS}")
@@ -133,12 +148,21 @@ def report(video):
     return [frame for frame, _ in tears]
 
 
+def arguments(argv):
+    """VIDEO and an optional --repair OUT; anything else exits with a usage error."""
+    parser = argparse.ArgumentParser(description="Finds and repairs torn frames in a recording.")
+    parser.add_argument("video")
+    parser.add_argument("--repair", metavar="OUT")
+    return parser.parse_args(argv)
+
+
 if __name__ == "__main__":
-    torn = report(sys.argv[1])
-    if len(sys.argv) == 4 and sys.argv[2] == "--repair":
-        subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", sys.argv[1], "-filter_complex", repair_filter(torn),
+    args = arguments(sys.argv[1:])
+    torn = report(args.video)
+    if args.repair:
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", args.video, "-filter_complex", repair_filter(torn),
                         "-map", "[video]", "-map", "0:a?", "-c:v", "libx264", "-preset", "medium", "-crf", "18",
                         "-pix_fmt", "yuv420p", "-fps_mode", "passthrough", "-c:a", "copy", "-movflags", "+faststart",
-                        sys.argv[3]], check=True)
-        torn = report(sys.argv[3])
+                        args.repair], check=True)
+        torn = report(args.repair)
     sys.exit(1 if torn else 0)
