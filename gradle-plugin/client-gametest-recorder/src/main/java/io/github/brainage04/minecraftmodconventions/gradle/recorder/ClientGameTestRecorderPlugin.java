@@ -95,9 +95,7 @@ public final class ClientGameTestRecorderPlugin implements Plugin<Project> {
 
     private static void configureProductionGameTests(Project project, ClientGameTestRecorderExtension extension) {
         addRuntimeHelperDependencies(project);
-        Provider<Boolean> recorderManaged = project.getProviders().environmentVariable("GTR_RECORDING_MANAGED_XVFB")
-                .map(Boolean::parseBoolean)
-                .orElse(false);
+        Provider<Boolean> recorderManaged = ClientGameTestOptions.recording(project.getProviders());
         ProductionGameTestExtension production = project.getExtensions().getByType(ProductionGameTestExtension.class);
         production.getClientUseXvfb().convention(recorderManaged.map(managed -> !managed));
         production.getClientSilenceAudio().convention(recorderManaged.map(managed -> !managed));
@@ -183,7 +181,8 @@ public final class ClientGameTestRecorderPlugin implements Plugin<Project> {
 
     private static void configurePrepareTask(Project project, ClientGameTestRecorderExtension extension, PrepareClientGameTestRunTask task) {
         task.getRecordingAudioDevice().convention(recordingAudioDevice(project, extension));
-        task.getProfile().convention(ClientGameTestOptions.profile(task.getRecordingAudioDevice()));
+        task.getProfile().convention(ClientGameTestOptions.profile(
+                ClientGameTestOptions.recording(project.getProviders()), task.getRecordingAudioDevice()));
         task.getDisableSocialInteractionsToast().convention(extension.getDisableSocialInteractionsToast());
         task.getGpuRendering().convention(gpuRendering(project));
         task.getOptionsFile().convention(extension.getRunDir().file("options.txt"));

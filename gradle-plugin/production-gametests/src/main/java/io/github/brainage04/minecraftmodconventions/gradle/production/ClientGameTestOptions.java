@@ -21,8 +21,10 @@ import java.util.stream.Collectors;
  * is written again before every launch, so settings the client saves during a run never carry over to the next one.
  */
 public final class ClientGameTestOptions {
-    /** Environment variable naming the recorder's private PulseAudio sink; the recorder sets it for its build. */
+    /** Environment variable naming the recorder's private PulseAudio sink; the recorder sets it for a screen grab. */
     public static final String RECORDER_AUDIO_DEVICE_ENV = "GTR_RECORDING_AUDIO_DEVICE";
+    /** Environment variable the recorder sets to its recording start signal; only a recording has it. */
+    public static final String RECORDING_SIGNAL_ENV = "CLIENT_GAMETEST_RECORDING_START_SIGNAL";
     /** Environment variable with the recorder's Xvfb screen ({@code WIDTHxHEIGHTxDEPTH}); the recorder sets it. */
     public static final String RECORDER_SCREEN_ENV = "GTR_RECORDING_XVFB_SCREEN";
     /** The recorder's screen when {@value #RECORDER_SCREEN_ENV} is not set. */
@@ -72,15 +74,30 @@ public final class ClientGameTestOptions {
     private ClientGameTestOptions() {
     }
 
+    /** Whether this run is a recording, which only the recorder marks with {@value #RECORDING_SIGNAL_ENV}. */
+    public static Provider<Boolean> recording(ProviderFactory providers) {
+        return providers.environmentVariable(RECORDING_SIGNAL_ENV)
+                .map(signal -> !signal.isBlank())
+                .orElse(false);
+    }
+
     /**
-     * {@code showcase} when the client GameTest recorder has given the run its private audio sink, otherwise
-     * {@code test}. Only the recorder sets a sink, so other runs, including ones that bring their own display, stay
-     * on the test profile.
+     * {@code showcase} for a client the recorder launched, otherwise {@code test}.
+     *
+     * @param recording     whether the recorder launched the run
+     * @param recorderSoundDevice the sink the recorder gave the run, blank when it named none
      */
-    public static Provider<String> profile(Provider<String> recordingAudioDevice) {
-        return recordingAudioDevice
-                .map(device -> device.isBlank() ? Profile.TEST.id() : Profile.SHOWCASE.id())
-                .orElse(Profile.TEST.id());
+    public static Provider<String> profile(Provider<Boolean> recording, Provider<String> recorderSoundDevice) {
+        return recording.zip(recorderSoundDevice, ClientGameTestOptions::profileId);
+    }
+
+    /**
+     * The profile id of a run. A recording used to be the only run with a named sink, but only a screen grab names
+     * one now: a game take renders the game's sound from its own loopback device and names no device, so the
+     * recorder's own mark decides and a named sink keeps its old meaning for runs that set one.
+     */
+    public static String profileId(boolean recording, String recorderSoundDevice) {
+        return recording || !recorderSoundDevice.isBlank() ? Profile.SHOWCASE.id() : Profile.TEST.id();
     }
 
     /**

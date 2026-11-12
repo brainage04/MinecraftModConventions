@@ -115,6 +115,16 @@ class ClientGameTestOptionsTest {
     }
 
     @Test
+    void aRecordingIsShowcaseEvenWhenAGameTakeNamesNoAudioDevice() {
+        // The recorder marks its runs; a game take renders its own sound and names no sink, and its options must
+        // still be the showcase recording profile, not the silent test one.
+        assertEquals("showcase", ClientGameTestOptions.profileId(true, ""));
+        assertEquals("showcase", ClientGameTestOptions.profileId(true, "gametest_recorder_1"));
+        assertEquals("showcase", ClientGameTestOptions.profileId(false, "gametest_recorder_1"));
+        assertEquals("test", ClientGameTestOptions.profileId(false, ""));
+    }
+
+    @Test
     void profilesAreNamedTestAndShowcase() {
         assertEquals(ClientGameTestOptions.Profile.TEST, ClientGameTestOptions.Profile.named("test"));
         assertEquals(ClientGameTestOptions.Profile.SHOWCASE, ClientGameTestOptions.Profile.named("showcase"));
