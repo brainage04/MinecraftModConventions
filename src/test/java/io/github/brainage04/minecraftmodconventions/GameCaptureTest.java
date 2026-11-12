@@ -104,6 +104,16 @@ class GameCaptureTest {
     }
 
     @Test
+    void aClientOnAnotherGraphicsBackendDoesNotStartAGameTake() {
+        assertNull(GameCapture.backendProblem("OpenGL"));
+
+        String vulkan = GameCapture.backendProblem("Vulkan");
+        assertTrue(vulkan.contains("Vulkan"), vulkan);
+        assertTrue(vulkan.contains("GTR_RECORDING_CAPTURE=x11grab"), vulkan);
+        assertTrue(GameCapture.backendProblem(null).contains("no name"), GameCapture.backendProblem(null));
+    }
+
+    @Test
     void aMissingLoopbackDeviceFailsNamingItAndTheScreenGrab() {
         IllegalStateException failure = GameCaptureAudio.loopbackUnavailable();
         String message = failure.getMessage();

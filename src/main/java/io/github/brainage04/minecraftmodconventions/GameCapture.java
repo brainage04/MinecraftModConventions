@@ -48,6 +48,8 @@ public final class GameCapture {
     private static final Poll CLOCK_POLL = new Poll(CLOCK_POLL_NANOS);
 
     private static GameCapture active;
+    /** Why this run cannot capture the game at all; reported once, then never retried. */
+    private static String startFailure;
 
     private final Clock clock;
     private final GpuBuffer[] buffers = new GpuBuffer[BUFFERS];
@@ -138,11 +140,20 @@ public final class GameCapture {
             if (active != null) {
                 return active;
             }
+            if (startFailure != null) {
+                return null;
+            }
             if (!CLOCK_POLL.due(System.nanoTime()) || !Files.isRegularFile(CLOCK)) {
                 return null;
             }
             Clock clock = readClock(CLOCK);
             if (clock == null) {
+                return null;
+            }
+            String backendProblem = backendProblem(RenderSystem.getDevice().getDeviceInfo().backendName());
+            if (backendProblem != null) {
+                startFailure = backendProblem;
+                reportFailure(startFailure);
                 return null;
             }
             active = new GameCapture(clock);
@@ -286,13 +297,34 @@ public final class GameCapture {
         }
     }
 
+    /**
+     * Why the capture cannot run on the graphics backend the client uses, or null on the one it was verified on.
+     * The copy reads the main target's rows and the video flips them ({@code vflip}), which is GL's bottom-up
+     * order and what vanilla's screenshot does ({@code Screenshot.java:102} in the 26.3 sources). No Vulkan run
+     * has checked what {@code VulkanCommandEncoder.copyTextureToBuffer} hands back, so a game take refuses a
+     * backend it has not been tried on instead of shipping a picture that may be upside down.
+     */
+    static String backendProblem(String backendName) {
+        if ("OpenGL".equals(backendName)) {
+            return null;
+        }
+        return "The game capture runs only on OpenGL, and this client renders through "
+                + (backendName == null || backendName.isBlank() ? "a backend with no name" : backendName)
+                + ": its frames are flipped assuming GL's row order, which no Vulkan run has checked. Record with "
+                + "GTR_RECORDING_CAPTURE=x11grab, or run the client on OpenGL.";
+    }
+
     private void fail(String message) {
         if (failure == null) {
             failure = message;
-            // The recorder reads this line from the client's output and fails the take with the reason; see
-            // RecordClientGameTestTask.CAPTURE_FAILURE_LINE.
-            System.err.println("[CLIENT_GAMETEST_RECORDING] CAPTURE_FAILURE: " + message);
+            reportFailure(message);
         }
+    }
+
+    /** Prints the reason on the recorder's failure line, which fails the take with it. */
+    private static void reportFailure(String message) {
+        // The recorder reads this line from the client's output; see RecordClientGameTestTask.CAPTURE_FAILURE_LINE.
+        System.err.println("[CLIENT_GAMETEST_RECORDING] CAPTURE_FAILURE: " + message);
     }
 
     private record Frame(byte[] bytes, long presentUs) {}
