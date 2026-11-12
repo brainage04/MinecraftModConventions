@@ -8,12 +8,14 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 class RecordClientGameTestTaskTest {
     @Test
@@ -70,6 +72,77 @@ class RecordClientGameTestTaskTest {
         assertFalse(nvenc.contains("-pix_fmt"));
         assertEquals("libx264", RecordClientGameTestTask.videoEncoder("libx264").get(1));
         assertThrows(GradleException.class, () -> RecordClientGameTestTask.videoEncoder("hevc_vaapi"));
+    }
+
+    @Test
+    void theEncoderProbeEncodesOneFrameWithTheCapturesOwnOptions() {
+        List<String> encoder = RecordClientGameTestTask.videoEncoder("h264_nvenc");
+        List<String> probe = RecordClientGameTestTask.encoderProbeCommand(encoder);
+
+        assertEquals("ffmpeg", probe.getFirst());
+        assertEquals("1", probe.get(probe.indexOf("-frames:v") + 1));
+        assertEquals(encoder, probe.subList(probe.indexOf("-c:v"), probe.indexOf("-c:v") + encoder.size()));
+        assertEquals(List.of("-f", "null", "-"), probe.subList(probe.size() - 3, probe.size()));
+    }
+
+    @Test
+    void aHostWithoutTheEncoderFailsNamingItBeforeTheClientStarts() {
+        assertNull(RecordClientGameTestTask.encoderProbeFailure("h264_nvenc", 0, ""));
+        String failure = RecordClientGameTestTask.encoderProbeFailure("h264_nvenc", 187,
+                "[h264_nvenc @ 0x5581] Cannot load libcuda.so.1\n");
+
+        assertTrue(failure.contains("cannot encode with h264_nvenc"), failure);
+        assertTrue(failure.contains("Cannot load libcuda.so.1"), failure);
+        assertTrue(failure.contains("the client was not started"), failure);
+        assertTrue(failure.contains("Unset GTR_RECORDING_VIDEO_ENCODER"), failure);
+    }
+
+    @Test
+    void theProbeFailsOnAnEncoderFfmpegLacksAndPassesOnLibx264() throws IOException, InterruptedException {
+        assumeTrue(TornFramesTest.ffmpegAvailable(), "ffmpeg is not installed");
+        Process missing = new ProcessBuilder(RecordClientGameTestTask.encoderProbeCommand(
+                List.of("-c:v", "no_such_encoder"))).redirectErrorStream(true).start();
+        String output = new String(missing.getInputStream().readAllBytes());
+        int status = missing.waitFor();
+        String failure = RecordClientGameTestTask.encoderProbeFailure("no_such_encoder", status, output);
+        assertTrue(failure != null && failure.contains("no_such_encoder"), output);
+
+        Process libx264 = new ProcessBuilder(RecordClientGameTestTask.encoderProbeCommand(
+                RecordClientGameTestTask.videoEncoder("libx264"))).redirectErrorStream(true).start();
+        String libx264Output = new String(libx264.getInputStream().readAllBytes());
+        assertEquals(0, libx264.waitFor(), libx264Output);
+    }
+
+    @Test
+    void aCaptureAbove30FramesASecondFailsOnTheVirtualDisplayBeforeTheClientStarts() {
+        String failure = RecordClientGameTestTask.captureRateFailure(60, null, "display :1 is in use by another recording");
+
+        assertTrue(failure.contains("GTR_RECORDING_FPS=60 needs a recording display on the card"), failure);
+        assertTrue(failure.contains("display :1 is in use by another recording"), failure);
+        assertTrue(failure.contains("The client was not started"), failure);
+        assertNull(RecordClientGameTestTask.captureRateFailure(60, ":1", null));
+        assertNull(RecordClientGameTestTask.captureRateFailure(30, null, null));
+    }
+
+    @Test
+    void onlyACardTakeIsCheckedForTornFrames() {
+        AtomicBoolean checked = new AtomicBoolean();
+        assertEquals(List.of(), RecordClientGameTestTask.tornFramesToReplace(false, 10, 100, () -> {
+            checked.set(true);
+            return List.of(15);
+        }));
+        assertFalse(checked.get(), "the virtual display's take must not run the mask pass");
+
+        // Raw frames 5 and 120 lie outside the kept range [10, 100); raw frame 15 is frame 5 of the saved video.
+        assertEquals(List.of(5, 89), RecordClientGameTestTask.tornFramesToReplace(true, 10, 100,
+                () -> List.of(5, 15, 99, 120)));
+    }
+
+    @Test
+    void aTornFrameLeftAfterTheRepairFailsUnlessTheCheckIsSetToWarn() {
+        assertTrue(RecordClientGameTestTask.failsOnTornFrames("fail"));
+        assertFalse(RecordClientGameTestTask.failsOnTornFrames("warn"));
+        assertThrows(GradleException.class, () -> RecordClientGameTestTask.failsOnTornFrames("off"));
     }
 
     @Test

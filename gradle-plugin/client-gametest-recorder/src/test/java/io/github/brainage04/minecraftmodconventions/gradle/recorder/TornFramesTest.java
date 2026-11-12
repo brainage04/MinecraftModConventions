@@ -91,7 +91,7 @@ class TornFramesTest {
         assertEquals(0, new ProcessBuilder(command).inheritIO().start().waitFor(), String.join(" ", command));
     }
 
-    private static boolean ffmpegAvailable() {
+    static boolean ffmpegAvailable() {
         try {
             return new ProcessBuilder(new ArrayList<>(List.of("ffmpeg", "-version")))
                     .redirectErrorStream(true).redirectOutput(ProcessBuilder.Redirect.DISCARD).start().waitFor() == 0;

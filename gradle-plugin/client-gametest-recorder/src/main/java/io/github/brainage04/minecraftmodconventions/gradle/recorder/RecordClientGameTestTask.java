@@ -35,6 +35,7 @@ import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
@@ -53,6 +54,9 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
 
     /** Environment variable naming the raw capture's video encoder; see {@link #videoEncoder}. */
     static final String VIDEO_ENCODER_ENV = "GTR_RECORDING_VIDEO_ENCODER";
+
+    /** Environment variable that turns a torn frame left after the repair from a failure into a warning. */
+    static final String TEAR_CHECK_ENV = "GTR_RECORDING_TEAR_CHECK";
 
     @Internal
     public abstract DirectoryProperty getProjectDirectory();
@@ -94,6 +98,12 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
         int frameRate = parsePositiveInt(fps, ClientGameTestOptions.CAPTURE_FPS_ENV);
         String videoEncoderName = env(VIDEO_ENCODER_ENV, "libx264");
         List<String> videoEncoder = videoEncoder(videoEncoderName);
+        boolean failOnTornFrames = failsOnTornFrames(env(TEAR_CHECK_ENV, "fail"));
+        CommandResult encoderProbe = runCommand(encoderProbeCommand(videoEncoder), Map.of(), true);
+        String encoderProblem = encoderProbeFailure(videoEncoderName, encoderProbe.status(), encoderProbe.output());
+        if (encoderProblem != null) {
+            throw new GradleException(encoderProblem);
+        }
         if (truthy(env("GTR_RECORDING_AUDIO_SET_DEFAULT", "false"))) {
             throw new GradleException("Changing the desktop default audio sink is prohibited; recording uses a dedicated route.");
         }
@@ -172,6 +182,10 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
             xvfbProcess = display.process();
             gpuDisplay = display.gpuDisplay();
             gpuFallback = display.fallbackReason();
+            String rateProblem = captureRateFailure(frameRate, gpuDisplay, gpuFallback);
+            if (rateProblem != null) {
+                throw new RecordingPreflightException(rateProblem);
+            }
 
             audioSinkId = createVirtualAudioSink(audioSinkName);
 
@@ -311,6 +325,8 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
             }
             gradleStatus = gradleProcess.exitValue();
             logThread.join(1000L);
+        } catch (RecordingPreflightException exception) {
+            throw exception;
         } catch (IOException | RuntimeException exception) {
             captureFailure = exception.toString();
             getLogger().error("Client GameTest recording failed; retaining raw evidence.", exception);
@@ -365,7 +381,8 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
 
         if (recordingStopObserved && rawCapture.isFile()) {
             try {
-                trimToWorldBoundaries(rawCapture, output, boundaryEvidence, prePadding, postPadding, frameRate);
+                trimToWorldBoundaries(rawCapture, output, boundaryEvidence, prePadding, postPadding, frameRate,
+                        gpuDisplay != null, failOnTornFrames);
             } catch (RuntimeException exception) {
                 captureFailure = exception.toString();
                 getLogger().error("Could not trim recording; retaining raw boundary evidence.", exception);
@@ -552,6 +569,67 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
             case "libx264" -> List.of("-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p");
             case "h264_nvenc" -> List.of("-c:v", "h264_nvenc", "-preset", "p4", "-rc", "constqp", "-qp", "18");
             default -> throw new GradleException(VIDEO_ENCODER_ENV + " must be libx264 or h264_nvenc, not " + name);
+        };
+    }
+
+    /** The command that encodes one frame with the capture's encoder options, run before the client starts. */
+    static List<String> encoderProbeCommand(List<String> encoder) {
+        List<String> command = new ArrayList<>(List.of(
+                "ffmpeg", "-v", "error", "-f", "lavfi", "-i", "color=c=black:s=256x256", "-frames:v", "1"));
+        command.addAll(encoder);
+        command.addAll(List.of("-f", "null", "-"));
+        return command;
+    }
+
+    /** Why the capture cannot encode with {@code encoder}, from the probe's exit status and output, or null. */
+    static String encoderProbeFailure(String encoder, int status, String output) {
+        if (status == 0) {
+            return null;
+        }
+        return "ffmpeg cannot encode with " + encoder + " on this host, so the client was not started ("
+                + VIDEO_ENCODER_ENV + "=" + encoder + "): " + output.strip()
+                + (encoder.equals("libx264") ? "" : ". Unset " + VIDEO_ENCODER_ENV + " to encode on the CPU with libx264.");
+    }
+
+    /**
+     * Why a capture at {@code frameRate} cannot run on the display it got, or null. Above the default rate the
+     * client needs the card: on the recorder's own Xvfb its frame cap stays at the default (see
+     * {@link ClientGameTestOptions#frameCap}), so every other captured frame would repeat the one before.
+     */
+    static String captureRateFailure(int frameRate, String gpuDisplay, String fallbackReason) {
+        if (frameRate <= ClientGameTestOptions.DEFAULT_CAPTURE_FPS || gpuDisplay != null) {
+            return null;
+        }
+        return ClientGameTestOptions.CAPTURE_FPS_ENV + "=" + frameRate + " needs a recording display on the card, "
+                + "and this recording got the virtual display"
+                + (fallbackReason == null ? "" : " (" + fallbackReason + ")")
+                + ", where the client presents at most " + ClientGameTestOptions.DEFAULT_CAPTURE_FPS
+                + " frames a second. The client was not started.";
+    }
+
+    /**
+     * The torn frames of the kept range {@code [firstKept, endKept)} of the raw capture, by frame number of the
+     * saved video. Only a take on a card display is checked: there x11grab's copy does not wait for the client's
+     * present (see {@link TornFrames}). On the recorder's own Xvfb the check found one frame in 19 takes, and that
+     * frame was a genuine image, so {@code rawTornFrames} is not run there.
+     */
+    static List<Integer> tornFramesToReplace(boolean cardDisplay, long firstKept, long endKept,
+            Supplier<List<Integer>> rawTornFrames) {
+        if (!cardDisplay) {
+            return List.of();
+        }
+        return rawTornFrames.get().stream()
+                .filter(frame -> frame >= firstKept && frame < endKept)
+                .map(frame -> (int) (frame - firstKept))
+                .toList();
+    }
+
+    /** Whether a torn frame left after the repair fails the recording: {@value #TEAR_CHECK_ENV} is fail or warn. */
+    static boolean failsOnTornFrames(String mode) {
+        return switch (mode) {
+            case "fail" -> true;
+            case "warn" -> false;
+            default -> throw new GradleException(TEAR_CHECK_ENV + " must be fail or warn, not " + mode);
         };
     }
 
@@ -904,7 +982,7 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
     }
 
     private void trimToWorldBoundaries(File raw, File output, Map<String, Object> evidence,
-            double prePadding, double postPadding, int fps) {
+            double prePadding, double postPadding, int fps, boolean cardDisplay, boolean failOnTornFrames) {
         double firstTick = Long.parseLong(evidence.get("firstWorldTickStartUs").toString()) / 1_000_000.0;
         double lastTick = Long.parseLong(evidence.get("lastWorldTickEndUs").toString()) / 1_000_000.0;
         double requestedStart = firstTick - prePadding;
@@ -966,12 +1044,7 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
         }
         String start = String.format(Locale.ROOT, "%.6f", selectedStart);
         String end = String.format(Locale.ROOT, "%.6f", selectedEnd);
-        long firstKept = startIndex;
-        long endKept = endIndex;
-        List<Integer> torn = tornFrames(raw).stream()
-                .filter(frame -> frame >= firstKept && frame < endKept)
-                .map(frame -> (int) (frame - firstKept))
-                .toList();
+        List<Integer> torn = tornFramesToReplace(cardDisplay, startIndex, endIndex, () -> tornFrames(raw));
         if (!torn.isEmpty()) {
             getLogger().lifecycle("Replacing {} torn frame(s) with the frame before each: {}", torn.size(), torn);
         }
@@ -984,10 +1057,17 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
                 "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p",
                 "-fps_mode", "passthrough", "-enc_time_base:v", "demux", "-c:a", "aac", "-b:a", "160k",
                 "-movflags", "+faststart", output.getAbsolutePath()));
-        evidence.put("tornFramesReplaced", torn);
-        List<Integer> left = tornFrames(output);
-        if (!left.isEmpty()) {
-            throw new GradleException("The recording still has torn frames after the repair: " + left);
+        if (cardDisplay) {
+            evidence.put("tornFramesReplaced", torn);
+            List<Integer> left = tornFrames(output);
+            if (!left.isEmpty()) {
+                evidence.put("tornFramesLeft", left);
+                String message = "The recording still has torn frames after the repair: " + left;
+                if (failOnTornFrames) {
+                    throw new GradleException(message + ". " + TEAR_CHECK_ENV + "=warn keeps such a take.");
+                }
+                getLogger().warn("{} ({}=warn keeps the take).", message, TEAR_CHECK_ENV);
+            }
         }
         evidence.put("requestedStartEpochSeconds", requestedStart);
         evidence.put("requestedEndEpochSeconds", requestedEnd);
@@ -1231,8 +1311,14 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
         }
     }
 
-
     private record CommandResult(int status, String output) {
+    }
+
+    /** A check that stops the recording before the client starts, failing the task with only its own message. */
+    private static final class RecordingPreflightException extends GradleException {
+        private RecordingPreflightException(String message) {
+            super(message);
+        }
     }
 
     /**
