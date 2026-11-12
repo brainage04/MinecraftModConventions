@@ -85,6 +85,16 @@ public final class ClientGameTestRecorder {
         context.runOnClient(_ -> ClientGameTestRecordingHud.log(message));
     }
 
+    /**
+     * Moves the performance overlay to {@code placement}, or hides it with {@link PerformanceOverlayPlacement#HIDDEN},
+     * from the next frame until the next call. {@link #startRecording} puts it back at
+     * {@link PerformanceOverlayPlacement#TOP_RIGHT}, under the caption panel.
+     */
+    public static void placePerformanceOverlay(ClientGameTestContext context, PerformanceOverlayPlacement placement) {
+        Objects.requireNonNull(context, "context");
+        Objects.requireNonNull(placement, "placement");
+        context.runOnClient(_ -> ClientGameTestRecordingHud.placePerformanceOverlay(placement));
+    }
 
     private static String clean(String value) {
         return value == null ? "" : value.strip().replace('\n', ' ');

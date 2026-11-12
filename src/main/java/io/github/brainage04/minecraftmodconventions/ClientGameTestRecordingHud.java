@@ -5,12 +5,14 @@ import net.fabricmc.fabric.api.client.rendering.v1.hud.VanillaHudElements;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.screens.ChatScreen;
 import net.minecraft.resources.Identifier;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 
 public final class ClientGameTestRecordingHud {
     private static final Identifier HUD_ID = Identifier.fromNamespaceAndPath(MinecraftModConventions.MOD_ID, "gametest_recording_feedback");
@@ -19,6 +21,11 @@ public final class ClientGameTestRecordingHud {
     private static final int SCREEN_MARGIN = 5;
     private static final int PANEL_PADDING = 4;
     private static final int LINE_GAP = 2;
+    /**
+     * The height of the chat screen's input box above the bottom of the GUI: {@code ChatScreen.java:275} in the 26.3
+     * sources fills it from {@code height - 14}, and vanilla exposes no constant for it.
+     */
+    static final int CHAT_INPUT_HEIGHT = 14;
     /** Minecraft's default font line height, which the panel's height is computed from. */
     static final int FONT_LINE_HEIGHT = 9;
     private static final int MAX_WIDTH = 360;
@@ -32,6 +39,7 @@ public final class ClientGameTestRecordingHud {
     private static final Object LOG_LOCK = new Object();
     private static final ArrayDeque<String> LOG_LINES = new ArrayDeque<>(MAX_LOG_LINES);
     private static volatile Step currentStep;
+    private static volatile PerformanceOverlayPlacement overlayPlacement = PerformanceOverlayPlacement.TOP_RIGHT;
     private static boolean registered;
 
     private ClientGameTestRecordingHud() {
@@ -84,8 +92,18 @@ public final class ClientGameTestRecordingHud {
         }
     }
 
+    /** Puts the performance overlay at {@code placement} until the next call or the next recording. */
+    public static void placePerformanceOverlay(PerformanceOverlayPlacement placement) {
+        overlayPlacement = Objects.requireNonNull(placement, "placement");
+    }
+
+    static PerformanceOverlayPlacement performanceOverlayPlacement() {
+        return overlayPlacement;
+    }
+
     public static void clear() {
         currentStep = null;
+        overlayPlacement = PerformanceOverlayPlacement.TOP_RIGHT;
         synchronized (LOG_LOCK) {
             LOG_LINES.clear();
         }
@@ -127,29 +145,63 @@ public final class ClientGameTestRecordingHud {
                     true);
             textY += lineHeight;
         }
-        renderPerformance(graphics, font, client);
+        renderPerformance(graphics, font, client, SCREEN_MARGIN + panelHeight(captionLinesAtMost(SHOWCASE_PROFILE)));
     }
 
     /**
-     * The performance overlay, in the bottom-right corner: the caption panel holds the top right, mods put
-     * their own HUDs in the top left, chat sits in the bottom left and the hotbar in the bottom centre.
+     * The most lines the caption panel holds: a title card has a header, a title and a subtitle, and a diagnostic
+     * panel adds the scenario id and its log lines. The overlay sits under that height, so it does not move when a
+     * caption has fewer lines.
      */
-    private static void renderPerformance(GuiGraphicsExtractor graphics, Font font, Minecraft client) {
-        List<String> lines = RecordingPerformance.sample(client);
+    static int captionLinesAtMost(boolean showcase) {
+        return showcase ? 3 : 4 + MAX_LOG_LINES;
+    }
+
+    private static void renderPerformance(GuiGraphicsExtractor graphics, Font font, Minecraft client, int captionBottom) {
+        boolean recording = ClientGameTestRecordingSession.isEnabled();
+        List<String> lines = recording ? RecordingPerformance.sample(client) : List.of();
         int width = 0;
         for (String line : lines) {
             width = Math.max(width, font.width(line));
         }
         int panelWidth = panelWidth(width);
         int panelHeight = panelHeight(lines.size());
-        int panelX = client.getWindow().getGuiScaledWidth() - panelWidth - SCREEN_MARGIN;
-        int panelY = client.getWindow().getGuiScaledHeight() - panelHeight - SCREEN_MARGIN;
+        int[] position = performancePanel(recording, overlayPlacement, client.getWindow().getGuiScaledWidth(),
+                client.getWindow().getGuiScaledHeight(), captionBottom, panelWidth, panelHeight,
+                client.gui.screen() instanceof ChatScreen);
+        if (position == null) {
+            return;
+        }
+        int panelX = position[0];
+        int panelY = position[1];
         graphics.fill(panelX, panelY, panelX + panelWidth, panelY + panelHeight, BACKGROUND_COLOR);
         int textY = panelY + PANEL_PADDING;
         for (String line : lines) {
             graphics.text(font, line, panelX + PANEL_PADDING, textY, LABEL_COLOR, true);
             textY += FONT_LINE_HEIGHT + LINE_GAP;
         }
+    }
+
+    /**
+     * The performance overlay's top-left corner, or null when it is not drawn: outside a recording, or hidden.
+     * {@link PerformanceOverlayPlacement#TOP_RIGHT} sits right under the caption panel at its tallest, whose bottom
+     * edge is {@code captionBottom}. A bottom placement rises above the chat screen's input box while chat is open.
+     */
+    static int[] performancePanel(boolean recording, PerformanceOverlayPlacement placement, int guiWidth,
+            int guiHeight, int captionBottom, int panelWidth, int panelHeight, boolean chatOpen) {
+        if (!recording) {
+            return null;
+        }
+        int left = SCREEN_MARGIN;
+        int right = guiWidth - panelWidth - SCREEN_MARGIN;
+        int bottom = guiHeight - panelHeight - SCREEN_MARGIN - (chatOpen ? CHAT_INPUT_HEIGHT : 0);
+        return switch (placement) {
+            case TOP_RIGHT -> new int[] {right, captionBottom + LINE_GAP};
+            case TOP_LEFT -> new int[] {left, SCREEN_MARGIN};
+            case BOTTOM_LEFT -> new int[] {left, bottom};
+            case BOTTOM_RIGHT -> new int[] {right, bottom};
+            case HIDDEN -> null;
+        };
     }
 
     private static List<HudLine> lines() {
