@@ -52,6 +52,13 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
     /** Frames {@link #requireChangingPicture} decodes beside the four boundary images of a capture. */
     static final int PICTURE_SAMPLES = 8;
 
+    /**
+     * Raw frames ffmpeg's input thread may hold on a game take's video pipe. One rawvideo packet is one whole
+     * frame, so this queue is what a slow encoder costs in memory: four 1920x1080 RGBA frames are 33 MB, where
+     * ffmpeg's 64 would be 530 MB beside the client's own 75 MB, four GPU buffers and the muxer queue below.
+     */
+    static final int VIDEO_QUEUE_PACKETS = 4;
+
     /** Environment variable naming the raw capture's video encoder; see {@link #videoEncoder}. */
     static final String VIDEO_ENCODER_ENV = "GTR_RECORDING_VIDEO_ENCODER";
 
@@ -719,7 +726,8 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
         List<String> command = new ArrayList<>(List.of(
                 "ffmpeg", "-y", "-copyts", "-stats_period", "0.05", "-progress", progress,
                 "-f", "rawvideo", "-pix_fmt", "rgba", "-video_size", videoSize,
-                "-framerate", Integer.toString(frameRate), "-thread_queue_size", "64", "-i", videoPipe,
+                "-framerate", Integer.toString(frameRate), "-thread_queue_size",
+                Integer.toString(VIDEO_QUEUE_PACKETS), "-i", videoPipe,
                 "-f", "s16le", "-ar", Integer.toString(GAME_SOUND_RATE), "-ac", "2",
                 "-thread_queue_size", "1024", "-i", audioPipe,
                 "-map", "0:v:0", "-map", "1:a:0",

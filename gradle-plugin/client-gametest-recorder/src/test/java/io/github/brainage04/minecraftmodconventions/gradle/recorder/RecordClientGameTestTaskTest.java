@@ -52,6 +52,33 @@ class RecordClientGameTestTaskTest {
     }
 
     @Test
+    void theGameCaptureHoldsFewRawFramesSoItsInputQueueStaysSmall() {
+        List<String> command = RecordClientGameTestTask.gameCaptureCommand(30, "1920x1080", 53_834_985_352L,
+                "video.fifo", "audio.fifo", "progress.txt", "audio.txt", "raw.mkv",
+                RecordClientGameTestTask.videoEncoder("libx264"));
+
+        // One rawvideo packet is one whole frame, so the video input's queue bounds what a slow encoder holds:
+        // four 1920x1080 RGBA frames are 33 MB, where ffmpeg's 64 would be over 500 MB.
+        int videoInput = command.indexOf("-i");
+        int audioInput = command.lastIndexOf("-i");
+        int videoQueue = command.subList(0, videoInput).lastIndexOf("-thread_queue_size");
+        assertEquals(4, Integer.parseInt(command.get(videoQueue + 1)));
+        // The sound input keeps its queue: one packet there is a few milliseconds of samples.
+        int audioQueue = command.subList(videoInput, audioInput).lastIndexOf("-thread_queue_size");
+        assertEquals(1024, Integer.parseInt(command.get(audioQueue + videoInput + 1)));
+    }
+
+    @Test
+    void theScreenGrabHasNoVideoInputQueueToGrow() {
+        List<String> command = RecordClientGameTestTask.captureCommand(
+                "30", "1920x1080", ":90", "sink.monitor", "progress.txt", "audio.txt", "raw.mkv", 0, 0,
+                RecordClientGameTestTask.videoEncoder("libx264"));
+
+        assertFalse(command.subList(0, command.indexOf("-i")).contains("-thread_queue_size"),
+                "x11grab's own queue must stay at ffmpeg's default: " + command);
+    }
+
+    @Test
     void theCaptureStartsAtTheClientsWindowRatherThanTheDisplayOrigin() {
         List<String> command = RecordClientGameTestTask.captureCommand(
                 "30", "1920x1080", ":1", "sink.monitor", "progress.txt", "audio.txt", "raw.mkv", 320, 180,
