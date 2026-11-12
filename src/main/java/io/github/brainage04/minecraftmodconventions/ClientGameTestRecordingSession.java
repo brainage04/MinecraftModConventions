@@ -128,15 +128,20 @@ public final class ClientGameTestRecordingSession {
         }
     }
 
-    /** One rendered frame's performance numbers, kept while the capture runs; see {@link RecordingPerformanceStats}. */
-    public static void recordPerformance(int fps, double frameTimeMs, double mspt, double tickRate, long usedBytes,
+    /**
+     * One rendered frame's performance numbers, kept while the capture runs; see {@link RecordingPerformanceStats}.
+     * {@code server} is null when no server is in reach or it is paused.
+     */
+    static void recordPerformance(int fps, double frameTimeMs, ServerTickWindow.Reading server, long usedBytes,
             long maxBytes) {
+        int second;
         synchronized (ClientGameTestRecordingSession.class) {
             if (!ENABLED || !ready || finished) {
                 return;
             }
+            second = firstTickUs == 0 ? -1 : (int) ((epochMicros() - firstTickUs) / 1_000_000L);
         }
-        PERFORMANCE.add(fps, frameTimeMs, mspt, tickRate, usedBytes, maxBytes);
+        PERFORMANCE.add(fps, frameTimeMs, server, usedBytes, maxBytes, second);
     }
 
     public static synchronized void worldCleared() {

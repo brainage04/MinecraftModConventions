@@ -1,13 +1,14 @@
 package io.github.brainage04.minecraftmodconventions;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Properties;
 
 /**
  * The performance overlay's lines and the summary a recording's metadata keeps: the client's frame rate and
- * the time it spends on a frame, the server's ticks per second and milliseconds per tick, and the memory the
- * client's JVM uses.
+ * the time it spends rendering a frame, the server's ticks per second and milliseconds per tick (see
+ * {@link ServerTickWindow}), and the client's Java heap.
  */
 final class RecordingPerformanceStats {
     private static final double MEBIBYTE = 1024.0 * 1024.0;
@@ -23,40 +24,57 @@ final class RecordingPerformanceStats {
     private double msptTotal;
     private double msptMax;
     private double tpsMin = Double.MAX_VALUE;
+    /** Per second of the recording: the lowest ticks per second and the most milliseconds a tick took. */
+    private final List<double[]> seconds = new ArrayList<>();
     private double memoryMaxMb;
     private double memoryLimitMb;
 
-    /** One rendered frame's numbers; {@code mspt} is NaN when no server is in reach. */
-    synchronized void add(int fps, double frameTimeMs, double mspt, double tickRate, long usedBytes, long maxBytes) {
+    /**
+     * One rendered frame's numbers, {@code second} whole seconds after the first world tick; {@code server} is null
+     * when no server is in reach or it is paused.
+     */
+    synchronized void add(int fps, double frameTimeMs, ServerTickWindow.Reading server, long usedBytes, long maxBytes,
+            int second) {
         frames++;
         fpsTotal += fps;
         fpsMin = Math.min(fpsMin, fps);
         frameTimeMaxMs = Math.max(frameTimeMaxMs, frameTimeMs);
         frameTimeBuckets[(int) Math.min(FRAME_TIME_BUCKETS, Math.max(0, Math.floor(frameTimeMs)))]++;
-        if (!Double.isNaN(mspt)) {
+        if (server != null) {
             serverSamples++;
-            msptTotal += mspt;
-            msptMax = Math.max(msptMax, mspt);
-            tpsMin = Math.min(tpsMin, tps(mspt, tickRate));
+            msptTotal += server.mspt();
+            msptMax = Math.max(msptMax, server.msptMax());
+            tpsMin = Math.min(tpsMin, server.tps());
+            if (second >= 0) {
+                while (seconds.size() <= second) {
+                    seconds.add(null);
+                }
+                double[] worst = seconds.get(second);
+                if (worst == null) {
+                    seconds.set(second, new double[] {server.tps(), server.msptMax()});
+                } else {
+                    worst[0] = Math.min(worst[0], server.tps());
+                    worst[1] = Math.max(worst[1], server.msptMax());
+                }
+            }
         }
         memoryMaxMb = Math.max(memoryMaxMb, usedBytes / MEBIBYTE);
         memoryLimitMb = maxBytes / MEBIBYTE;
     }
 
-    /** The ticks the server manages a second: its tick rate, or fewer when a tick takes longer than its slot. */
-    static double tps(double mspt, double tickRate) {
-        return mspt <= 0 ? tickRate : Math.min(tickRate, 1000.0 / mspt);
-    }
-
-    static List<String> overlayLines(int fps, double frameTimeMs, double mspt, double tickRate, long usedBytes,
-            long maxBytes) {
-        String server = Double.isNaN(mspt)
-                ? "TPS -"
-                : String.format(Locale.ROOT, "TPS %.1f, %.1f mspt", tps(mspt, tickRate), mspt);
+    static List<String> overlayLines(int fps, double frameTimeMs, ServerTickWindow.Reading server, boolean serverPaused,
+            long usedBytes, long maxBytes) {
+        String serverLine;
+        if (server != null) {
+            serverLine = String.format(Locale.ROOT, "TPS %.1f, mspt %.1f, max %.1f", server.tps(), server.mspt(),
+                    server.msptMax());
+        } else {
+            serverLine = serverPaused ? "TPS - (paused)" : "TPS -";
+        }
         return List.of(
                 String.format(Locale.ROOT, "%d fps, frame %.1f ms", fps, frameTimeMs),
-                server,
-                String.format(Locale.ROOT, "RAM %.0f/%.0f MB", usedBytes / MEBIBYTE, maxBytes / MEBIBYTE));
+                serverLine,
+                String.format(Locale.ROOT, "heap %.0f/%.0f MB", usedBytes / MEBIBYTE, maxBytes / MEBIBYTE));
     }
 
     /** The summary, as {@code perf*} properties, or none when no frame was sampled. */
@@ -75,6 +93,14 @@ final class RecordingPerformanceStats {
             summary.setProperty("perfMsptMean", format(msptTotal / serverSamples));
             summary.setProperty("perfMsptMax", format(msptMax));
             summary.setProperty("perfTpsMin", format(tpsMin));
+            List<String> tps = new ArrayList<>();
+            List<String> mspt = new ArrayList<>();
+            for (double[] second : seconds) {
+                tps.add(second == null ? "-" : String.format(Locale.ROOT, "%.1f", second[0]));
+                mspt.add(second == null ? "-" : String.format(Locale.ROOT, "%.1f", second[1]));
+            }
+            summary.setProperty("perfTpsMinPerSecond", String.join(" ", tps));
+            summary.setProperty("perfMsptMaxPerSecond", String.join(" ", mspt));
         }
         summary.setProperty("perfMemoryMaxMb", format(memoryMaxMb));
         summary.setProperty("perfMemoryLimitMb", format(memoryLimitMb));
