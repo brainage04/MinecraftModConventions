@@ -14,7 +14,7 @@ class RecordingPerformanceStatsTest {
 
     @Test
     void theOverlayShowsFramesTicksAndMemoryInThreeShortLines() {
-        assertEquals(List.of("98 fps, 10.2 ms", "TPS 20.0, 12.5 mspt", "1400/4096 MB"),
+        assertEquals(List.of("98 fps, frame 10.2 ms", "TPS 20.0, 12.5 mspt", "RAM 1400/4096 MB"),
                 RecordingPerformanceStats.overlayLines(98, 10.24, 12.5, 20.0, 1400 * MB, 4096 * MB));
         assertEquals("TPS -", RecordingPerformanceStats.overlayLines(60, 5, Double.NaN, Double.NaN, MB, MB).get(1));
     }

@@ -54,9 +54,9 @@ final class RecordingPerformanceStats {
                 ? "TPS -"
                 : String.format(Locale.ROOT, "TPS %.1f, %.1f mspt", tps(mspt, tickRate), mspt);
         return List.of(
-                String.format(Locale.ROOT, "%d fps, %.1f ms", fps, frameTimeMs),
+                String.format(Locale.ROOT, "%d fps, frame %.1f ms", fps, frameTimeMs),
                 server,
-                String.format(Locale.ROOT, "%.0f/%.0f MB", usedBytes / MEBIBYTE, maxBytes / MEBIBYTE));
+                String.format(Locale.ROOT, "RAM %.0f/%.0f MB", usedBytes / MEBIBYTE, maxBytes / MEBIBYTE));
     }
 
     /** The summary, as {@code perf*} properties, or none when no frame was sampled. */
