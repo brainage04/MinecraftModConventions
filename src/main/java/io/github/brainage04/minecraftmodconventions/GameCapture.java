@@ -102,12 +102,13 @@ public final class GameCapture {
     /**
      * Call right before the present, on the render thread: holds the present until the next slot when the present
      * before it still owns the current one, then copies the frame out of {@code target}. A capture that has failed
-     * copies nothing more; the recorder fails the take with the reason.
+     * copies nothing more, and one whose pipe has closed neither copies nor waits; the recorder fails a failed take
+     * with the reason.
      */
     public static void beforePresent(RenderTarget target) {
         GameCapture capture = capture();
         GpuTexture texture = target.getColorTexture();
-        if (capture == null || texture == null || capture.failure != null) {
+        if (capture == null || texture == null || capture.failure != null || capture.stopped) {
             return;
         }
         if (target.width != capture.clock.width() || target.height != capture.clock.height()) {

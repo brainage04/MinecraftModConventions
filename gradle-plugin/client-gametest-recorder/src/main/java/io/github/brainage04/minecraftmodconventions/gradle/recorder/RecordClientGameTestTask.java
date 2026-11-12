@@ -187,10 +187,12 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
         boolean audioNonSilent = false;
         String captureFailure = null;
         Map<String, String> processEnvironment = new LinkedHashMap<>(System.getenv());
+        // A game take names no sound device; the client's own recording mark still selects the showcase options.
+        String audioDevice = audioRoute.sink() == null ? "" : audioRoute.sink();
         List<String> gradleCommand = List.of(
                 "./gradlew",
                 "--no-daemon",
-                "-P" + getRecordingAudioDeviceProjectProperty().get() + "=" + (audioRoute.sink() == null ? "" : audioRoute.sink()),
+                "-P" + getRecordingAudioDeviceProjectProperty().get() + "=" + audioDevice,
                 getRunTaskName().get()
         );
 
