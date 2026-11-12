@@ -173,7 +173,9 @@ public final class ClientGameTestOptions {
         options.put("entityShadows", Boolean.toString(showcase));
         options.put("improvedTransparency", "false");
         options.put("renderClouds", "\"false\"");
-        options.put("particles", "2");
+        // ParticleStatus ids (ParticleStatus.java:12-14 in the 26.3 sources): a recording shows every particle (ALL,
+        // 0). A test run keeps MINIMAL (2), which drops almost every particle (ClientLevel.java:959-987).
+        options.put("particles", showcase ? "0" : "2");
         options.put("biomeBlendRadius", "0");
         options.put("chunkSectionFadeInTime", "0.0");
         options.put("entityDistanceScaling", "0.5");

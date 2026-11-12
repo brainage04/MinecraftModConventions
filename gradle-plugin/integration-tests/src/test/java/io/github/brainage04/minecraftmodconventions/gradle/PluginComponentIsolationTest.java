@@ -405,6 +405,7 @@ class PluginComponentIsolationTest {
                 .replace("ao:false", "ao:true")
                 .replace("cutoutLeaves:false", "cutoutLeaves:true")
                 .replace("entityShadows:false", "entityShadows:true")
+                .replace("particles:2", "particles:0")
                 .replace("soundDevice:\"\"", "soundDevice:\"gametest_recorder_fixture\"")
                 .replace("soundCategory_master:0.0", "soundCategory_master:0.7")
                 .replaceAll("(soundCategory_(?!master|music)[a-z]+):0\\.0", "$1:1.0");

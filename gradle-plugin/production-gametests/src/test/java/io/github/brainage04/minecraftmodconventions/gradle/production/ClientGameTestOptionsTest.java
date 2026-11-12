@@ -37,6 +37,7 @@ class ClientGameTestOptionsTest {
                 Map.entry("ao", "true"),
                 Map.entry("cutoutLeaves", "true"),
                 Map.entry("entityShadows", "true"),
+                Map.entry("particles", "0"),
                 Map.entry("soundDevice", "\"sink\""),
                 Map.entry("soundCategory_master", "0.7"),
                 Map.entry("soundCategory_record", "1.0"),

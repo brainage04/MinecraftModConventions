@@ -287,7 +287,7 @@ Client GameTests (`runClientGameTest`), production client GameTests (`runProduct
 | `graphicsPreset` | `"fast"` | `"fancy"` |
 | `ao`, `cutoutLeaves`, `entityShadows` | `false` | `true` |
 | `improvedTransparency`, `renderClouds` | `false`, `"false"` | same |
-| `particles` | `2` (minimal) | same |
+| `particles` | `2` (minimal) | `0` (all), so effect particles such as poison and wither swirls show |
 | `biomeBlendRadius`, `chunkSectionFadeInTime`, `entityDistanceScaling` | `0`, `0.0`, `0.5` | same |
 | `mipmapLevels`, `maxAnisotropyBit`, `menuBackgroundBlurriness`, `prioritizeChunkUpdates`, `weatherRadius` | `0`, `1`, `0`, `0`, `5` | same |
 | `soundDevice` | `""` | the recorder's private sink |
