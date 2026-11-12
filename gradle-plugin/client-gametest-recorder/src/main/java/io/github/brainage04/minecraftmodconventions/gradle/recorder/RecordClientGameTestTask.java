@@ -947,13 +947,29 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
         }
         String start = String.format(Locale.ROOT, "%.6f", selectedStart);
         String end = String.format(Locale.ROOT, "%.6f", selectedEnd);
+        long firstKept = startIndex;
+        long endKept = endIndex;
+        List<Integer> torn = tornFrames(raw).stream()
+                .filter(frame -> frame >= firstKept && frame < endKept)
+                .map(frame -> (int) (frame - firstKept))
+                .toList();
+        if (!torn.isEmpty()) {
+            getLogger().lifecycle("Replacing {} torn frame(s) with the frame before each: {}", torn.size(), torn);
+        }
         // Reserve 6 dB of AAC reconstruction headroom independently of game-mix peaks.
         runCommand(List.of("ffmpeg", "-y", "-copyts", "-i", raw.getAbsolutePath(),
-                "-vf", "trim=start_frame=" + startIndex + ":end_frame=" + endIndex + ",setpts=PTS-STARTPTS",
+                "-filter_complex", "[0:v]trim=start_frame=" + startIndex + ":end_frame=" + endIndex
+                        + ",setpts=PTS-STARTPTS[trimmed];" + TornFrames.repairFilter("trimmed", "video", torn),
+                "-map", "[video]", "-map", "0:a:0",
                 "-af", "atrim=start=" + start + ":end=" + end + ",asetpts=PTS-" + start + "/TB,volume=0.5",
                 "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p",
                 "-fps_mode", "passthrough", "-enc_time_base:v", "demux", "-c:a", "aac", "-b:a", "160k",
                 "-movflags", "+faststart", output.getAbsolutePath()));
+        evidence.put("tornFramesReplaced", torn);
+        List<Integer> left = tornFrames(output);
+        if (!left.isEmpty()) {
+            throw new GradleException("The recording still has torn frames after the repair: " + left);
+        }
         evidence.put("requestedStartEpochSeconds", requestedStart);
         evidence.put("requestedEndEpochSeconds", requestedEnd);
         evidence.put("selectedStartEpochSeconds", selectedStart);
@@ -982,6 +998,25 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
         requireChangingPicture(output, selectedEnd - selectedStart, boundaryImages);
         getLogger().lifecycle("[CLIENT_GAMETEST_BOUNDARY] VIDEO_WINDOW pre={}s post={}s; raw frame interval [{}, {})",
                 firstTick - selectedStart, selectedEnd - lastTick, startIndex, endIndex);
+    }
+
+    /** The torn frames of a video, by frame number; see {@link TornFrames}. */
+    private List<Integer> tornFrames(File video) {
+        ProcessBuilder builder = new ProcessBuilder(TornFrames.maskCommand(video.getAbsolutePath()));
+        builder.redirectError(ProcessBuilder.Redirect.INHERIT);
+        try {
+            Process ffmpeg = builder.start();
+            List<Integer> torn = TornFrames.find(ffmpeg.getInputStream());
+            if (ffmpeg.waitFor() != 0) {
+                throw new GradleException("ffmpeg could not compare the frames of " + video.getName());
+            }
+            return torn;
+        } catch (IOException exception) {
+            throw new UncheckedIOException(exception);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new GradleException("Interrupted while comparing the frames of " + video.getName(), exception);
+        }
     }
 
     /**
