@@ -5,7 +5,9 @@
   "client": [
     "ClientAdvancementsMixin",
     "ClientPacketListenerMixin",
-    "RecordingMinecraftMixin"
+    "RecordingMinecraftMixin",
+    "RecordingSoundEngineMixin",
+    "RecordingSoundLibraryMixin"
   ],
   "injectors": {
     "defaultRequire": 1

@@ -62,6 +62,36 @@ class RecordClientGameTestTaskTest {
     }
 
     @Test
+    void aRecordingCapturesTheGameUnlessAskedForAScreenGrab() {
+        assertTrue(RecordClientGameTestTask.capturesGame("game"));
+        assertFalse(RecordClientGameTestTask.capturesGame("x11grab"));
+        assertThrows(GradleException.class, () -> RecordClientGameTestTask.capturesGame("pipewire"));
+    }
+
+    @Test
+    void theGameCaptureStartsOnAWholeFrameOfTheEpoch() {
+        assertEquals(53_834_985_352L, RecordClientGameTestTask.captureStartFrames(1_794_499_511_700_001L, 30));
+        assertEquals(53_834_985_351L, RecordClientGameTestTask.captureStartFrames(1_794_499_511_700_000L, 30));
+    }
+
+    @Test
+    void theGameCaptureShiftsBothPipesToTheEpochInWholeFramesAndSamples() {
+        List<String> command = RecordClientGameTestTask.gameCaptureCommand(30, "1920x1080", 53_834_985_352L,
+                "video.fifo", "audio.fifo", "progress.txt", "audio.txt", "raw.mkv",
+                RecordClientGameTestTask.videoEncoder("h264_nvenc"));
+
+        assertEquals("video.fifo", command.get(command.indexOf("-i") + 1));
+        assertEquals("audio.fifo", command.get(command.lastIndexOf("-i") + 1));
+        assertEquals("rgba", command.get(command.indexOf("-pix_fmt") + 1));
+        // The GPU reads a frame back bottom row first.
+        assertEquals("vflip,setpts=PTS+53834985352", command.get(command.indexOf("-vf") + 1));
+        // 48 000 / 30 = 1600 samples a frame.
+        assertEquals("asetpts=PTS+" + 53_834_985_352L * 1600, command.get(command.indexOf("-af") + 1));
+        assertEquals("h264_nvenc", command.get(command.indexOf("-c:v") + 1));
+        assertEquals("raw.mkv", command.getLast());
+    }
+
+    @Test
     void theCaptureEncodesOnTheCardsEncoderWhenAskedAndOnTheCpuOtherwise() {
         List<String> nvenc = RecordClientGameTestTask.captureCommand(
                 "60", "1920x1080", ":1", "sink.monitor", "progress.txt", "audio.txt", "raw.mkv", 0, 0,

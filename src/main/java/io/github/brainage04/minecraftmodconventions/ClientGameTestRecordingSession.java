@@ -17,6 +17,8 @@ public final class ClientGameTestRecordingSession {
     private static final boolean TRACE = "true".equalsIgnoreCase(System.getenv(PREFIX + "TRACE"));
     private static long[] presentTimesUs = new long[TRACE ? 1 << 16 : 0];
     private static int presentTimes;
+    /** With the trace on, the time and name of every sound the game plays, to match against the recording's sound. */
+    private static final StringBuilder SOUND_TRACE = new StringBuilder("playUs,sound\n");
     private static final RecordingPerformanceStats PERFORMANCE = new RecordingPerformanceStats();
     private static boolean armed;
     private static boolean ready;
@@ -128,6 +130,13 @@ public final class ClientGameTestRecordingSession {
         }
     }
 
+    /** Notes a sound the game starts, with the trace on and the capture ready. */
+    public static synchronized void notePlayedSound(String sound) {
+        if (TRACE && ready && !finished) {
+            SOUND_TRACE.append(epochMicros()).append(',').append(sound).append('\n');
+        }
+    }
+
     /**
      * One rendered frame's performance numbers, kept while the capture runs; see {@link RecordingPerformanceStats}.
      * {@code server} is null when no server is in reach or it is paused.
@@ -185,6 +194,8 @@ public final class ClientGameTestRecordingSession {
                     - (System.nanoTime() - clockNano) / 1000L));
         }
         evidence.putAll(PERFORMANCE.summary());
+        GameCapture.describe(evidence);
+        GameCaptureAudio.describe(evidence);
         try {
             StringWriter text = new StringWriter();
             evidence.store(text, "Actual Minecraft world tick and GPU presentation boundaries");
@@ -199,9 +210,14 @@ public final class ClientGameTestRecordingSession {
                     presents.append(presentTimesUs[i]).append(',').append(presentTimesUs[i + 1]).append('\n');
                 }
             }
+            String sounds;
+            synchronized (ClientGameTestRecordingSession.class) {
+                sounds = SOUND_TRACE.toString();
+            }
             Path boundaries = path("BOUNDARIES");
-            write(boundaries.resolveSibling(boundaries.getFileName().toString().replace(".properties", "")
-                    + "-presents.csv"), presents.toString());
+            String take = boundaries.getFileName().toString().replace(".properties", "");
+            write(boundaries.resolveSibling(take + "-presents.csv"), presents.toString());
+            write(boundaries.resolveSibling(take + "-sounds.csv"), sounds);
         }
         write(path("STOP_SIGNAL"), Long.toString(epochMicros()));
         await("COMPLETE_SIGNAL", waitForClient);

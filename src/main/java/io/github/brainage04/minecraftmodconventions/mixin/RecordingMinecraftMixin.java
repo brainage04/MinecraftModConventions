@@ -1,6 +1,7 @@
 package io.github.brainage04.minecraftmodconventions.mixin;
 
 import io.github.brainage04.minecraftmodconventions.ClientGameTestRecordingSession;
+import io.github.brainage04.minecraftmodconventions.GameCapture;
 import io.github.brainage04.minecraftmodconventions.RecordingPerformance;
 import net.minecraft.client.Minecraft;
 import org.spongepowered.asm.mixin.Mixin;
@@ -22,7 +23,9 @@ public abstract class RecordingMinecraftMixin {
 
     @Inject(method = "renderFrame", at = @At(value = "INVOKE", target = "Lcom/mojang/renderpearl/api/device/GpuSurface;present()V"))
     private void recordingBeforePresent(CallbackInfo ci) {
-        ClientGameTestRecordingSession.beforePresent(((Minecraft) (Object) this).level != null);
+        Minecraft minecraft = (Minecraft) (Object) this;
+        GameCapture.beforePresent(minecraft.gameRenderer.mainRenderTarget());
+        ClientGameTestRecordingSession.beforePresent(minecraft.level != null);
     }
 
     @Inject(method = "renderFrame", at = @At(value = "INVOKE", target = "Lcom/mojang/renderpearl/api/device/GpuSurface;present()V", shift = At.Shift.AFTER))

@@ -58,6 +58,15 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
     /** Environment variable that turns a torn frame left after the repair from a failure into a warning. */
     static final String TEAR_CHECK_ENV = "GTR_RECORDING_TEAR_CHECK";
 
+    /** Environment variable choosing what the recording captures: {@code game} (default) or {@code x11grab}. */
+    static final String CAPTURE_SOURCE_ENV = "GTR_RECORDING_CAPTURE";
+
+    /** The sample rate of the game's sound, which the client renders into the recording (its GameCaptureAudio). */
+    static final int GAME_SOUND_RATE = 48_000;
+
+    /** The line the client logs once its sound plays into the recording's loopback device. */
+    static final String GAME_SOUND_LINE = "Game sound renders into the recording through an OpenAL loopback device";
+
     @Internal
     public abstract DirectoryProperty getProjectDirectory();
 
@@ -99,6 +108,7 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
         String videoEncoderName = env(VIDEO_ENCODER_ENV, "libx264");
         List<String> videoEncoder = videoEncoder(videoEncoderName);
         boolean failOnTornFrames = failsOnTornFrames(env(TEAR_CHECK_ENV, "fail"));
+        boolean gameCapture = capturesGame(env(CAPTURE_SOURCE_ENV, "game"));
         CommandResult encoderProbe = runCommand(encoderProbeCommand(videoEncoder), Map.of(), true);
         String encoderProblem = encoderProbeFailure(videoEncoderName, encoderProbe.status(), encoderProbe.output());
         if (encoderProblem != null) {
@@ -120,6 +130,9 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
         File progress = new File(recordingDir, safeRecordingName + "-" + timestamp + "-capture-progress.txt");
         File audioProgress = new File(recordingDir, safeRecordingName + "-" + timestamp + "-audio-packet-times.txt");
         File audioAnalysis = new File(recordingDir, safeRecordingName + "-" + timestamp + "-audio-analysis.txt");
+        File captureClock = new File(recordingDir, "." + safeRecordingName + "-" + timestamp + ".clock");
+        File videoPipe = new File(recordingDir, "." + safeRecordingName + "-" + timestamp + "-video.fifo");
+        File audioPipe = new File(recordingDir, "." + safeRecordingName + "-" + timestamp + "-audio.fifo");
         File alsoftConfig = new File(recordingDir, "." + safeRecordingName + "-" + timestamp + "-alsoft.conf");
         String audioSinkName = env("GTR_RECORDING_AUDIO_SINK_NAME", "gametest_recorder_" + timestamp);
         String audioSource = audioSinkName + ".monitor";
@@ -168,6 +181,10 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
         deleteIfExists(completeSignal.toPath());
         deleteIfExists(boundaries.toPath());
         deleteIfExists(progress.toPath());
+        deleteIfExists(captureClock.toPath());
+        deleteIfExists(videoPipe.toPath());
+        deleteIfExists(audioPipe.toPath());
+        AtomicBoolean gameSoundCaptured = new AtomicBoolean();
 
         Path memoryCgroup = ownCgroup(Path.of("/proc/self/cgroup"), Path.of("/sys/fs/cgroup"));
         String previousMemoryLow = memoryCgroup == null ? null : protectMemory(memoryCgroup);
@@ -197,7 +214,9 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
                     allow-moves = false
                     """, StandardCharsets.UTF_8);
             getLogger().lifecycle("Routing GameTest audio to isolated PulseAudio sink: {}", audioSinkName);
-            getLogger().lifecycle("Recording audio from PulseAudio monitor source: {}", audioSource);
+            if (!gameCapture) {
+                getLogger().lifecycle("Recording audio from PulseAudio monitor source: {}", audioSource);
+            }
 
             processEnvironment.clear();
             processEnvironment.putAll(System.getenv());
@@ -229,6 +248,11 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
             processEnvironment.put("CLIENT_GAMETEST_RECORDING_STOP_SIGNAL", stopSignal.getAbsolutePath());
             processEnvironment.put("CLIENT_GAMETEST_RECORDING_COMPLETE_SIGNAL", completeSignal.getAbsolutePath());
             processEnvironment.put("CLIENT_GAMETEST_RECORDING_BOUNDARIES", boundaries.getAbsolutePath());
+            if (gameCapture) {
+                processEnvironment.put("CLIENT_GAMETEST_RECORDING_CAPTURE_CLOCK", captureClock.getAbsolutePath());
+                processEnvironment.put("CLIENT_GAMETEST_RECORDING_CAPTURE_VIDEO", videoPipe.getAbsolutePath());
+                processEnvironment.put("CLIENT_GAMETEST_RECORDING_CAPTURE_AUDIO", audioPipe.getAbsolutePath());
+            }
             if (!recordingProfile.isBlank()) {
                 processEnvironment.putIfAbsent("CLIENT_GAMETEST_PROFILE", recordingProfile);
             }
@@ -247,6 +271,9 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
                 if (line.contains("Failed to open OpenAL device") || line.contains("Error starting SoundSystem")) {
                     soundFailed.set(true);
                 }
+                if (line.contains(GAME_SOUND_LINE)) {
+                    gameSoundCaptured.set(true);
+                }
             });
 
             getLogger().lifecycle("Waiting for client GameTest recording-start signal...");
@@ -258,37 +285,58 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
             recordingStartObserved = startSignal.exists();
             if (recordingStartObserved) {
                 String videoSize = videoSizeFromXvfbScreen(xvfbScreen);
-                // Vanilla centres a windowed client on its monitor (Window.java:118-119 in the 26.3
-                // sources), so a grab from the display's origin misses the window's right and bottom edges.
-                int[] grab = gpuDisplay == null
-                        ? new int[] {0, 0}
-                        : windowGrabOffset(windowSignal, xvfbDisplay, display.displayScreen(), videoSize);
-                if (gpuDisplay != null) {
-                    boundaryEvidence.put("captureOffset", grab[0] + "," + grab[1]);
-                    getLogger().lifecycle("Capturing the client's window at +{},{} of display {}.",
-                            grab[0], grab[1], xvfbDisplay);
+                List<String> ffmpegCommand;
+                long captureStartFrames = 0;
+                if (gameCapture) {
+                    runCommand(List.of("mkfifo", videoPipe.getAbsolutePath(), audioPipe.getAbsolutePath()), Map.of(), false);
+                    captureStartFrames = captureStartFrames(System.currentTimeMillis() * 1000L, frameRate);
+                    boundaryEvidence.put("captureStartUs", captureStartFrames * 1_000_000L / frameRate);
+                    getLogger().lifecycle("Recording the game's own picture and sound to {}", output.getAbsolutePath());
+                    ffmpegCommand = gameCaptureCommand(frameRate, videoSize, captureStartFrames, videoPipe.getAbsolutePath(),
+                            audioPipe.getAbsolutePath(), progress.getAbsolutePath(), audioProgress.getAbsolutePath(),
+                            rawCapture.getAbsolutePath(), videoEncoder);
+                } else {
+                    // Vanilla centres a windowed client on its monitor (Window.java:118-119 in the 26.3
+                    // sources), so a grab from the display's origin misses the window's right and bottom edges.
+                    int[] grab = gpuDisplay == null
+                            ? new int[] {0, 0}
+                            : windowGrabOffset(windowSignal, xvfbDisplay, display.displayScreen(), videoSize);
+                    if (gpuDisplay != null) {
+                        boundaryEvidence.put("captureOffset", grab[0] + "," + grab[1]);
+                        getLogger().lifecycle("Capturing the client's window at +{},{} of display {}.",
+                                grab[0], grab[1], xvfbDisplay);
+                    }
+                    getLogger().lifecycle("Recording display {} to {}", xvfbDisplay, output.getAbsolutePath());
+                    ffmpegCommand = captureCommand(fps, videoSize, xvfbDisplay, audioSource,
+                            progress.getAbsolutePath(), audioProgress.getAbsolutePath(), rawCapture.getAbsolutePath(),
+                            grab[0], grab[1], videoEncoder);
                 }
-                getLogger().lifecycle("Recording display {} to {}", xvfbDisplay, output.getAbsolutePath());
-                List<String> ffmpegCommand = captureCommand(fps, videoSize, xvfbDisplay, audioSource,
-                        progress.getAbsolutePath(), audioProgress.getAbsolutePath(), rawCapture.getAbsolutePath(),
-                        grab[0], grab[1], videoEncoder);
                 ProcessBuilder ffmpegBuilder = new ProcessBuilder(ffmpegCommand);
                 ffmpegBuilder.directory(projectDir);
                 ffmpegBuilder.redirectErrorStream(true);
                 ffmpegBuilder.environment().putAll(processEnvironment);
                 ffmpegProcess = ffmpegBuilder.start();
                 streamToStdout(ffmpegProcess, "ffmpeg-output", _ -> {});
+                if (gameCapture) {
+                    // The client starts writing once it sees the clock; ffmpeg is already opening the pipes.
+                    Files.writeString(captureClock.toPath(), captureStartFrames * 1_000_000L / frameRate + " " + frameRate + " "
+                            + videoSize.replace('x', ' '), StandardCharsets.UTF_8);
+                }
                 waitForCaptureFrames(ffmpegProcess, progress);
                 waitForAudioCoverage(ffmpegProcess, audioProgress, System.currentTimeMillis() / 1000.0);
-                verifyGameAudioRoute(audioSinkName, audioApplicationId);
-                audioRouteVerified = true;
+                if (gameCapture) {
+                    audioRouteVerified = gameSoundCaptured.get();
+                } else {
+                    verifyGameAudioRoute(audioSinkName, audioApplicationId);
+                    audioRouteVerified = true;
+                }
                 sleep((long) Math.ceil(prePadding * 1000) + 100L);
                 if (!ffmpegProcess.isAlive()) {
                     throw new GradleException("Capture exited during pre-world padding.");
                 }
                 Files.writeString(readySignal.toPath(), Long.toString(System.currentTimeMillis()), StandardCharsets.UTF_8);
                 boundaryEvidence.put("captureReadyEpochMs", System.currentTimeMillis());
-                getLogger().lifecycle("[CLIENT_GAMETEST_BOUNDARY] CAPTURE_READY: encoded frames and isolated game audio route verified");
+                getLogger().lifecycle("[CLIENT_GAMETEST_BOUNDARY] CAPTURE_READY: encoded frames and isolated game audio verified");
             }
 
             while (gradleProcess.isAlive() && !stopSignal.exists()) {
@@ -373,6 +421,9 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
             deleteIfExists(readySignal.toPath());
             deleteIfExists(stopSignal.toPath());
             deleteIfExists(completeSignal.toPath());
+            deleteIfExists(captureClock.toPath());
+            deleteIfExists(videoPipe.toPath());
+            deleteIfExists(audioPipe.toPath());
             deleteIfExists(alsoftConfig.toPath());
             if (previousMemoryLow != null) {
                 restoreMemoryLow(memoryCgroup, previousMemoryLow);
@@ -382,7 +433,7 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
         if (recordingStopObserved && rawCapture.isFile()) {
             try {
                 trimToWorldBoundaries(rawCapture, output, boundaryEvidence, prePadding, postPadding, frameRate,
-                        gpuDisplay != null, failOnTornFrames);
+                        gpuDisplay != null && !gameCapture, failOnTornFrames);
             } catch (RuntimeException exception) {
                 captureFailure = exception.toString();
                 getLogger().error("Could not trim recording; retaining raw boundary evidence.", exception);
@@ -434,7 +485,9 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
             recordingFailures.add(captureFailure);
         }
         if (!audioRouteVerified || !soundInitialized.get() || soundFailed.get() || !audioDecoded) {
-            recordingFailures.add("Game audio must initialize successfully on the isolated sink and decode to PCM samples.");
+            recordingFailures.add(gameCapture
+                    ? "Game audio must render into the recording through an OpenAL loopback device and decode to PCM samples."
+                    : "Game audio must initialize successfully on the isolated sink and decode to PCM samples.");
         }
         if (!sdlVideoDriver.isEmpty() && !sdlVideoDriver.equals("x11")) {
             recordingFailures.add("The client used SDL's " + sdlVideoDriver
@@ -462,6 +515,7 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
         metadataModel.put("finishedAt", DateTimeFormatter.ISO_INSTANT.format(Instant.now()));
         metadataModel.put("gradleStatus", gradleStatus);
         metadataModel.put("captureMode", gpuDisplay == null ? "xvfb" : "x11");
+        metadataModel.put("captureSource", gameCapture ? "game" : "x11grab");
         metadataModel.put("glRenderer", glRenderer.isEmpty() ? null : glRenderer);
         metadataModel.put("sdlVideoDriver", sdlVideoDriver.isEmpty() ? null : sdlVideoDriver);
         metadataModel.put("presentedFps", ClientGpuCapture.presentedFps(boundaryEvidence));
@@ -631,6 +685,51 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
             case "warn" -> false;
             default -> throw new GradleException(TEAR_CHECK_ENV + " must be fail or warn, not " + mode);
         };
+    }
+
+    /** Whether {@value #CAPTURE_SOURCE_ENV} asks for the game's own picture and sound, or for a screen grab. */
+    static boolean capturesGame(String source) {
+        return switch (source) {
+            case "game" -> true;
+            case "x11grab" -> false;
+            default -> throw new GradleException(CAPTURE_SOURCE_ENV + " must be game or x11grab, not " + source);
+        };
+    }
+
+    /**
+     * The game capture's first frame, as a count of capture frames since the epoch: the next whole frame after
+     * {@code nowUs}, so frame {@code k} of the capture is at exactly {@code (start + k) / fps} seconds.
+     */
+    static long captureStartFrames(long nowUs, int frameRate) {
+        return Math.ceilDiv(nowUs * frameRate, 1_000_000L);
+    }
+
+    /**
+     * The ffmpeg command for the game's own picture and sound: the client writes raw RGBA frames (the main target is
+     * {@code RGBA8_UNORM}, {@code MainTarget.java:18}, and its readback comes bottom row first, which vanilla's
+     * screenshot flips too, {@code Screenshot.java:102} in the 26.3 sources) on the capture clock to {@code videoPipe},
+     * and 48 kHz 16-bit stereo to {@code audioPipe}, both starting at frame {@code startFrames} of the capture rate.
+     * The two streams' timestamps are shifted to the epoch clock in whole frames and whole samples, as a screen
+     * grab's are with {@code -copyts}, so the trimming and the audio checks work the same on both.
+     * ({@code -itsoffset} leaves raw PCM at zero in ffmpeg 8.1.)
+     */
+    static List<String> gameCaptureCommand(int frameRate, String videoSize, long startFrames, String videoPipe,
+            String audioPipe, String progress, String audioProgress, String rawCapture, List<String> encoder) {
+        long startSamples = Math.round(startFrames * (double) GAME_SOUND_RATE / frameRate);
+        List<String> command = new ArrayList<>(List.of(
+                "ffmpeg", "-y", "-copyts", "-stats_period", "0.05", "-progress", progress,
+                "-f", "rawvideo", "-pix_fmt", "rgba", "-video_size", videoSize,
+                "-framerate", Integer.toString(frameRate), "-thread_queue_size", "64", "-i", videoPipe,
+                "-f", "s16le", "-ar", Integer.toString(GAME_SOUND_RATE), "-ac", "2",
+                "-thread_queue_size", "1024", "-i", audioPipe,
+                "-map", "0:v:0", "-map", "1:a:0",
+                "-vf", "vflip,setpts=PTS+" + startFrames, "-af", "asetpts=PTS+" + startSamples));
+        command.addAll(encoder);
+        command.addAll(List.of("-fps_mode", "passthrough", "-enc_time_base:v", "demux", "-c:a", "pcm_s16le",
+                "-stats_mux_pre:a:0", audioProgress,
+                "-stats_mux_pre_fmt:a:0", "{pts} {tb}",
+                "-thread_queue_size", Integer.toString(MUX_QUEUE_PACKETS), rawCapture));
+        return command;
     }
 
     static List<String> captureCommand(String fps, String videoSize, String display, String audioSource,
