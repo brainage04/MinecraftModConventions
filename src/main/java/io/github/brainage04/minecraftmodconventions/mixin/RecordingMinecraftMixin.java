@@ -1,6 +1,7 @@
 package io.github.brainage04.minecraftmodconventions.mixin;
 
 import io.github.brainage04.minecraftmodconventions.ClientGameTestRecordingSession;
+import io.github.brainage04.minecraftmodconventions.RecordingPerformance;
 import net.minecraft.client.Minecraft;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -35,6 +36,7 @@ public abstract class RecordingMinecraftMixin {
     private void recordingWorldCleared(CallbackInfo ci) {
         if (((Minecraft) (Object) this).level == null) {
             ClientGameTestRecordingSession.worldCleared();
+            RecordingPerformance.forgetServer();
         }
     }
 }
