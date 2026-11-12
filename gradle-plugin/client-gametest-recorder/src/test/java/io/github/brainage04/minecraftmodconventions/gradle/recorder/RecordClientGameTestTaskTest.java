@@ -7,7 +7,9 @@ import org.junit.jupiter.api.io.TempDir;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -50,6 +52,33 @@ class RecordClientGameTestTaskTest {
         // A one-second journal wait (about 50 packets) already froze x11grab with ffmpeg's default of 8;
         // the worst observed wait was about 12 s.
         assertTrue(packets >= 50 * 60, "muxer queue must absorb at least a minute of blocked writes: " + packets);
+    }
+
+    @Test
+    void aCaptureThatStoppedFailsTheTakeNamingTheCause() {
+        Map<String, Object> evidence = new LinkedHashMap<>();
+        evidence.put("gameCaptureFrames", "400");
+        assertNull(RecordClientGameTestTask.gameCaptureFailure(evidence));
+        assertNull(RecordClientGameTestTask.captureFailureMessage(null));
+
+        // A window or fullscreen change re-allocates the main target, and beforePresent then captures nothing for
+        // the rest of the take: the boundaries carry the reason and the take must fail with it.
+        evidence.put("gameCaptureFailure", "The client's frame is 1280x720, not the recording's 1920x1080");
+        String failure = RecordClientGameTestTask.captureFailureMessage(
+                RecordClientGameTestTask.gameCaptureFailure(evidence));
+        assertTrue(failure.contains("1280x720"), failure);
+        assertTrue(failure.contains("failed"), failure);
+    }
+
+    @Test
+    void aFirstFrameThatNeverCameNamesTheClientsReason() {
+        assertEquals("ffmpeg did not report an encoded video frame before world entry.",
+                RecordClientGameTestTask.noFrameMessage(null));
+
+        String message = RecordClientGameTestTask.noFrameMessage(
+                "The client's frame is 1280x720, not the recording's 1920x1080");
+        assertTrue(message.contains("did not report an encoded video frame"), message);
+        assertTrue(message.contains("1280x720"), message);
     }
 
     @Test

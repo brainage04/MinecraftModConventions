@@ -34,6 +34,7 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;
@@ -73,6 +74,12 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
 
     /** The line the client logs once its sound plays into the recording's loopback device. */
     static final String GAME_SOUND_LINE = "Game sound renders into the recording through an OpenAL loopback device";
+
+    /**
+     * The line the client prints with the reason when it cannot capture the game, such as a frame that stopped
+     * matching the recording's size or a libopenal without {@code ALC_SOFT_loopback}.
+     */
+    static final String CAPTURE_FAILURE_LINE = "CAPTURE_FAILURE: ";
 
     @Internal
     public abstract DirectoryProperty getProjectDirectory();
@@ -271,6 +278,7 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
             gradleBuilder.environment().clear();
             gradleBuilder.environment().putAll(processEnvironment);
             gradleProcess = gradleBuilder.start();
+            AtomicReference<String> clientCaptureFailure = new AtomicReference<>();
             Thread logThread = streamToStdout(gradleProcess, "client-gametest-output", line -> {
                 if (line.contains("Sound engine started")) {
                     soundInitialized.set(true);
@@ -280,6 +288,11 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
                 }
                 if (line.contains(GAME_SOUND_LINE)) {
                     gameSoundCaptured.set(true);
+                }
+                int marker = line.indexOf(CAPTURE_FAILURE_LINE);
+                if (marker >= 0) {
+                    clientCaptureFailure.compareAndSet(null,
+                            line.substring(marker + CAPTURE_FAILURE_LINE.length()).strip());
                 }
             });
 
@@ -291,6 +304,12 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
 
             recordingStartObserved = startSignal.exists();
             if (recordingStartObserved) {
+                String startFailure = captureFailureMessage(clientCaptureFailure.get());
+                if (startFailure != null) {
+                    // The client cannot capture this run at all (no loopback device, another backend), so there is
+                    // nothing for ffmpeg to read: fail at once with the client's own reason instead of waiting.
+                    throw new GradleException(startFailure);
+                }
                 String videoSize = videoSizeFromXvfbScreen(xvfbScreen);
                 List<String> ffmpegCommand;
                 long captureStartFrames = 0;
@@ -329,7 +348,7 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
                     writeAtomically(captureClock.toPath(), captureStartFrames * 1_000_000L / frameRate + " " + frameRate
                             + " " + videoSize.replace('x', ' '));
                 }
-                waitForCaptureFrames(ffmpegProcess, progress);
+                waitForCaptureFrames(ffmpegProcess, progress, clientCaptureFailure);
                 waitForAudioCoverage(ffmpegProcess, audioProgress, System.currentTimeMillis() / 1000.0);
                 if (gameCapture) {
                     audioRouteVerified = gameSoundCaptured.get();
@@ -490,6 +509,11 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
         );
         if (captureFailure != null) {
             recordingFailures.add(captureFailure);
+        }
+        String gameCaptureFailure = captureFailureMessage(gameCaptureFailure(boundaryEvidence));
+        if (gameCaptureFailure != null) {
+            // A capture that stopped working still writes metadata; the take itself must not pass as recorded.
+            recordingFailures.add(gameCaptureFailure);
         }
         if (!audioRouteVerified || !soundInitialized.get() || soundFailed.get() || !audioDecoded) {
             recordingFailures.add(gameCapture
@@ -701,6 +725,32 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
             case "x11grab" -> false;
             default -> throw new GradleException(CAPTURE_SOURCE_ENV + " must be game or x11grab, not " + source);
         };
+    }
+
+    /**
+     * The client's own account of a capture that stopped before the take ended, from the recording's boundary
+     * evidence ({@code gameCaptureFailure}), or null when the capture ran to the end.
+     */
+    static String gameCaptureFailure(Map<?, ?> evidence) {
+        Object failure = evidence.get("gameCaptureFailure");
+        return failure == null ? null : failure.toString();
+    }
+
+    /** The recording's error for a capture the client could not finish, or null when it finished. */
+    static String captureFailureMessage(String reason) {
+        if (reason == null || reason.isBlank()) {
+            return null;
+        }
+        return "Capturing the game failed: " + reason.strip();
+    }
+
+    /**
+     * The error for a game take whose first encoded frame never arrived: the client's own reason when it reported
+     * one, so a size mismatch or a missing loopback device is not hidden behind the frame count.
+     */
+    static String noFrameMessage(String reason) {
+        String message = "ffmpeg did not report an encoded video frame before world entry";
+        return reason == null || reason.isBlank() ? message + "." : message + ": " + reason.strip();
     }
 
     /**
@@ -1065,16 +1115,21 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
         throw new GradleException("Minecraft did not open a tagged PulseAudio playback stream. Check OpenAL initialization.");
     }
 
-    private void waitForCaptureFrames(Process ffmpeg, File progress) throws IOException {
+    private void waitForCaptureFrames(Process ffmpeg, File progress, AtomicReference<String> clientFailure)
+            throws IOException {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
         while (System.nanoTime() < deadline && ffmpeg.isAlive()) {
+            String failure = captureFailureMessage(clientFailure.get());
+            if (failure != null) {
+                throw new GradleException(failure);
+            }
             if (progress.isFile() && Pattern.compile("(?m)^frame=[1-9][0-9]*\\s*$")
                     .matcher(Files.readString(progress.toPath())).find()) {
                 return;
             }
             sleep(25L);
         }
-        throw new GradleException("ffmpeg did not report an encoded video frame before world entry.");
+        throw new GradleException(noFrameMessage(clientFailure.get()));
     }
 
     private double waitForAudioCoverage(Process ffmpeg, File timestamps, double through) throws IOException {

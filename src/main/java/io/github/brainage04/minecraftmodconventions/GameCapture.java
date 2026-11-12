@@ -89,12 +89,13 @@ public final class GameCapture {
 
     /**
      * Call right before the present, on the render thread: holds the present until the next slot when the present
-     * before it still owns the current one, then copies the frame out of {@code target}.
+     * before it still owns the current one, then copies the frame out of {@code target}. A capture that has failed
+     * copies nothing more; the recorder fails the take with the reason.
      */
     public static void beforePresent(RenderTarget target) {
         GameCapture capture = capture();
         GpuTexture texture = target.getColorTexture();
-        if (capture == null || texture == null) {
+        if (capture == null || texture == null || capture.failure != null) {
             return;
         }
         if (target.width != capture.clock.width() || target.height != capture.clock.height()) {
@@ -288,7 +289,9 @@ public final class GameCapture {
     private void fail(String message) {
         if (failure == null) {
             failure = message;
-            System.err.println("[CLIENT_GAMETEST_RECORDING] " + message);
+            // The recorder reads this line from the client's output and fails the take with the reason; see
+            // RecordClientGameTestTask.CAPTURE_FAILURE_LINE.
+            System.err.println("[CLIENT_GAMETEST_RECORDING] CAPTURE_FAILURE: " + message);
         }
     }
 
