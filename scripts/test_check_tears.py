@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import contextlib
 import io
+import shutil
 import unittest
+from pathlib import Path
 
 import check_tears
 
@@ -30,6 +32,16 @@ class ArgumentsTest(unittest.TestCase):
                 with self.assertRaises(SystemExit) as exit_:
                     check_tears.arguments(argv)
                 self.assertEqual(exit_.exception.code, 2)
+
+
+FIXTURES = Path(__file__).resolve().parent.parent / "gradle-plugin/client-gametest-recorder/src/test/resources"
+
+
+@unittest.skipUnless(shutil.which("ffmpeg"), "ffmpeg is not installed")
+class TornFramesTest(unittest.TestCase):
+    def test_a_tear_in_a_one_millisecond_time_base_is_found_at_its_own_frame(self) -> None:
+        video = FIXTURES / "torn-frames-magiccarpet-carpetsound3-1650-1660.mp4"
+        self.assertEqual(check_tears.torn_frames(str(video)), [(5, 234)])
 
 
 if __name__ == "__main__":

@@ -45,7 +45,7 @@ def row_labels(video):
     """For every frame but the first and last: one label per row (P, N, - for mixed, None for still), the
     count of its own pixels and the count of all marked pixels."""
     shift = "trim=start_frame={0},setpts=PTS-STARTPTS"
-    graph = (f"[0:v]format=gray,scale={WIDTH}:{ROWS}:flags=area,setpts=N/(30*TB),split=3[f0][f1][f2];"
+    graph = (f"[0:v]format=gray,scale={WIDTH}:{ROWS}:flags=area,settb=1/30,setpts=N,split=3[f0][f1][f2];"
              f"[f1]{shift.format(1)},split[m1][m2];[f2]{shift.format(2)}[n];"
              f"[m1][f0]blend=all_mode=difference:shortest=1[to_previous];"
              f"[m2][n]blend=all_mode=difference:shortest=1[to_next];"

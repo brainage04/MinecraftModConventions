@@ -17,6 +17,12 @@ class TornFramesTest {
     /** Frames 170-178 of the AutoSleep rec3 take at 480x270, lossless; its frames 173 and 174 are torn. */
     private static final String FIXTURE = "/torn-frames-autosleep-rec3-170-178.mp4";
 
+    /**
+     * Frames 1650-1660 of the MagicCarpet carpetsound3 raw capture at 480x270, lossless, in the raw capture's 1/1000
+     * time base at 60 frames a second; its frame 1655 has a low-contrast tear near the bottom (row 234 of 270).
+     */
+    private static final String CARPET_FIXTURE = "/torn-frames-magiccarpet-carpetsound3-1650-1660.mp4";
+
     private static byte[] mask(int tearRow, int topValue, int bottomValue) {
         byte[] mask = new byte[TornFrames.WIDTH * TornFrames.ROWS];
         for (int y = 40; y < 200; y++) {
@@ -77,6 +83,14 @@ class TornFramesTest {
                 TornFrames.repairFilter("0:v", "video", torn), "-map", "[video]", "-c:v", "ffv1",
                 repaired.toString()));
         assertEquals(List.of(), torn(repaired.toString()));
+    }
+
+    @Test
+    void aTearInAOneMillisecondTimeBaseIsFoundAtItsOwnFrame() throws IOException, InterruptedException, URISyntaxException {
+        assumeTrue(ffmpegAvailable(), "ffmpeg is not installed");
+        String fixture = Path.of(TornFramesTest.class.getResource(CARPET_FIXTURE).toURI()).toString();
+
+        assertEquals(List.of(5), torn(fixture), "carpetsound3 raw frame 1655");
     }
 
     private static List<Integer> torn(String video) throws IOException, InterruptedException {
