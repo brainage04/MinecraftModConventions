@@ -35,7 +35,10 @@ public abstract class RecordingSoundLibraryMixin {
         if (GameCaptureAudio.isEnabled()) {
             long device = GameCaptureAudio.openDevice();
             if (device == 0) {
-                throw new IllegalStateException("Failed to open OpenAL device: the recording needs an OpenAL Soft loopback device");
+                // No silent fallback to the output device: a take recorded that way has no sound, and the
+                // recorder would only find out after the whole take. GameCaptureAudio prints the reason on the
+                // recorder's failure line, which fails the take at once.
+                throw GameCaptureAudio.loopbackUnavailable();
             }
             recordingLoopback = true;
             return device;

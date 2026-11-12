@@ -12,6 +12,7 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class GameCaptureTest {
     /** A capture start on whole frames of 30 fps: frame 53834985352 since the epoch. */
@@ -100,6 +101,17 @@ class GameCaptureTest {
     void aPartialClockIsRejectedRatherThanReadAsAnotherClock() {
         assertThrows(IllegalArgumentException.class, () -> GameCapture.Clock.parse("1794499511733333 30 1920"));
         assertThrows(NumberFormatException.class, () -> GameCapture.Clock.parse("1794499511733333 3O 1920 1080"));
+    }
+
+    @Test
+    void aMissingLoopbackDeviceFailsNamingItAndTheScreenGrab() {
+        IllegalStateException failure = GameCaptureAudio.loopbackUnavailable();
+        String message = failure.getMessage();
+
+        // The recorder fails the take at once on this line, so it must name what is missing and the way out.
+        assertTrue(message.contains("Failed to open OpenAL device"), message);
+        assertTrue(message.contains("ALC_SOFT_loopback"), message);
+        assertTrue(message.contains("GTR_RECORDING_CAPTURE=x11grab"), message);
     }
 
     @Test

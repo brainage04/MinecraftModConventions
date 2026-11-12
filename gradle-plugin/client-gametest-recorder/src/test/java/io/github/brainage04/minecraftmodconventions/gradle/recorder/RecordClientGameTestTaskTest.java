@@ -55,6 +55,35 @@ class RecordClientGameTestTaskTest {
     }
 
     @Test
+    void aGameTakeRendersItsOwnSoundAndNeedsNoPulseAudioSink() {
+        RecordClientGameTestTask.AudioRoute game = RecordClientGameTestTask.audioRoute(
+                true, "gametest_recorder_1", "mmc.recorder.take.1", "/tmp/take-alsoft.conf");
+
+        assertFalse(game.virtualSink(), "a game take must not create a PulseAudio sink");
+        assertEquals("loopback", game.route());
+        assertEquals("openal-soft loopback", game.source());
+        assertNull(game.sink());
+        assertTrue(game.environment().isEmpty(),
+                "a game take must not steer OpenAL at PulseAudio: " + game.environment());
+    }
+
+    @Test
+    void aScreenGrabRecordsTheIsolatedSinksMonitor() {
+        RecordClientGameTestTask.AudioRoute grab = RecordClientGameTestTask.audioRoute(
+                false, "gametest_recorder_1", "mmc.recorder.take.1", "/tmp/take-alsoft.conf");
+
+        assertTrue(grab.virtualSink());
+        assertEquals("virtual", grab.route());
+        assertEquals("gametest_recorder_1.monitor", grab.source());
+        assertEquals("gametest_recorder_1", grab.sink());
+        assertEquals("/tmp/take-alsoft.conf", grab.environment().get("ALSOFT_CONF"));
+        assertEquals("pulse", grab.environment().get("ALSOFT_DRIVERS"));
+        assertEquals("gametest_recorder_1", grab.environment().get("PULSE_SINK"));
+        assertEquals("application.id=mmc.recorder.take.1", grab.environment().get("PULSE_PROP"));
+        assertEquals("gametest_recorder_1", grab.environment().get("GTR_RECORDING_AUDIO_DEVICE"));
+    }
+
+    @Test
     void aCaptureThatStoppedFailsTheTakeNamingTheCause() {
         Map<String, Object> evidence = new LinkedHashMap<>();
         evidence.put("gameCaptureFrames", "400");

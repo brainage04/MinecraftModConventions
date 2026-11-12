@@ -78,6 +78,20 @@ public final class GameCaptureAudio {
         return device;
     }
 
+    /**
+     * The failure a game take ends with when this libopenal has no {@code ALC_SOFT_loopback}: a recording that
+     * cannot render the mix has no sound to fall back on, so the message names the missing extension and the
+     * recording route that does not need it. Printed on the recorder's failure line, which fails the take at once.
+     */
+    public static IllegalStateException loopbackUnavailable() {
+        String message = "Failed to open OpenAL device: the recording renders the game's own mix through an OpenAL"
+                + " Soft loopback device (ALC_SOFT_loopback), and this libopenal does not offer one. Record with"
+                + " GTR_RECORDING_CAPTURE=x11grab, whose sound comes from a PulseAudio sink's monitor, or use a"
+                + " libopenal built with the extension.";
+        System.err.println("[CLIENT_GAMETEST_RECORDING] CAPTURE_FAILURE: " + message);
+        return new IllegalStateException(message);
+    }
+
     /** Starts rendering the device's mix; call once its context is current. */
     public static void deviceOpened(long device) {
         synchronized (LOCK) {

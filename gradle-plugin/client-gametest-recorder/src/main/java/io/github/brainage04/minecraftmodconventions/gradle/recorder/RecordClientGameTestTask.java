@@ -69,6 +69,9 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
     /** Environment variable choosing what the recording captures: {@code game} (default) or {@code x11grab}. */
     static final String CAPTURE_SOURCE_ENV = "GTR_RECORDING_CAPTURE";
 
+    /** What a recording captures when {@value #CAPTURE_SOURCE_ENV} does not say. */
+    static final String DEFAULT_CAPTURE_SOURCE = "game";
+
     /** The sample rate of the game's sound, which the client renders into the recording (its GameCaptureAudio). */
     static final int GAME_SOUND_RATE = 48_000;
 
@@ -103,7 +106,11 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
 
     @TaskAction
     public void record() {
-        requireTools(List.of("ffmpeg", "ffprobe", "Xvfb", "xdpyinfo", "pactl"));
+        boolean gameCapture = capturesGame(env(CAPTURE_SOURCE_ENV, DEFAULT_CAPTURE_SOURCE));
+        // Only a screen grab routes the game's sound through a PulseAudio sink; a game take renders its own mix.
+        requireTools(gameCapture
+                ? List.of("ffmpeg", "ffprobe", "Xvfb", "xdpyinfo")
+                : List.of("ffmpeg", "ffprobe", "Xvfb", "xdpyinfo", "pactl"));
 
         File projectDir = getProjectDirectory().get().getAsFile();
         String timestamp = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss").withZone(ZoneOffset.UTC).format(Instant.now());
@@ -122,7 +129,6 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
         String videoEncoderName = env(VIDEO_ENCODER_ENV, "libx264");
         List<String> videoEncoder = videoEncoder(videoEncoderName);
         boolean failOnTornFrames = failsOnTornFrames(env(TEAR_CHECK_ENV, "fail"));
-        boolean gameCapture = capturesGame(env(CAPTURE_SOURCE_ENV, "game"));
         CommandResult encoderProbe = runCommand(encoderProbeCommand(videoEncoder), Map.of(), true);
         String encoderProblem = encoderProbeFailure(videoEncoderName, encoderProbe.status(), encoderProbe.output());
         if (encoderProblem != null) {
@@ -149,11 +155,12 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
         File audioPipe = new File(recordingDir, "." + safeRecordingName + "-" + timestamp + "-audio.fifo");
         File alsoftConfig = new File(recordingDir, "." + safeRecordingName + "-" + timestamp + "-alsoft.conf");
         String audioSinkName = env("GTR_RECORDING_AUDIO_SINK_NAME", "gametest_recorder_" + timestamp);
-        String audioSource = audioSinkName + ".monitor";
         if (!audioSinkName.matches("[A-Za-z0-9_-]+")) {
             throw new GradleException("Audio sink name must contain only letters, digits, underscores and hyphens.");
         }
         String audioApplicationId = "mmc.recorder." + safeRecordingName + "." + timestamp;
+        AudioRoute audioRoute = audioRoute(gameCapture, audioSinkName, audioApplicationId,
+                alsoftConfig.getAbsolutePath());
         File keptRunDir = new File(recordingDir, safeRecordingName + "-" + timestamp + "-run");
         String recordingStartedAt = DateTimeFormatter.ISO_INSTANT.format(Instant.now());
         String xvfbDisplay = env("GTR_RECORDING_XVFB_DISPLAY", "");
@@ -183,7 +190,7 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
         List<String> gradleCommand = List.of(
                 "./gradlew",
                 "--no-daemon",
-                "-P" + getRecordingAudioDeviceProjectProperty().get() + "=" + audioSinkName,
+                "-P" + getRecordingAudioDeviceProjectProperty().get() + "=" + (audioRoute.sink() == null ? "" : audioRoute.sink()),
                 getRunTaskName().get()
         );
 
@@ -218,18 +225,19 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
                 throw new RecordingPreflightException(rateProblem);
             }
 
-            audioSinkId = createVirtualAudioSink(audioSinkName);
+            if (audioRoute.virtualSink()) {
+                audioSinkId = createVirtualAudioSink(audioSinkName);
+                Files.writeString(alsoftConfig.toPath(), """
+                        [general]
+                        drivers = pulse
 
-            Files.writeString(alsoftConfig.toPath(), """
-                    [general]
-                    drivers = pulse
-
-                    [pulse]
-                    allow-moves = false
-                    """, StandardCharsets.UTF_8);
-            getLogger().lifecycle("Routing GameTest audio to isolated PulseAudio sink: {}", audioSinkName);
-            if (!gameCapture) {
-                getLogger().lifecycle("Recording audio from PulseAudio monitor source: {}", audioSource);
+                        [pulse]
+                        allow-moves = false
+                        """, StandardCharsets.UTF_8);
+                getLogger().lifecycle("Routing GameTest audio to isolated PulseAudio sink: {}", audioSinkName);
+                getLogger().lifecycle("Recording audio from PulseAudio monitor source: {}", audioRoute.source());
+            } else {
+                getLogger().lifecycle("Recording the game's own sound from an OpenAL Soft loopback device.");
             }
 
             processEnvironment.clear();
@@ -240,13 +248,7 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
             ClientLaunchEnvironment.useX11(processEnvironment);
             // The showcase window covers this whole display (see ClientGameTestOptions).
             processEnvironment.put(ClientGameTestOptions.RECORDER_SCREEN_ENV, xvfbScreen);
-            processEnvironment.put("ALSOFT_CONF", alsoftConfig.getAbsolutePath());
-            processEnvironment.put("ALSOFT_DRIVERS", "pulse");
-            processEnvironment.put("ALSOFT_PULSE_DEFAULT", audioSinkName);
-            processEnvironment.put("PULSE_SINK", audioSinkName);
-            processEnvironment.put("PULSE_PROP", "application.id=" + audioApplicationId);
-            // Vanilla selects an enumerated OpenAL device; environment defaults alone do not pin it.
-            processEnvironment.put("GTR_RECORDING_AUDIO_DEVICE", audioSinkName);
+            processEnvironment.putAll(audioRoute.environment());
             processEnvironment.put("GTR_RECORDING_MANAGED_XVFB", "true");
             // The client's options take their window size from this, so a named display's own size wins.
             processEnvironment.put("GTR_RECORDING_XVFB_SCREEN", xvfbScreen);
@@ -333,7 +335,7 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
                                 grab[0], grab[1], xvfbDisplay);
                     }
                     getLogger().lifecycle("Recording display {} to {}", xvfbDisplay, output.getAbsolutePath());
-                    ffmpegCommand = captureCommand(fps, videoSize, xvfbDisplay, audioSource,
+                    ffmpegCommand = captureCommand(fps, videoSize, xvfbDisplay, audioRoute.source(),
                             progress.getAbsolutePath(), audioProgress.getAbsolutePath(), rawCapture.getAbsolutePath(),
                             grab[0], grab[1], videoEncoder);
                 }
@@ -566,9 +568,9 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
         metadataModel.put("recordingStartObserved", recordingStartObserved);
         metadataModel.put("recordingStopObserved", recordingStopObserved);
         metadataModel.put("audioRequested", true);
-        metadataModel.put("audioRoute", "virtual");
-        metadataModel.put("audioSource", audioSource);
-        metadataModel.put("audioSink", audioSinkName);
+        metadataModel.put("audioRoute", audioRoute.route());
+        metadataModel.put("audioSource", audioRoute.source());
+        metadataModel.put("audioSink", audioRoute.sink());
         metadataModel.put("audioSaved", audioSaved);
         metadataModel.put("audioRouteVerified", audioRouteVerified);
         metadataModel.put("gameSoundInitialized", soundInitialized.get());
@@ -725,6 +727,29 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
             case "x11grab" -> false;
             default -> throw new GradleException(CAPTURE_SOURCE_ENV + " must be game or x11grab, not " + source);
         };
+    }
+
+    /**
+     * Where a capture's sound comes from. A game take renders the game's own mix into the recording from an OpenAL
+     * Soft loopback device, so it needs no PulseAudio server, sink or monitor; a screen grab records the monitor of
+     * a dedicated null sink and needs all three. {@code environment} is what the client's sound has to be pointed at.
+     */
+    record AudioRoute(boolean virtualSink, String route, String source, String sink, Map<String, String> environment) {
+    }
+
+    static AudioRoute audioRoute(boolean gameCapture, String sinkName, String applicationId, String alsoftConfig) {
+        if (gameCapture) {
+            return new AudioRoute(false, "loopback", "openal-soft loopback", null, Map.of());
+        }
+        Map<String, String> environment = new LinkedHashMap<>();
+        environment.put("ALSOFT_CONF", alsoftConfig);
+        environment.put("ALSOFT_DRIVERS", "pulse");
+        environment.put("ALSOFT_PULSE_DEFAULT", sinkName);
+        environment.put("PULSE_SINK", sinkName);
+        environment.put("PULSE_PROP", "application.id=" + applicationId);
+        // Vanilla selects an enumerated OpenAL device; environment defaults alone do not pin it.
+        environment.put("GTR_RECORDING_AUDIO_DEVICE", sinkName);
+        return new AudioRoute(true, "virtual", sinkName + ".monitor", sinkName, environment);
     }
 
     /**
