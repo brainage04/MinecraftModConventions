@@ -51,6 +51,9 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
     /** Frames {@link #requireChangingPicture} decodes beside the four boundary images of a capture. */
     static final int PICTURE_SAMPLES = 8;
 
+    /** Environment variable naming the raw capture's video encoder; see {@link #videoEncoder}. */
+    static final String VIDEO_ENCODER_ENV = "GTR_RECORDING_VIDEO_ENCODER";
+
     @Internal
     public abstract DirectoryProperty getProjectDirectory();
 
@@ -89,6 +92,8 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
         double prePadding = parsePadding(env("GTR_RECORDING_PRE_PADDING_SECONDS", "0.5"));
         double postPadding = parsePadding(env("GTR_RECORDING_POST_PADDING_SECONDS", "0.5"));
         int frameRate = parsePositiveInt(fps, ClientGameTestOptions.CAPTURE_FPS_ENV);
+        String videoEncoderName = env(VIDEO_ENCODER_ENV, "libx264");
+        List<String> videoEncoder = videoEncoder(videoEncoderName);
         if (truthy(env("GTR_RECORDING_AUDIO_SET_DEFAULT", "false"))) {
             throw new GradleException("Changing the desktop default audio sink is prohibited; recording uses a dedicated route.");
         }
@@ -252,7 +257,7 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
                 getLogger().lifecycle("Recording display {} to {}", xvfbDisplay, output.getAbsolutePath());
                 List<String> ffmpegCommand = captureCommand(fps, videoSize, xvfbDisplay, audioSource,
                         progress.getAbsolutePath(), audioProgress.getAbsolutePath(), rawCapture.getAbsolutePath(),
-                        grab[0], grab[1]);
+                        grab[0], grab[1], videoEncoder);
                 ProcessBuilder ffmpegBuilder = new ProcessBuilder(ffmpegCommand);
                 ffmpegBuilder.directory(projectDir);
                 ffmpegBuilder.redirectErrorStream(true);
@@ -451,6 +456,7 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
         gpuModel.put("active", gpuDisplay != null && !ClientGpuCapture.isSoftwareRenderer(glRenderer));
         metadataModel.put("gpu", gpuModel);
         metadataModel.put("fps", fps);
+        metadataModel.put("videoEncoder", videoEncoderName);
         metadataModel.put("clientFrameCap", ClientGameTestOptions.frameCap(gpuDisplay != null, frameRate));
         metadataModel.put("xvfbScreen", xvfbScreen);
         metadataModel.put("video", output.getAbsolutePath());
@@ -537,21 +543,34 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
         return failures;
     }
 
+    /**
+     * The raw capture's video encoder options for {@value #VIDEO_ENCODER_ENV}: {@code libx264} on the CPU (the
+     * default), or {@code h264_nvenc} on an NVIDIA card's encoder, which takes x11grab's BGR frames as they are.
+     */
+    static List<String> videoEncoder(String name) {
+        return switch (name) {
+            case "libx264" -> List.of("-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p");
+            case "h264_nvenc" -> List.of("-c:v", "h264_nvenc", "-preset", "p4", "-rc", "constqp", "-qp", "18");
+            default -> throw new GradleException(VIDEO_ENCODER_ENV + " must be libx264 or h264_nvenc, not " + name);
+        };
+    }
+
     static List<String> captureCommand(String fps, String videoSize, String display, String audioSource,
-            String progress, String audioProgress, String rawCapture, int offsetX, int offsetY) {
+            String progress, String audioProgress, String rawCapture, int offsetX, int offsetY, List<String> encoder) {
         // The grab starts at the client's window, not at the display's origin: vanilla centres the window.
         String input = display + ".0+" + offsetX + "," + offsetY;
-        // Passthrough alone still rounds timestamps into the encoder's default 1/fps timebase.
-        return List.of(
+        List<String> command = new ArrayList<>(List.of(
                 "ffmpeg", "-y", "-copyts", "-stats_period", "0.05", "-progress", progress,
                 "-f", "x11grab", "-framerate", fps, "-video_size", videoSize, "-draw_mouse", "0", "-i", input,
                 "-f", "pulse", "-thread_queue_size", "1024", "-i", audioSource,
-                "-map", "0:v:0", "-map", "1:a:0", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
-                "-pix_fmt", "yuv420p", "-fps_mode", "passthrough", "-enc_time_base:v", "demux", "-c:a", "pcm_s16le",
+                "-map", "0:v:0", "-map", "1:a:0"));
+        command.addAll(encoder);
+        // Passthrough alone still rounds timestamps into the encoder's default 1/fps timebase.
+        command.addAll(List.of("-fps_mode", "passthrough", "-enc_time_base:v", "demux", "-c:a", "pcm_s16le",
                 "-stats_mux_pre:a:0", audioProgress,
                 "-stats_mux_pre_fmt:a:0", "{pts} {tb}",
-                "-thread_queue_size", Integer.toString(MUX_QUEUE_PACKETS), rawCapture
-        );
+                "-thread_queue_size", Integer.toString(MUX_QUEUE_PACKETS), rawCapture));
+        return command;
     }
 
     static Path ownCgroup(Path procSelfCgroup, Path cgroupRoot) {

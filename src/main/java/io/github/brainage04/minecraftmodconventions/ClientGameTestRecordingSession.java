@@ -6,12 +6,17 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.Properties;
 
 /** Loader-independent recording protocol. Tick and presentation callbacks come from Minecraft, not tests. */
 public final class ClientGameTestRecordingSession {
     private static final String PREFIX = "CLIENT_GAMETEST_RECORDING_";
     private static final boolean ENABLED = path("START_SIGNAL") != null;
+    /** With the trace on, every world present's CPU timestamps go to a file beside the boundaries. */
+    private static final boolean TRACE = "true".equalsIgnoreCase(System.getenv(PREFIX + "TRACE"));
+    private static long[] presentTimesUs = new long[TRACE ? 1 << 16 : 0];
+    private static int presentTimes;
     private static boolean armed;
     private static boolean ready;
     private static boolean finished;
@@ -112,6 +117,13 @@ public final class ClientGameTestRecordingSession {
                 System.out.println("[CLIENT_GAMETEST_BOUNDARY] FIRST_WORLD_PRESENT epochUs=" + firstPresentAfterUs);
             }
             presentedFrames++;
+            if (TRACE) {
+                if (presentTimes + 2 > presentTimesUs.length) {
+                    presentTimesUs = Arrays.copyOf(presentTimesUs, presentTimesUs.length * 2);
+                }
+                presentTimesUs[presentTimes++] = lastPresentBeforeUs;
+                presentTimesUs[presentTimes++] = lastPresentAfterUs;
+            }
         }
     }
 
@@ -161,6 +173,17 @@ public final class ClientGameTestRecordingSession {
             write(path("BOUNDARIES"), text.toString());
         } catch (IOException exception) {
             throw new AssertionError("Could not serialize recording boundaries", exception);
+        }
+        if (TRACE) {
+            StringBuilder presents = new StringBuilder("beforePresentUs,afterPresentUs\n");
+            synchronized (ClientGameTestRecordingSession.class) {
+                for (int i = 0; i < presentTimes; i += 2) {
+                    presents.append(presentTimesUs[i]).append(',').append(presentTimesUs[i + 1]).append('\n');
+                }
+            }
+            Path boundaries = path("BOUNDARIES");
+            write(boundaries.resolveSibling(boundaries.getFileName().toString().replace(".properties", "")
+                    + "-presents.csv"), presents.toString());
         }
         write(path("STOP_SIGNAL"), Long.toString(epochMicros()));
         await("COMPLETE_SIGNAL", waitForClient);

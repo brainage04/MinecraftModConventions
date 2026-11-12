@@ -1,5 +1,6 @@
 package io.github.brainage04.minecraftmodconventions.gradle.recorder;
 
+import org.gradle.api.GradleException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -9,7 +10,9 @@ import java.nio.file.Path;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class RecordClientGameTestTaskTest {
@@ -31,7 +34,8 @@ class RecordClientGameTestTaskTest {
     @Test
     void captureQueuesEncodedPacketsWhileRawCaptureWritesBlock() {
         List<String> command = RecordClientGameTestTask.captureCommand(
-                "30", "1920x1080", ":90", "sink.monitor", "progress.txt", "audio.txt", "raw.mkv", 0, 0);
+                "30", "1920x1080", ":90", "sink.monitor", "progress.txt", "audio.txt", "raw.mkv", 0, 0,
+                RecordClientGameTestTask.videoEncoder("libx264"));
 
         // An option after the last input and before the output file applies to the output (the muxer queue).
         int output = command.size() - 1;
@@ -48,10 +52,24 @@ class RecordClientGameTestTaskTest {
     @Test
     void theCaptureStartsAtTheClientsWindowRatherThanTheDisplayOrigin() {
         List<String> command = RecordClientGameTestTask.captureCommand(
-                "30", "1920x1080", ":1", "sink.monitor", "progress.txt", "audio.txt", "raw.mkv", 320, 180);
+                "30", "1920x1080", ":1", "sink.monitor", "progress.txt", "audio.txt", "raw.mkv", 320, 180,
+                RecordClientGameTestTask.videoEncoder("libx264"));
 
         assertEquals(":1.0+320,180", command.get(command.indexOf("-i") + 1));
         assertEquals("1920x1080", command.get(command.indexOf("-video_size") + 1));
+    }
+
+    @Test
+    void theCaptureEncodesOnTheCardsEncoderWhenAskedAndOnTheCpuOtherwise() {
+        List<String> nvenc = RecordClientGameTestTask.captureCommand(
+                "60", "1920x1080", ":1", "sink.monitor", "progress.txt", "audio.txt", "raw.mkv", 0, 0,
+                RecordClientGameTestTask.videoEncoder("h264_nvenc"));
+
+        assertEquals("h264_nvenc", nvenc.get(nvenc.indexOf("-c:v") + 1));
+        // NVENC converts x11grab's BGR frames itself, so the CPU does no pixel format conversion.
+        assertFalse(nvenc.contains("-pix_fmt"));
+        assertEquals("libx264", RecordClientGameTestTask.videoEncoder("libx264").get(1));
+        assertThrows(GradleException.class, () -> RecordClientGameTestTask.videoEncoder("hevc_vaapi"));
     }
 
     @Test
