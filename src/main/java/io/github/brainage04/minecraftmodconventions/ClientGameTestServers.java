@@ -95,6 +95,7 @@ public final class ClientGameTestServers {
 
         ClientGameTestRecorder.startRecording(context);
         try (TestDedicatedServerContext server = context.worldBuilder().createServer(serverProperties)) {
+            server.runOnServer(RecordingPerformance::trackServer);
             beforeJoin.accept(server);
             try {
                 connectToDedicatedServer(context, server, serverName);
@@ -105,6 +106,7 @@ public final class ClientGameTestServers {
             }
         }
         finally {
+            RecordingPerformance.untrackServer();
             ClientGameTestRecorder.stopRecording(context);
         }
     }

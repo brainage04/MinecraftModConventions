@@ -373,13 +373,14 @@ Every positive case has a matching negative case in the same suite, showing the 
 
 ### Shooting a recording
 
-Every mod's recording is reviewed in the same format, so every recorded client GameTest follows these five rules, and a review checks them.
+Every mod's recording is reviewed in the same format, so every recorded client GameTest follows these six rules, and a review checks them.
 
 1. **Negative, then positive, per scenario.** Each scenario shows about 2 seconds with the feature or rule off, then about 2 seconds with it on, and then the next scenario starts. A recording never shows all the positive cases first and the negative cases at the end.
 2. **No setup and no filler on screen.** The test world is built before the recording starts: the test loads a saved NBT structure or a saved world, as BrainageMinigames does with its pre-built test world. No `/fill`, block placing or other building happens on camera, and the test carries no setup code for it. With the [dedicated-server harness](#dedicated-server-harness), the test places the structure in `beforeJoin`, which runs before the recording starts. When a scenario ends, the player teleports straight into the next one.
 3. **No needless camera moves.** The player looks at the scenario's target from the scenario's first frame. A player who already faces the right way from the previous scenario keeps its rotation.
 4. **Captions describe what the mod does.** Captions and every other text on screen say what the mod does in the scenario, never what was removed or changed, such as "the 10 tick wind-up is gone". They use plain prose: short sentences, with the thing acting as the subject. `showStep` and `showStepAndHold` fail a caption that contains "no longer", "anymore", "is gone", "are gone", "has changed" or "have changed", or "was", "were", "has been" or "have been" followed by "removed", "changed" or "replaced".
 5. **Damage scenarios hit often.** A scenario that shows damage lands at least one hit every 5 ticks, ideally one every 2 ticks. A hit every tick is fine too.
+6. **A performance overlay.** Every recording shows a small panel in the bottom-right corner with the client's frame rate and the time its last frame took, the server's ticks per second and milliseconds per tick, and the memory the client's JVM uses, so a review can tell a stutter in the game from one in the capture. The recording helper draws it whenever the recorder runs the client, so no mod adds code for it. The bottom-right corner is the free one: the caption panel holds the top right, mods put their own HUDs in the top left, chat sits in the bottom left and the hotbar in the bottom centre. The server numbers come from the singleplayer server or from the dedicated server the [harness](#dedicated-server-harness) runs, and read `TPS -` on any other server. The metadata keeps the frame rate's mean and minimum, the frame time's median, 95th percentile and maximum, the mean and peak milliseconds per tick, the lowest ticks per second and the peak memory, as the `perf*` values in `boundaries`.
 
 ### The recording standard
 

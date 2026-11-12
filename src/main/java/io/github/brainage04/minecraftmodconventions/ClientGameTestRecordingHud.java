@@ -127,6 +127,29 @@ public final class ClientGameTestRecordingHud {
                     true);
             textY += lineHeight;
         }
+        renderPerformance(graphics, font, client);
+    }
+
+    /**
+     * The performance overlay, in the bottom-right corner: the caption panel holds the top right, mods put
+     * their own HUDs in the top left, chat sits in the bottom left and the hotbar in the bottom centre.
+     */
+    private static void renderPerformance(GuiGraphicsExtractor graphics, Font font, Minecraft client) {
+        List<String> lines = RecordingPerformance.sample(client);
+        int width = 0;
+        for (String line : lines) {
+            width = Math.max(width, font.width(line));
+        }
+        int panelWidth = panelWidth(width);
+        int panelHeight = panelHeight(lines.size());
+        int panelX = client.getWindow().getGuiScaledWidth() - panelWidth - SCREEN_MARGIN;
+        int panelY = client.getWindow().getGuiScaledHeight() - panelHeight - SCREEN_MARGIN;
+        graphics.fill(panelX, panelY, panelX + panelWidth, panelY + panelHeight, BACKGROUND_COLOR);
+        int textY = panelY + PANEL_PADDING;
+        for (String line : lines) {
+            graphics.text(font, line, panelX + PANEL_PADDING, textY, LABEL_COLOR, true);
+            textY += FONT_LINE_HEIGHT + LINE_GAP;
+        }
     }
 
     private static List<HudLine> lines() {

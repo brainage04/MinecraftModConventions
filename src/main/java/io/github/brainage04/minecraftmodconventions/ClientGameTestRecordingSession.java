@@ -17,6 +17,7 @@ public final class ClientGameTestRecordingSession {
     private static final boolean TRACE = "true".equalsIgnoreCase(System.getenv(PREFIX + "TRACE"));
     private static long[] presentTimesUs = new long[TRACE ? 1 << 16 : 0];
     private static int presentTimes;
+    private static final RecordingPerformanceStats PERFORMANCE = new RecordingPerformanceStats();
     private static boolean armed;
     private static boolean ready;
     private static boolean finished;
@@ -127,6 +128,17 @@ public final class ClientGameTestRecordingSession {
         }
     }
 
+    /** One rendered frame's performance numbers, kept while the capture runs; see {@link RecordingPerformanceStats}. */
+    public static void recordPerformance(int fps, double frameTimeMs, double mspt, double tickRate, long usedBytes,
+            long maxBytes) {
+        synchronized (ClientGameTestRecordingSession.class) {
+            if (!ENABLED || !ready || finished) {
+                return;
+            }
+        }
+        PERFORMANCE.add(fps, frameTimeMs, mspt, tickRate, usedBytes, maxBytes);
+    }
+
     public static synchronized void worldCleared() {
         if (ENABLED && ready && !finished && firstTickUs != 0) {
             worldExitUs = epochMicros();
@@ -167,6 +179,7 @@ public final class ClientGameTestRecordingSession {
             evidence.setProperty("clockDriftUs", Long.toString(epochMicros() - clockEpochUs
                     - (System.nanoTime() - clockNano) / 1000L));
         }
+        evidence.putAll(PERFORMANCE.summary());
         try {
             StringWriter text = new StringWriter();
             evidence.store(text, "Actual Minecraft world tick and GPU presentation boundaries");
