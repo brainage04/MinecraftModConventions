@@ -95,7 +95,9 @@ public final class ClientGameTestRecorderPlugin implements Plugin<Project> {
 
     private static void configureProductionGameTests(Project project, ClientGameTestRecorderExtension extension) {
         addRuntimeHelperDependencies(project);
-        Provider<Boolean> recorderManaged = ClientGameTestOptions.recording(project.getProviders());
+        Provider<Boolean> recorderManaged = project.getProviders().environmentVariable("GTR_RECORDING_MANAGED_XVFB")
+                .map(Boolean::parseBoolean)
+                .orElse(false);
         ProductionGameTestExtension production = project.getExtensions().getByType(ProductionGameTestExtension.class);
         production.getClientUseXvfb().convention(recorderManaged.map(managed -> !managed));
         production.getClientSilenceAudio().convention(recorderManaged.map(managed -> !managed));

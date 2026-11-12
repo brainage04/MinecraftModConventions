@@ -14,7 +14,7 @@ Shared Gradle plugins, GitHub workflows and client GameTest helpers for my Minec
 | --- | --- | --- |
 | `multiloader-mod-conventions` | root of a `common`/`fabric` mod, optionally with `neoforge` | **The standard entry point.** Configures the included modules with Architectury Loom and applies every plugin below except `fabric-mod-conventions` and `maven-central-publishing`. Adds the [vanilla dimension identity](#vanilla-dimension-identity-check), [tag identity](#vanilla-tag-identity-check) and [world height](#hardcoded-world-height-check) checks, and the [deprecated GameTest API](#deprecated-gametest-api-check) check, to every module. |
 | `fabric-mod-conventions` | single-loader Fabric project | Fabric Loom, project identity, standard dependencies and repositories, Java settings, side-aware source layout, access widener, sources JAR, `fabric.mod.json` expansion, license in the JAR, and the [vanilla dimension identity](#vanilla-dimension-identity-check), [tag identity](#vanilla-tag-identity-check) and [world height](#hardcoded-world-height-check) checks, plus the [deprecated GameTest API](#deprecated-gametest-api-check) check. |
-| `client-gametest-recorder` | Fabric project | `recordClientGameTest`: records client GameTests to MP4 in an isolated Xvfb display and audio sink. Adds the runtime helpers to the `gametest` source set. |
+| `client-gametest-recorder` | Fabric project | `recordClientGameTest`: records client GameTests to MP4 in an isolated Xvfb display, from the game's own picture and sound or from a screen grab and an audio sink. Adds the runtime helpers to the `gametest` source set. |
 | `production-gametests` | Fabric project | Creates the `gametest` source set, the film-only [`recording`](#film-only-code-in-the-recording-source-set) source set, and runs GameTests against the packaged mod through Loom's production client and server. |
 | `integration-gametests` | Fabric or NeoForge Loom project with a `gametest` source set | Named GameTest suites that run with extra mods (Maven artifacts or pinned Git commits) loaded, in their own source set and runs. |
 | `workspace-dependencies` | any project | Prefers sibling checkouts' `build/local-repo` over Maven Central, and can share one dev-client `options.txt`. |
@@ -292,7 +292,7 @@ Client GameTests (`runClientGameTest`), production client GameTests (`runProduct
 | `particles` | `2` (minimal) | `0` (all), so effect particles such as poison and wither swirls show |
 | `biomeBlendRadius`, `chunkSectionFadeInTime`, `entityDistanceScaling` | `0`, `0.0`, `0.5` | same |
 | `mipmapLevels`, `maxAnisotropyBit`, `menuBackgroundBlurriness`, `prioritizeChunkUpdates`, `weatherRadius` | `0`, `1`, `0`, `0`, `5` | same |
-| `soundDevice` | `""` | the recorder's private sink |
+| `soundDevice` | `""` | the recorder's private sink, or `""` for a game take, which plays into its own loopback device |
 | `soundCategory_master` | `0.0` | `0.7` |
 | `soundCategory_music` | `0.0` | `0.0` |
 | other `soundCategory_*` (`record`, `weather`, `block`, `hostile`, `neutral`, `player`, `ambient`, `voice`, `ui`) | `0.0` | `1.0` |
@@ -426,7 +426,7 @@ Scene staging, cameras, captions and film-only mixins go in `src/recording/java`
 GTR_RECORDING_PROFILE=smoke ./gradlew --no-daemon :fabric:recordClientGameTest
 ```
 
-Needs `ffmpeg`/`ffprobe` (X11 capture, PulseAudio input, H.264/AAC), Xvfb with `xdpyinfo`, and `pactl`. Set `PULSE_SERVER` for a fully isolated session. The desktop's default sink is never changed.
+Needs `ffmpeg`/`ffprobe` (raw video, PulseAudio input for a screen grab, H.264/AAC) and Xvfb with `xdpyinfo`, and a screen grab also needs `pactl`: a game take renders the game's own sound and needs no PulseAudio server. Set `PULSE_SERVER` for a fully isolated screen grab. The desktop's default sink is never changed.
 
 ```gradle
 clientGameTestRecorder {
