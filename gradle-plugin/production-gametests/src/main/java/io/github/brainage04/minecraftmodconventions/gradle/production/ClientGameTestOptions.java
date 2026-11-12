@@ -115,9 +115,9 @@ public final class ClientGameTestOptions {
     }
 
     /**
-     * The client's frame cap. A client on the card presents twice as often as the capture samples the window,
-     * so each captured image is a fresh one. The software rasterizer cannot present faster than the default
-     * capture rate, so its cap stays there.
+     * The client's frame cap. A client on the card may present twice as often as the capture samples the window,
+     * so a captured image is a fresh one whenever the client keeps up. The software rasterizer cannot present
+     * faster than the default capture rate, so its cap stays there.
      */
     public static int frameCap(boolean gpuRendering, int captureFrameRate) {
         return gpuRendering ? Math.min(UNLIMITED_FRAME_CAP, 2 * captureFrameRate) : DEFAULT_CAPTURE_FPS;
