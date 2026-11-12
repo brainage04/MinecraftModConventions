@@ -104,6 +104,16 @@ class ClientGameTestOptionsTest {
     }
 
     @Test
+    void onlyAClientOnTheCardReadsTheCaptureRate() {
+        assertEquals(60, ClientGameTestOptions.captureFrameRate(true, "60"));
+        assertEquals(30, ClientGameTestOptions.captureFrameRate(true, ""));
+        assertThrows(GradleException.class, () -> ClientGameTestOptions.captureFrameRate(true, "sixty"));
+        // A plain test run ignores the rate, so a bad value fails only the recording that reads it.
+        assertEquals(30, ClientGameTestOptions.captureFrameRate(false, "sixty"));
+        assertEquals(30, ClientGameTestOptions.captureFrameRate(false, "29.97"));
+    }
+
+    @Test
     void profilesAreNamedTestAndShowcase() {
         assertEquals(ClientGameTestOptions.Profile.TEST, ClientGameTestOptions.Profile.named("test"));
         assertEquals(ClientGameTestOptions.Profile.SHOWCASE, ClientGameTestOptions.Profile.named("showcase"));

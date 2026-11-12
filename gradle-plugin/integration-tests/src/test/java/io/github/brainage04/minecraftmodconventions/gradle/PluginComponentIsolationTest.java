@@ -436,6 +436,28 @@ class PluginComponentIsolationTest {
     }
 
     @Test
+    void aPlainTestRunIgnoresACaptureRateOnlyARecordingReads() throws IOException {
+        writeLoomFixture(BASE_PLUGIN_ID + "'\n    id '" + RECORDER_PLUGIN_ID + "'\n    id '" + PRODUCTION_PLUGIN_ID,
+                "productionGameTests { includeFabricApiDependency = false }\n");
+
+        GradleRunner.create()
+                .withProjectDir(projectDir.toFile())
+                .withPluginClasspath()
+                .withEnvironment(java.util.Map.of("GTR_RECORDING_FPS", "29.97"))
+                .withArguments("prepareClientGameTestRun", "prepareProductionGameTestRuns")
+                .build();
+        assertTrue(Files.readString(projectDir.resolve("build/run/clientGameTest/options.txt")).contains("\nmaxFps:30\n"));
+
+        BuildResult card = GradleRunner.create()
+                .withProjectDir(projectDir.toFile())
+                .withPluginClasspath()
+                .withEnvironment(java.util.Map.of("GTR_RECORDING_DISPLAY", ":1", "GTR_RECORDING_FPS", "29.97"))
+                .withArguments("prepareClientGameTestRun")
+                .buildAndFail();
+        assertTrue(card.getOutput().contains("GTR_RECORDING_FPS to be a positive whole number, not 29.97"), card.getOutput());
+    }
+
+    @Test
     void bothClientLaunchesGetAStartupDeadline() throws IOException {
         writeLoomFixture(BASE_PLUGIN_ID + "'\n    id '" + RECORDER_PLUGIN_ID + "'\n    id '" + PRODUCTION_PLUGIN_ID, """
                 productionGameTests { includeFabricApiDependency = false }

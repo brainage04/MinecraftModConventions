@@ -93,12 +93,18 @@ public final class ClientGameTestOptions {
                 .orElse(DEFAULT_RECORDER_SCREEN);
     }
 
-    /** The recorder's capture rate from {@value #CAPTURE_FPS_ENV}, {@value #DEFAULT_CAPTURE_FPS} when unset. */
-    public static Provider<Integer> captureFrameRate(ProviderFactory providers) {
-        return providers.environmentVariable(CAPTURE_FPS_ENV)
-                .filter(rate -> !rate.isBlank())
-                .map(ClientGameTestOptions::parseCaptureFrameRate)
-                .orElse(DEFAULT_CAPTURE_FPS);
+    /** {@value #CAPTURE_FPS_ENV} as it is set, empty when unset; {@link #captureFrameRate(boolean, String)} reads it. */
+    public static Provider<String> captureFrameRate(ProviderFactory providers) {
+        return providers.environmentVariable(CAPTURE_FPS_ENV).orElse("");
+    }
+
+    /**
+     * The capture rate a client's options follow: {@code rate} ({@value #DEFAULT_CAPTURE_FPS} when blank) for a
+     * client on the card, and {@value #DEFAULT_CAPTURE_FPS} otherwise, whose frame cap does not depend on it (see
+     * {@link #frameCap}). Only the card's client reads {@code rate}, so a bad value fails only a recording.
+     */
+    public static int captureFrameRate(boolean gpuRendering, String rate) {
+        return gpuRendering && !rate.isBlank() ? parseCaptureFrameRate(rate) : DEFAULT_CAPTURE_FPS;
     }
 
     static int parseCaptureFrameRate(String rate) {

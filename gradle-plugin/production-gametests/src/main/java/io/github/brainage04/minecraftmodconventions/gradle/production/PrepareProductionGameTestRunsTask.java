@@ -48,9 +48,12 @@ public abstract class PrepareProductionGameTestRunsTask extends DefaultTask {
     @Input
     public abstract Property<Boolean> getGpuRendering();
 
-    /** The recorder's capture rate in frames a second; see {@link ClientGameTestOptions#captureFrameRate}. */
+    /**
+     * The recorder's capture rate as set, read only for a client on the card; see
+     * {@link ClientGameTestOptions#captureFrameRate(boolean, String)}.
+     */
     @Input
-    public abstract Property<Integer> getCaptureFrameRate();
+    public abstract Property<String> getCaptureFrameRate();
 
     @TaskAction
     public void prepare() {
@@ -62,7 +65,7 @@ public abstract class PrepareProductionGameTestRunsTask extends DefaultTask {
                 getDisableSocialInteractionsToast().get(),
                 getClientRecorderScreen().get(),
                 getGpuRendering().get(),
-                getCaptureFrameRate().get()
+                ClientGameTestOptions.captureFrameRate(getGpuRendering().get(), getCaptureFrameRate().get())
         );
         writeEula(getServerEulaFile().get().getAsFile().toPath());
     }
