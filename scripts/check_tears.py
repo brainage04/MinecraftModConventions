@@ -42,8 +42,9 @@ OWN = 64
 
 
 def row_labels(video):
-    """For every frame but the first and last: one label per row (P, N, - for mixed, None for still), the
-    count of its own pixels and the count of all marked pixels."""
+    """For every frame but the first: one label per row (P, N, - for mixed, None for still), the count of its
+    own pixels and the count of all marked pixels. The last frame is compared with the frame before on both
+    sides, so it has no P or N row and is never torn."""
     shift = "trim=start_frame={0},setpts=PTS-STARTPTS"
     graph = (f"[0:v]format=gray,scale={WIDTH}:{ROWS}:flags=area,settb=1/30,setpts=N,split=3[f0][f1][f2];"
              f"[f1]{shift.format(1)},split[m1][m2];[f2]{shift.format(2)}[n];"

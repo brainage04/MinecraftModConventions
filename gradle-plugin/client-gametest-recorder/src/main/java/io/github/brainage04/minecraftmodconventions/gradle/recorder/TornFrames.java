@@ -49,12 +49,16 @@ final class TornFrames {
     private TornFrames() {
     }
 
-    /** The ffmpeg command that writes one grey mask per frame of {@code video} but its first and last. */
+    /**
+     * The ffmpeg command that writes one grey mask per frame of {@code video} but its first. The last frame's mask
+     * compares it with the frame before on both sides, so it holds no previous or next pixel and is never torn.
+     */
     static List<String> maskCommand(String video) {
         String shift = "trim=start_frame=%d,setpts=PTS-STARTPTS";
-        // blend pairs its two inputs' frames by timestamp, so every frame gets the exact timestamp of its number.
-        // In the 1/1000 time base of a raw capture setpts=N/(30*TB) cannot be exact, and with it the shifted copies
-        // paired 928 of carpetsound3's 3497 frames with the wrong neighbour, and the check missed its frame 1655.
+        // blend pairs its two inputs' frames by timestamp, so every frame gets its number as an exact timestamp.
+        // setpts=N/(30*TB) is inexact in any time base where 1/30 s is not a whole number of ticks, such as a raw
+        // capture's 1/1000 or a saved video's 1/16000: there it paired 928 of carpetsound3's 3497 raw frames with
+        // the wrong neighbour, and the check missed the tear in its frame 1655.
         String graph = "[0:v]format=gray,scale=" + WIDTH + ":" + ROWS + ":flags=area,settb=1/30,setpts=N,split=3[f0][f1][f2];"
                 + "[f1]" + shift.formatted(1) + ",split[m1][m2];[f2]" + shift.formatted(2) + "[n];"
                 + "[m1][f0]blend=all_mode=difference:shortest=1[to_previous];"
