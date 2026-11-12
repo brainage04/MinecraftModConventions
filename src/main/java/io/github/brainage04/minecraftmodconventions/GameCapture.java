@@ -37,6 +37,8 @@ public final class GameCapture {
     private static final int BUFFERS = 4;
     /** Frames waiting for the writer; a full queue drops the newest frame instead of stalling the render thread. */
     private static final int QUEUED_FRAMES = 3;
+    /** The main target's format: four bytes a pixel, which is what the copy buffers and ffmpeg's rgba read. */
+    private static final int BYTES_PER_PIXEL = 4;
     private static final long CLOCK_POLL_NANOS = 50_000_000L;
     private static final long SPIN_NANOS = 500_000L;
     /**
@@ -52,6 +54,9 @@ public final class GameCapture {
     private static String startFailure;
 
     private final Clock clock;
+    /** The wall clock's reading when the capture started, and the monotonic reading it is anchored to. */
+    private final long epochBaseUs;
+    private final long nanoBase;
     private final GpuBuffer[] buffers = new GpuBuffer[BUFFERS];
     private final int[] states = new int[BUFFERS];
     private final long[] presentUs = new long[BUFFERS];
@@ -69,10 +74,15 @@ public final class GameCapture {
     /** The last present's time, on the render thread only. */
     private long lastPresentUs = Long.MIN_VALUE;
     private volatile String failure;
+    /** Set when the writer sees the pipe close: the recording has ended and no more frames are wanted. */
+    private volatile boolean stopped;
 
     private GameCapture(Clock clock) {
         this.clock = clock;
-        long size = (long) clock.width() * clock.height() * 4;
+        long nanos = System.nanoTime();
+        this.epochBaseUs = epochMicros();
+        this.nanoBase = nanos;
+        long size = (long) clock.width() * clock.height() * BYTES_PER_PIXEL;
         for (int i = 0; i < BUFFERS; i++) {
             buffers[i] = RenderSystem.getDevice().createBuffer(() -> "Recording capture", GpuBuffer.USAGE_MAP_READ | GpuBuffer.USAGE_COPY_DST, size);
         }
@@ -103,6 +113,11 @@ public final class GameCapture {
         if (target.width != capture.clock.width() || target.height != capture.clock.height()) {
             capture.fail("The client's frame is " + target.width + "x" + target.height + ", not the recording's "
                     + capture.clock.width() + "x" + capture.clock.height());
+            return;
+        }
+        String formatProblem = captureFormatProblem(texture.getFormat().blockSize());
+        if (formatProblem != null) {
+            capture.fail(formatProblem);
             return;
         }
         capture.frame(texture, capture.awaitPresentTime());
@@ -183,8 +198,8 @@ public final class GameCapture {
 
     /** Waits for the time {@link Clock#presentAtUs} gives and returns the present's time. */
     private long awaitPresentTime() {
-        long nowUs = epochMicros();
-        long waitUs = clock.presentAtUs(lastPresentUs, nowUs) - nowUs;
+        long now = nowUs();
+        long waitUs = clock.presentAtUs(lastPresentUs, now) - now;
         long until = System.nanoTime() + waitUs * 1000L;
         long remaining;
         while ((remaining = until - System.nanoTime()) > 0) {
@@ -194,11 +209,28 @@ public final class GameCapture {
                 Thread.onSpinWait();
             }
         }
-        lastPresentUs = epochMicros();
+        lastPresentUs = nowUs();
         return lastPresentUs;
     }
 
+    /**
+     * The capture's wall-clock time, anchored to one monotonic reading when the capture started. The sound's samples
+     * follow {@link System#nanoTime()} (see {@link GameCaptureAudio}), so a wall-clock step during a take would
+     * otherwise move the video timeline against the sound by the size of the step.
+     */
+    private long nowUs() {
+        return anchoredUs(epochBaseUs, nanoBase, System.nanoTime());
+    }
+
+    /** The wall-clock microsecond time {@code nowNanos} of a clock anchored at {@code epochBaseUs}/{@code nanoBase}. */
+    static long anchoredUs(long epochBaseUs, long nanoBase, long nowNanos) {
+        return epochBaseUs + (nowNanos - nanoBase) / 1000L;
+    }
+
     private synchronized void frame(GpuTexture texture, long presentTimeUs) {
+        if (stopped) {
+            return;
+        }
         for (int pass = 0; pass < BUFFERS; pass++) {
             int oldest = -1;
             for (int i = 0; i < BUFFERS; i++) {
@@ -268,7 +300,7 @@ public final class GameCapture {
                 }
                 // Every slot before this frame's present shows the frame before it (the first frame for the slots
                 // before any frame arrived).
-                long until = clock.slotsToFill(frame == null ? null : frame.presentUs(), epochMicros());
+                long until = clock.slotsToFill(frame == null ? null : frame.presentUs(), nowUs());
                 byte[] fill = shown == null ? frame.bytes() : shown;
                 for (; slot < until; slot++) {
                     out.write(fill);
@@ -294,7 +326,22 @@ public final class GameCapture {
             // The recorder stops ffmpeg once it has the video it needs, which closes the pipe under the writer;
             // a capture that ends early fails in the recorder, which sees the video stop.
             System.out.println("[CLIENT_GAMETEST_RECORDING] The capture pipe closed: " + exception.getMessage());
+        } finally {
+            stopped = true;
         }
+    }
+
+    /**
+     * Why a frame whose format has {@code blockSize} bytes a pixel cannot be captured, or null. The copy buffers
+     * hold four bytes a pixel and ffmpeg is told {@code rgba}, the main target's format ({@code MainTarget.java:18}
+     * in the 26.3 sources) and the size vanilla's screenshot asks the format for ({@code Screenshot.java:85}).
+     */
+    static String captureFormatProblem(int blockSize) {
+        if (blockSize == BYTES_PER_PIXEL) {
+            return null;
+        }
+        return "The client's frame is " + blockSize + " bytes a pixel, and the recording reads "
+                + BYTES_PER_PIXEL + " (RGBA8): this graphics format is not one the capture can record.";
     }
 
     /**

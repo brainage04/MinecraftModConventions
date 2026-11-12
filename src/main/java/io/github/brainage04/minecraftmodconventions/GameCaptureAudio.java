@@ -33,6 +33,8 @@ public final class GameCaptureAudio {
 
     private static Thread renderer;
     private static volatile boolean running;
+    /** Set when a renderer could not be stopped within its join: it still owns the sound pipe. */
+    private static boolean stuck;
     private static volatile long startUs = Long.MIN_VALUE;
     /** The sound pipe, shared by every device the sound engine opens, so a reload does not end the stream. */
     private static OutputStream out;
@@ -96,6 +98,9 @@ public final class GameCaptureAudio {
     public static void deviceOpened(long device) {
         synchronized (LOCK) {
             stopRendering();
+            if (stuck) {
+                return;
+            }
             running = true;
             renderer = new Thread(() -> render(device), "Recording sound");
             renderer.setDaemon(true);
@@ -129,9 +134,19 @@ public final class GameCaptureAudio {
         running = false;
         if (renderer != null) {
             try {
-                renderer.join();
+                // The writer can be blocked in out.write on a full pipe while holding WRITE_LOCK; waiting for it
+                // without a bound would hang the client's shutdown behind ffmpeg. It is a daemon thread, and the
+                // sound it still writes is the recording's tail.
+                renderer.join(1000L);
             } catch (InterruptedException exception) {
                 Thread.currentThread().interrupt();
+            }
+            if (renderer.isAlive()) {
+                // It dies with the JVM. A second renderer would write into the same pipe behind it, and the sound
+                // it still writes is the recording's tail, so nothing else starts one.
+                stuck = true;
+                System.out.println("[CLIENT_GAMETEST_RECORDING] The sound writer did not stop within a second.");
+                return;
             }
             renderer = null;
         }

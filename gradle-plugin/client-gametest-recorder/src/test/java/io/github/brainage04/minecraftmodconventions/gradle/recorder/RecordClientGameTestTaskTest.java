@@ -55,6 +55,13 @@ class RecordClientGameTestTaskTest {
     }
 
     @Test
+    void aRecordingCapturesTheGameWhenTheSourceIsNotSet() {
+        // The default is read through capturesGame, so flipping it back to x11grab fails here.
+        assertEquals("game", RecordClientGameTestTask.DEFAULT_CAPTURE_SOURCE);
+        assertTrue(RecordClientGameTestTask.capturesGame(RecordClientGameTestTask.DEFAULT_CAPTURE_SOURCE));
+    }
+
+    @Test
     void aGameTakeRendersItsOwnSoundAndNeedsNoPulseAudioSink() {
         RecordClientGameTestTask.AudioRoute game = RecordClientGameTestTask.audioRoute(
                 true, "gametest_recorder_1", "mmc.recorder.take.1", "/tmp/take-alsoft.conf");

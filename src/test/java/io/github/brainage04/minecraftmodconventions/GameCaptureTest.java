@@ -104,6 +104,24 @@ class GameCaptureTest {
     }
 
     @Test
+    void theCaptureClockDoesNotFollowAWallClockStep() {
+        // The slots are anchored to one wall-clock reading and one monotonic one, so an NTP correction during a take
+        // cannot move the video timeline against the sound's: two seconds of monotonic time is two seconds of slots.
+        assertEquals(START_US, GameCapture.anchoredUs(START_US, 0L, 0L));
+        assertEquals(START_US + 2_000_000L, GameCapture.anchoredUs(START_US, 5_000_000L, 2_005_000_000L));
+        assertEquals(START_US + 1L, GameCapture.anchoredUs(START_US, 0L, 1_999L));
+    }
+
+    @Test
+    void aFrameFormatOtherThanFourBytesAPixelFailsTheCapture() {
+        assertNull(GameCapture.captureFormatProblem(4));
+
+        String failure = GameCapture.captureFormatProblem(8);
+        assertTrue(failure.contains("8 bytes a pixel"), failure);
+        assertTrue(failure.contains("RGBA8"), failure);
+    }
+
+    @Test
     void aClientOnAnotherGraphicsBackendDoesNotStartAGameTake() {
         assertNull(GameCapture.backendProblem("OpenGL"));
 
