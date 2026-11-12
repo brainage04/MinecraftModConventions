@@ -75,7 +75,7 @@ class ClientGameTestOptionsTest {
     }
 
     @Test
-    void aRecordingOnACardPresentsTwiceAsOftenAsTheCapture() {
+    void aRecordingOnACardDrawsAtTheCaptureRate() {
         Map<String, String> software = ClientGameTestOptions.options(
                 ClientGameTestOptions.Profile.SHOWCASE, "sink", true, "1920x1080", false, 30);
         Map<String, String> card = ClientGameTestOptions.options(
@@ -84,14 +84,15 @@ class ClientGameTestOptionsTest {
                 ClientGameTestOptions.Profile.SHOWCASE, "sink", true, "1920x1080", true, 60);
 
         assertEquals("30", software.get("maxFps"));
-        assertEquals("60", card.get("maxFps"));
-        assertEquals("120", card60.get("maxFps"));
+        assertEquals("30", card.get("maxFps"));
+        assertEquals("60", card60.get("maxFps"));
         assertEquals(software.keySet(), card.keySet());
     }
 
     @Test
     void theFrameCapStaysWithinWhatTheClientAccepts() {
-        assertEquals(260, ClientGameTestOptions.frameCap(true, 200));
+        assertEquals(240, ClientGameTestOptions.frameCap(true, 240));
+        assertEquals(260, ClientGameTestOptions.frameCap(true, 300));
         assertEquals(30, ClientGameTestOptions.frameCap(false, 60));
     }
 

@@ -121,12 +121,13 @@ public final class ClientGameTestOptions {
     }
 
     /**
-     * The client's frame cap. A client on the card may present twice as often as the capture samples the window,
-     * so a captured image is a fresh one whenever the client keeps up. The software rasterizer cannot present
-     * faster than the default capture rate, so its cap stays there.
+     * The client's frame cap: the capture rate on the card, so the client draws about one picture per captured
+     * frame. A client that draws faster leaves most of its tears between two pictures that are both missing from
+     * the video, which the tear check cannot find. The software rasterizer cannot present faster than the default
+     * capture rate, so its cap stays there.
      */
     public static int frameCap(boolean gpuRendering, int captureFrameRate) {
-        return gpuRendering ? Math.min(UNLIMITED_FRAME_CAP, 2 * captureFrameRate) : DEFAULT_CAPTURE_FPS;
+        return gpuRendering ? Math.min(UNLIMITED_FRAME_CAP, captureFrameRate) : DEFAULT_CAPTURE_FPS;
     }
 
     /** The width and height of a recorder screen such as {@code 1920x1080x24}. */

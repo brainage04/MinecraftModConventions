@@ -414,7 +414,7 @@ class PluginComponentIsolationTest {
     }
 
     @Test
-    void aRecordingOnACardAt60FramesASecondCapsTheClientAt120() throws IOException {
+    void aRecordingOnACardAt60FramesASecondCapsTheClientAt60() throws IOException {
         writeLoomFixture(BASE_PLUGIN_ID + "'\n    id '" + RECORDER_PLUGIN_ID + "'\n    id '" + PRODUCTION_PLUGIN_ID,
                 "productionGameTests { includeFabricApiDependency = false }\n");
 
@@ -430,9 +430,9 @@ class PluginComponentIsolationTest {
                 .withArguments("prepareClientGameTestRun", "prepareProductionGameTestRuns")
                 .build();
 
-        assertTrue(Files.readString(projectDir.resolve("build/run/clientGameTest/options.txt")).contains("\nmaxFps:120\n"));
+        assertTrue(Files.readString(projectDir.resolve("build/run/clientGameTest/options.txt")).contains("\nmaxFps:60\n"));
         assertTrue(Files.readString(projectDir.resolve("build/run/productionClientGameTest/options.txt"))
-                .contains("\nmaxFps:120\n"));
+                .contains("\nmaxFps:60\n"));
     }
 
     @Test
