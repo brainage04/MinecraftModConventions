@@ -112,8 +112,14 @@ jobs:
           } >> "${GITHUB_ENV}"
 
       - name: install EGL for the production client
-        # The run step forces SDL's EGL path (see there); GitHub's runner image has no libEGL.
+        # The run step forces SDL's EGL path (see there); GitHub's runner image has no libEGL. A runner that already
+        # has the EGL loader and Mesa's EGL needs neither sudo nor apt.
         run: |
+          libraries="$(ldconfig -p)"
+          if grep -q 'libEGL\.so\.1 ' <<<"${libraries}" && grep -q 'libEGL_mesa\.so\.0 ' <<<"${libraries}"; then
+            echo "libEGL.so.1 and libEGL_mesa.so.0 are present; not installing EGL."
+            exit 0
+          fi
           sudo apt-get update
           sudo apt-get install -y libegl1 libegl-mesa0
 
