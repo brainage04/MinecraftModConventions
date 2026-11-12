@@ -12,6 +12,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -49,6 +50,23 @@ class RecordClientGameTestTaskTest {
         // A one-second journal wait (about 50 packets) already froze x11grab with ffmpeg's default of 8;
         // the worst observed wait was about 12 s.
         assertTrue(packets >= 50 * 60, "muxer queue must absorb at least a minute of blocked writes: " + packets);
+    }
+
+    @Test
+    void theCaptureClockIsMovedIntoPlaceWholeRatherThanWrittenInPlace(@TempDir Path dir) throws IOException {
+        Path clock = dir.resolve("take.clock");
+
+        RecordClientGameTestTask.writeAtomically(clock, "1794499511733333 30 1920 1080");
+        assertEquals("1794499511733333 30 1920 1080", Files.readString(clock));
+        assertFalse(Files.exists(dir.resolve("take.clock.tmp")), "the temporary file must not be left beside the clock");
+        Object inode = Files.getAttribute(clock, "unix:ino");
+
+        // A second write replaces the file instead of writing into it, so a reader never sees a length-0 file or a
+        // prefix: the client polls the clock every 50 ms and parses whatever it reads.
+        RecordClientGameTestTask.writeAtomically(clock, "1794499511733333 60 1280 720");
+        assertEquals("1794499511733333 60 1280 720", Files.readString(clock));
+        assertNotEquals(inode, Files.getAttribute(clock, "unix:ino"));
+        assertFalse(Files.exists(dir.resolve("take.clock.tmp")));
     }
 
     @Test

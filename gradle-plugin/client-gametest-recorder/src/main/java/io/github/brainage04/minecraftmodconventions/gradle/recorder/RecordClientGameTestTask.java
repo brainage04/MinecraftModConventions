@@ -326,8 +326,8 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
                 streamToStdout(ffmpegProcess, "ffmpeg-output", _ -> {});
                 if (gameCapture) {
                     // The client starts writing once it sees the clock; ffmpeg is already opening the pipes.
-                    Files.writeString(captureClock.toPath(), captureStartFrames * 1_000_000L / frameRate + " " + frameRate + " "
-                            + videoSize.replace('x', ' '), StandardCharsets.UTF_8);
+                    writeAtomically(captureClock.toPath(), captureStartFrames * 1_000_000L / frameRate + " " + frameRate
+                            + " " + videoSize.replace('x', ' '));
                 }
                 waitForCaptureFrames(ffmpegProcess, progress);
                 waitForAudioCoverage(ffmpegProcess, audioProgress, System.currentTimeMillis() / 1000.0);
@@ -701,6 +701,18 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
             case "x11grab" -> false;
             default -> throw new GradleException(CAPTURE_SOURCE_ENV + " must be game or x11grab, not " + source);
         };
+    }
+
+    /**
+     * Writes {@code value} to {@code path} so a reader sees either nothing or the whole text. The client polls the
+     * capture clock every 50 ms and parses what it reads, so a length-0 or part-written file would be a clock it
+     * cannot use; a move into place is the same handover the client's own signal writer uses
+     * ({@code ClientGameTestRecordingSession.java:250-263}).
+     */
+    static void writeAtomically(Path path, String value) throws IOException {
+        Path temporary = path.resolveSibling(path.getFileName() + ".tmp");
+        Files.writeString(temporary, value, StandardCharsets.UTF_8);
+        Files.move(temporary, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
     }
 
     /**

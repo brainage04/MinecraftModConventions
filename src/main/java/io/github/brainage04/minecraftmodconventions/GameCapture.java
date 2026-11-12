@@ -140,13 +140,32 @@ public final class GameCapture {
             if (!CLOCK_POLL.due(System.nanoTime()) || !Files.isRegularFile(CLOCK)) {
                 return null;
             }
-            try {
-                active = new GameCapture(Clock.parse(Files.readString(CLOCK)));
-            } catch (IOException exception) {
-                throw new IllegalStateException("Could not read the recording's capture clock " + CLOCK, exception);
+            Clock clock = readClock(CLOCK);
+            if (clock == null) {
+                return null;
             }
+            active = new GameCapture(clock);
             GameCaptureAudio.startWriting(active.clock.startUs());
             return active;
+        }
+    }
+
+    /**
+     * The capture clock in {@code file}, or null when it is not there whole yet. The recorder replaces the file in
+     * one move, but a poll may still catch it missing, empty or part-read, and the next poll must retry: an exception
+     * here would be thrown out of {@code Minecraft.renderFrame} on the render thread and crash the client.
+     */
+    static Clock readClock(Path file) {
+        String text;
+        try {
+            text = Files.readString(file);
+        } catch (IOException exception) {
+            return null;
+        }
+        try {
+            return Clock.parse(text);
+        } catch (RuntimeException exception) {
+            return null;
         }
     }
 

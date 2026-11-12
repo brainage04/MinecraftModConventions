@@ -1,11 +1,16 @@
 package io.github.brainage04.minecraftmodconventions;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
+import java.io.IOException;
 import java.nio.IntBuffer;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class GameCaptureTest {
@@ -72,6 +77,29 @@ class GameCaptureTest {
         }
 
         assertEquals(15, due);
+    }
+
+    @Test
+    void aClockFileThatIsNotYetWholeIsNotAStart(@TempDir Path dir) throws IOException {
+        Path clock = dir.resolve("take.clock");
+
+        // The recorder replaces the clock in one move, but a poll that catches a missing, length-0 or part-written
+        // file must wait for the next poll instead of throwing out of renderFrame.
+        assertNull(GameCapture.readClock(clock));
+        Files.writeString(clock, "");
+        assertNull(GameCapture.readClock(clock));
+        Files.writeString(clock, "1794499511733333 30 1920");
+        assertNull(GameCapture.readClock(clock));
+        Files.writeString(clock, "1794499511733333 3O 1920 1080");
+        assertNull(GameCapture.readClock(clock));
+        Files.writeString(clock, "1794499511733333 30 1920 1080\n");
+        assertEquals(new GameCapture.Clock(START_US, 30, 1920, 1080), GameCapture.readClock(clock));
+    }
+
+    @Test
+    void aPartialClockIsRejectedRatherThanReadAsAnotherClock() {
+        assertThrows(IllegalArgumentException.class, () -> GameCapture.Clock.parse("1794499511733333 30 1920"));
+        assertThrows(NumberFormatException.class, () -> GameCapture.Clock.parse("1794499511733333 3O 1920 1080"));
     }
 
     @Test
