@@ -1023,8 +1023,9 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
 
     /**
      * Why the capture cannot be placed when the runtime helper wrote no window signal. The helper writes it from
-     * 3.4.0 on, together with its start signal, so a signal that is still missing means the client runs an older
-     * helper than this plugin expects, not that the client failed.
+     * 3.4.0 on, together with its start signal, and only {@code start(Runnable, int[])} passes a window, so a
+     * signal that is still missing means either an older helper than the plugin expects or a test that starts the
+     * session through {@code start(Runnable)}, not that the client failed.
      */
     static String missingWindowSignal(String helperVersion, String pluginVersion, String display) {
         String helper = helperVersion == null ? "" : helperVersion.strip();
@@ -1040,7 +1041,9 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
         }
         return "The client's runtime helper wrote no window signal, although minecraftmodconventions_version is "
                 + helper + " and helpers from " + WINDOW_SIGNAL_HELPER_VERSION + " on write it with the start signal:"
-                + " the client runs an older copy of the helper (one bundled in a mod, for example), and " + needs;
+                + " either the client runs an older copy of the helper (one bundled in a mod, for example), or the"
+                + " test starts the recording with ClientGameTestRecordingSession.start(Runnable), which reports no"
+                + " window, and " + needs;
     }
 
     /** True when {@code version} is a {@code major.minor...} version before the first helper that writes a window. */

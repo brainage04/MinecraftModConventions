@@ -184,12 +184,17 @@ class RecordClientGameTestTaskTest {
     }
 
     @Test
-    void aCurrentHelperVersionWithoutAWindowSignalPointsAtAnOlderCopyOnTheClient() {
+    void aCurrentHelperVersionWithoutAWindowSignalPointsAtAnOlderCopyOrTheOneArgumentStart() {
         String failure = RecordClientGameTestTask.missingWindowSignal("3.5.0", null, ":1");
 
+        assertTrue(failure.startsWith("The client's runtime helper wrote no window signal, although"), failure);
         assertTrue(failure.contains("although minecraftmodconventions_version is 3.5.0"), failure);
+        assertFalse(failure.contains("never write it"), "a current helper version must not be told it is too old: " + failure);
         assertTrue(failure.contains("the client runs an older copy of the helper"), failure);
+        assertTrue(failure.contains("ClientGameTestRecordingSession.start(Runnable)"), failure);
         assertTrue(failure.contains("this client-gametest-recorder plugin needs it"), failure);
+        assertTrue(RecordClientGameTestTask.missingWindowSignal("3.5.0", "3.5.0", ":1")
+                .contains("the client-gametest-recorder plugin 3.5.0 needs it"));
 
         String unset = RecordClientGameTestTask.missingWindowSignal("", "3.5.0", ":1");
         assertTrue(unset.startsWith("The client's runtime helper wrote no window signal: helpers older than 3.4.0"),
