@@ -2,9 +2,12 @@ package io.github.brainage04.minecraftmodconventions.gradle.recorder;
 
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ExclusiveDisplayLockTest {
     /** A display number no recording uses, so a run on this host cannot collide with the test. */
@@ -29,6 +32,40 @@ class ExclusiveDisplayLockTest {
                 ExclusiveDisplayLock other = ExclusiveDisplayLock.tryAcquire(":98766")) {
             assertNotNull(first);
             assertNotNull(other);
+        }
+    }
+
+    @Test
+    void aRecordingThatMustUseTheCardWaitsForTheDisplayAndTakesItOnceFree() throws Exception {
+        ExclusiveDisplayLock first = ExclusiveDisplayLock.tryAcquire(DISPLAY);
+        assertNotNull(first);
+        Thread release = new Thread(() -> {
+            try {
+                Thread.sleep(1_500L);
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+            }
+            first.close();
+        });
+        release.start();
+        long started = System.nanoTime();
+        try (ExclusiveDisplayLock waited = ExclusiveDisplayLock.acquireWithin(DISPLAY, Duration.ofSeconds(30))) {
+            assertNotNull(waited, "the display is taken once the first recording stops");
+            assertTrue(Duration.ofNanos(System.nanoTime() - started).toMillis() >= 1_000L, "it waited for the release");
+        } finally {
+            release.join();
+        }
+    }
+
+    @Test
+    void theWaitForATakenDisplayIsBounded() throws Exception {
+        try (ExclusiveDisplayLock first = ExclusiveDisplayLock.tryAcquire(DISPLAY)) {
+            assertNotNull(first);
+            long started = System.nanoTime();
+
+            assertNull(ExclusiveDisplayLock.acquireWithin(DISPLAY, Duration.ofMillis(1_200)));
+            long waitedMillis = Duration.ofNanos(System.nanoTime() - started).toMillis();
+            assertTrue(waitedMillis >= 1_200L && waitedMillis < 10_000L, "waited " + waitedMillis + " ms");
         }
     }
 

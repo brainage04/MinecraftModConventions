@@ -7,6 +7,7 @@ import org.junit.jupiter.api.io.TempDir;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -262,6 +263,39 @@ class RecordClientGameTestTaskTest {
         assertTrue(failure.contains("The client was not started"), failure);
         assertNull(RecordClientGameTestTask.captureRateFailure(60, ":1", null));
         assertNull(RecordClientGameTestTask.captureRateFailure(30, null, null));
+    }
+
+    @Test
+    void aRecordingMayFallBackToTheVirtualDisplayUnlessItMustUseTheCard() {
+        assertNull(RecordClientGameTestTask.requiredGpuWait("false", "3600"));
+        assertNull(RecordClientGameTestTask.requiredGpuWait("off", "not read"));
+        assertEquals(Duration.ofSeconds(3600), RecordClientGameTestTask.requiredGpuWait("true", "3600"));
+        assertEquals(Duration.ofSeconds(90), RecordClientGameTestTask.requiredGpuWait("1", "90"));
+    }
+
+    @Test
+    void aMistypedRequireGpuOrWaitFailsRatherThanAllowingTheFallback() {
+        GradleException mistyped = assertThrows(GradleException.class,
+                () -> RecordClientGameTestTask.requiredGpuWait("ture", "3600"));
+        assertTrue(mistyped.getMessage().contains("GTR_RECORDING_REQUIRE_GPU must be true or false"), mistyped.getMessage());
+        assertThrows(GradleException.class, () -> RecordClientGameTestTask.requiredGpuWait("true", "0"));
+        assertThrows(GradleException.class, () -> RecordClientGameTestTask.requiredGpuWait("true", "an hour"));
+    }
+
+    @Test
+    void aRequiredCardDisplayStillTakenAfterTheWaitFailsNamingTheWaitAndTheLock() {
+        String reason = RecordClientGameTestTask.displayTakenReason(":1", Duration.ofSeconds(3600));
+        String failure = RecordClientGameTestTask.requiredGpuFailure(reason);
+
+        assertTrue(failure.startsWith("GTR_RECORDING_REQUIRE_GPU is set, so this recording must render on the card"),
+                failure);
+        assertTrue(failure.contains("X display :1 was still recording for another job after 3600 s"), failure);
+        assertTrue(failure.contains("GTR_RECORDING_GPU_WAIT_SECONDS"), failure);
+        assertTrue(failure.contains(".gtr-recording-display-1.lock"), failure);
+        assertTrue(failure.contains("did not fall back to the recorder's own virtual display"), failure);
+        assertTrue(failure.contains("The client was not started"), failure);
+        assertTrue(RecordClientGameTestTask.displayTakenReason(":1", null)
+                .startsWith("X display :1 is recording for another job (its lock"));
     }
 
     @Test
