@@ -208,7 +208,7 @@ class RecordClientGameTestTaskTest {
                 RecordClientGameTestTask.videoEncoder("h264_nvenc"));
 
         assertEquals("h264_nvenc", nvenc.get(nvenc.indexOf("-c:v") + 1));
-        // NVENC converts x11grab's BGR frames itself, so the CPU does no pixel format conversion.
+        // NVENC converts the capture's frames itself, so the CPU does no pixel format conversion.
         assertFalse(nvenc.contains("-pix_fmt"));
         assertEquals("libx264", RecordClientGameTestTask.videoEncoder("libx264").get(1));
         assertThrows(GradleException.class, () -> RecordClientGameTestTask.videoEncoder("hevc_vaapi"));

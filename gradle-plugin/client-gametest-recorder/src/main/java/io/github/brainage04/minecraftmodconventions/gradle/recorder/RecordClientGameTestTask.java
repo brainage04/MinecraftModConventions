@@ -45,7 +45,7 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
     /**
      * Encoded packets the muxer may hold while a write to the raw capture blocks. ffmpeg's default of 8
      * (with the queues upstream, about 0.6 s of capture) lets a write that waits on a busy
-     * disk's filesystem journal stop x11grab, which leaves a frame gap as long as the remaining wait. At about
+     * disk's filesystem journal stop the capture, which leaves a frame gap as long as the remaining wait. At about
      * 50 packets and 0.5 MB per second, 4096 packets cover over a minute of blocked writes in about 40 MB.
      */
     static final int MUX_QUEUE_PACKETS = 4096;
@@ -651,7 +651,7 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
 
     /**
      * The raw capture's video encoder options for {@value #VIDEO_ENCODER_ENV}: {@code libx264} on the CPU (the
-     * default), or {@code h264_nvenc} on an NVIDIA card's encoder, which takes x11grab's BGR frames as they are.
+     * default), or {@code h264_nvenc} on an NVIDIA card's encoder, which takes the capture's frames as they are.
      */
     static List<String> videoEncoder(String name) {
         return switch (name) {

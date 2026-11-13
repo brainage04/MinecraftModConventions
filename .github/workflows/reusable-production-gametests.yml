@@ -115,7 +115,7 @@ jobs:
         # The run step forces SDL's EGL path (see there); GitHub's runner image has no libEGL. A runner that already
         # has the EGL loader and Mesa's EGL needs neither sudo nor apt.
         run: |
-          libraries="$(ldconfig -p)"
+          libraries="$(ldconfig -p 2>/dev/null || true)"
           if grep -q 'libEGL\.so\.1 ' <<<"${libraries}" && grep -q 'libEGL_mesa\.so\.0 ' <<<"${libraries}"; then
             echo "libEGL.so.1 and libEGL_mesa.so.0 are present; not installing EGL."
             exit 0
