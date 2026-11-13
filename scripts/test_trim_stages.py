@@ -7,6 +7,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import trim_stages
 
@@ -38,6 +39,9 @@ def make_recording(directory: Path, captions: list[tuple[list, int, int]], marke
         "-f", "lavfi", "-i", f"sine=frequency=440:duration={seconds}",
         "-vf", ",".join(["drawbox=x=1100:y=15:w=805:h=117:color=black@0.63:t=fill", *boxes]),
         "-c:v", "libx264", "-preset", "ultrafast", "-crf", "12", "-pix_fmt", "yuv420p", "-c:a", "aac",
+        # x264's thread count changes how a caption's first frames are coded, and with it the cut: 20 threads put
+        # caption B's first frame 4.27 off its caption against 0.24 on one, which the old fixed 3.5 could not take.
+        "-threads", "1",
         "-shortest", str(video),
     ], check=True)
     log = directory / "run.log"
@@ -96,17 +100,47 @@ class ClipsTest(unittest.TestCase):
 class CaptionStartTest(unittest.TestCase):
     def test_the_clip_opens_where_its_caption_has_settled_not_at_the_marker(self) -> None:
         old, half, new = bytes([10] * 100), bytes([60] * 100), bytes([200] * 100)
-        # The caption is drawn in two steps, at frames 40 and 41; the marker says 35.
+        # The caption is drawn in two steps, at frames 40 and 41; the marker says 35, so the clock starts at 32.
         panels = {k: old if k < 40 else half if k == 40 else new for k in range(0, 80)}
-        begin, reference = trim_stages.caption_start(panels, 35, 1, 79, 80, 30, "b")
+        begin, reference = trim_stages.caption_start(panels, 35, 1, 79, 80, 30, "b", 32)
         self.assertEqual(begin, 41)
         self.assertEqual(reference, new)
 
     def test_a_caption_that_never_changes_near_the_marker_fails(self) -> None:
         panels = {k: bytes([10] * 100) for k in range(0, 80)}
         with self.assertRaises(SystemExit) as failure:
-            trim_stages.caption_start(panels, 35, 1, 79, 80, 30, "b")
+            trim_stages.caption_start(panels, 35, 1, 79, 80, 30, "b", 32)
         self.assertIn("b: the caption never changes near frame 35", str(failure.exception))
+
+    def test_a_noisy_first_frame_of_a_caption_still_shows_it(self) -> None:
+        # An encoder codes a scene change's first frames worse, so caption B's first seven frames sit 6 off the
+        # median caption while the caption change near the marker is 106: a fixed distance of 3.5 would skip them.
+        old, new = bytes([10] * 100), bytes([110] * 100)
+        noisy = bytes([125] * 40 + [110] * 60)
+        panels = {k: old if k < 40 else noisy if k < 47 else new for k in range(0, 80)}
+        begin, reference = trim_stages.caption_start(panels, 41, 1, 79, 80, 30, "b", 38)
+        self.assertEqual(begin, 40)
+        self.assertEqual(reference, new)
+
+
+class FirstFramesTest(unittest.TestCase):
+    def test_a_clip_whose_first_frame_is_not_its_caption_fails(self) -> None:
+        stages = [{"stage": "a", "startFrame": 0, "endFrameExclusive": 10}]
+        panels = {0: bytes([200] * 100)}
+        with mock.patch.object(trim_stages, "read_panels", return_value=panels):
+            with self.assertRaises(SystemExit) as failure:
+                trim_stages.check_first_frames(Path("cut.mp4"), stages, [bytes([10] * 100)])
+        self.assertIn("a: the clip's first frame does not show its own caption", str(failure.exception))
+
+    def test_a_clip_that_still_shows_the_previous_caption_fails(self) -> None:
+        stages = [{"stage": "a", "startFrame": 0, "endFrameExclusive": 10},
+                  {"stage": "b", "startFrame": 10, "endFrameExclusive": 20}]
+        panels = {0: bytes([10] * 100), 10: bytes([12] * 100)}
+        with mock.patch.object(trim_stages, "read_panels", return_value=panels):
+            with self.assertRaises(SystemExit) as failure:
+                trim_stages.check_first_frames(
+                        Path("cut.mp4"), stages, [bytes([10] * 100), bytes([14] * 100)])
+        self.assertIn("b: the clip's first frame still shows the previous caption", str(failure.exception))
 
 
 @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"), "ffmpeg is not installed")
@@ -133,6 +167,42 @@ class CaptionCutTest(unittest.TestCase):
                                   {"stage": "b+c", "startFrame": 52, "endFrameExclusive": 131}])
         self.assertGreater(brightness(out, 52, B_ONLY), 200, "clip b+c must open on caption B")
         self.assertLess(brightness(out, 51, B_ONLY), 120, "clip a must end on caption A")
+
+    def test_a_caption_that_leads_its_marker_opens_at_the_marker(self) -> None:
+        # IceSkates draws a caption, waits for the scene to settle off film and only then marks the stage, so the
+        # caption can show 1 s before the marker. The clip must open at the clock's start, not on settle frames.
+        log, video, meta = make_recording(
+            self.directory,
+            [(CAPTION_A, 2, 40), (CAPTION_B, 41, 110)],
+            [("STAGE_START", "a", 0.5), ("STAGE_END", "a", 1.2),
+             ("STAGE_START", "b", 2.4), ("STAGE_END", "b", 3.5)])
+
+        result = cut(log, video, meta)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        out = video.with_name("cut.mp4")
+        stages = json.loads(out.with_suffix(".stages.json").read_text())
+        self.assertEqual(stages, [{"stage": "a", "startFrame": 0, "endFrameExclusive": 28},
+                                  {"stage": "b", "startFrame": 28, "endFrameExclusive": 68}])
+        self.assertGreater(brightness(out, 28, B_ONLY), 200, "clip b must open on caption B")
+
+    def test_a_noisy_take_still_opens_on_its_own_caption(self) -> None:
+        log, video, meta = make_recording(
+            self.directory,
+            [(CAPTION_A, 12, 89), (CAPTION_B, 90, 179)],
+            [("STAGE_START", "a", 0.5), ("STAGE_END", "a", 2.0), ("STAGE_START", "b", 2.7),
+             ("STAGE_END", "b", 5.0)])
+        noisy = self.directory / "noisy.mp4"
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(video), "-c:v", "libx264", "-preset",
+                        "veryfast", "-crf", "30", "-threads", "4", "-c:a", "copy", str(noisy)], check=True)
+
+        result = cut(log, noisy, meta)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        out = noisy.with_name("cut.mp4")
+        stages = json.loads(out.with_suffix(".stages.json").read_text())
+        self.assertEqual(stages[1]["startFrame"], 52, "clip b+c must open where caption B appears")
+        self.assertGreater(brightness(out, 52, B_ONLY), 200, "clip b must open on caption B")
 
     def test_a_take_without_captions_fails_unless_cut_by_the_clock(self) -> None:
         log, video, meta = make_recording(
