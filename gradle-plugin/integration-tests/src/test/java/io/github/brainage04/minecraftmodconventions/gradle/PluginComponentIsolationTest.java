@@ -58,6 +58,7 @@ class PluginComponentIsolationTest {
                         assert project.extensions.findByName('productionGameTests') == null
                         assert project.tasks.findByName('prepareClientGameTestRun') != null
                         assert project.tasks.findByName('recordClientGameTest') != null
+                        assert project.tasks.named('recordClientGameTest').get().runtimeHelperVersion.get() == 'fixture-version'
                         assert project.tasks.findByName('runProductionClientGameTest') == null
                     }
                 }

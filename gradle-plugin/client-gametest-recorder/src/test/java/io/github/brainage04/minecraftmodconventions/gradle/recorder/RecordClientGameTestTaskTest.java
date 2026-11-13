@@ -172,6 +172,42 @@ class RecordClientGameTestTaskTest {
     }
 
     @Test
+    void aHelperOlderThanThePluginThatWritesNoWindowSignalFailsNamingTheVersionsNotTheClient() {
+        String failure = RecordClientGameTestTask.missingWindowSignal("3.3.0", "3.5.0", ":1");
+
+        assertTrue(failure.contains("runtime helper minecraftmodconventions 3.3.0 wrote no window signal"), failure);
+        assertTrue(failure.contains("helpers older than 3.4.0 never write it"), failure);
+        assertTrue(failure.contains("the client-gametest-recorder plugin 3.5.0 needs it"), failure);
+        assertTrue(failure.contains("on display :1"), failure);
+        assertTrue(failure.contains("Set minecraftmodconventions_version to the plugin's version."), failure);
+        assertFalse(failure.contains("The client did not report"), failure);
+    }
+
+    @Test
+    void aCurrentHelperVersionWithoutAWindowSignalPointsAtAnOlderCopyOnTheClient() {
+        String failure = RecordClientGameTestTask.missingWindowSignal("3.5.0", null, ":1");
+
+        assertTrue(failure.contains("although minecraftmodconventions_version is 3.5.0"), failure);
+        assertTrue(failure.contains("the client runs an older copy of the helper"), failure);
+        assertTrue(failure.contains("this client-gametest-recorder plugin needs it"), failure);
+
+        String unset = RecordClientGameTestTask.missingWindowSignal("", "3.5.0", ":1");
+        assertTrue(unset.startsWith("The client's runtime helper wrote no window signal: helpers older than 3.4.0"),
+                unset);
+    }
+
+    @Test
+    void helpersBefore340AreTheOnesWithoutAWindowSignal() {
+        assertTrue(RecordClientGameTestTask.olderThanWindowSignalHelper("3.3.0"));
+        assertTrue(RecordClientGameTestTask.olderThanWindowSignalHelper("3.0.1"));
+        assertTrue(RecordClientGameTestTask.olderThanWindowSignalHelper("2.9.9"));
+        assertFalse(RecordClientGameTestTask.olderThanWindowSignalHelper("3.4.0"));
+        assertFalse(RecordClientGameTestTask.olderThanWindowSignalHelper("3.5.0-SNAPSHOT"));
+        assertFalse(RecordClientGameTestTask.olderThanWindowSignalHelper("4.0.0"));
+        assertFalse(RecordClientGameTestTask.olderThanWindowSignalHelper("fixture-version"));
+    }
+
+    @Test
     void aRecordingCapturesTheGameUnlessAskedForAScreenGrab() {
         assertTrue(RecordClientGameTestTask.capturesGame("game"));
         assertFalse(RecordClientGameTestTask.capturesGame("x11grab"));

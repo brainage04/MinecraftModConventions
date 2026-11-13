@@ -67,6 +67,7 @@ public final class ClientGameTestRecorderPlugin implements Plugin<Project> {
             task.getRunTaskName().convention(clientGameTestTaskPath(project.getPath()));
             task.getRecordingDisplay().convention(recordingDisplay(project));
             task.getExpectedRenderer().convention(expectedRenderer(project));
+            task.getRuntimeHelperVersion().convention(project.provider(() -> runtimeHelperVersion(project)));
             task.getOutputs().upToDateWhen(_ -> false);
         });
 
@@ -168,15 +169,21 @@ public final class ClientGameTestRecorderPlugin implements Plugin<Project> {
                 .orElse(false);
     }
 
-    private static void addRuntimeHelperDependencies(Project project) {
+    /** The runtime helper version the build asks for, or an empty string when it sets none. */
+    private static String runtimeHelperVersion(Project project) {
         Object version = project.findProperty("minecraftmodconventions_version");
-        if (version == null || version.toString().isBlank()) {
+        return version == null ? "" : version.toString().strip();
+    }
+
+    private static void addRuntimeHelperDependencies(Project project) {
+        String version = runtimeHelperVersion(project);
+        if (version.isEmpty()) {
             throw new GradleException(
                     PLUGIN_ID + " requires project property 'minecraftmodconventions_version' "
                             + "when " + PRODUCTION_GAMETESTS_PLUGIN_ID + " is applied."
             );
         }
-        String dependency = RUNTIME_HELPER_GROUP + ":" + RUNTIME_HELPER_NAME + ":" + version.toString().strip();
+        String dependency = RUNTIME_HELPER_GROUP + ":" + RUNTIME_HELPER_NAME + ":" + version;
         project.getDependencies().add("gametestImplementation", dependency);
         project.getDependencies().add("productionRuntimeMods", dependency);
     }

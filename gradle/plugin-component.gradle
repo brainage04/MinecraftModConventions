@@ -60,6 +60,9 @@ tasks.named("jar", Jar) {
 	from(rootProject.file("LICENSE")) {
 		rename { "${it}_${inputs.properties.archivesName}" }
 	}
+	manifest {
+		attributes("Implementation-Version": project.version)
+	}
 }
 
 publishing {

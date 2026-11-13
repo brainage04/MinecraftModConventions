@@ -37,6 +37,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
@@ -84,6 +85,11 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
      */
     static final String CAPTURE_FAILURE_LINE = "CAPTURE_FAILURE: ";
 
+    /** The first runtime helper that reports the client's window: MinecraftModConventions 3.4.0 (2fc08f1). */
+    static final int WINDOW_SIGNAL_HELPER_MAJOR = 3;
+    static final int WINDOW_SIGNAL_HELPER_MINOR = 4;
+    static final String WINDOW_SIGNAL_HELPER_VERSION = WINDOW_SIGNAL_HELPER_MAJOR + "." + WINDOW_SIGNAL_HELPER_MINOR + ".0";
+
     @Internal
     public abstract DirectoryProperty getProjectDirectory();
 
@@ -103,6 +109,10 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
 
     @Input
     public abstract Property<String> getRunTaskName();
+
+    /** The runtime helper the client runs ({@code minecraftmodconventions_version}); empty when the build sets none. */
+    @Input
+    public abstract Property<String> getRuntimeHelperVersion();
 
     @TaskAction
     public void record() {
@@ -999,12 +1009,50 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
         } catch (IOException exception) {
             throw new UncheckedIOException("Could not read the client's window position " + windowSignal, exception);
         }
+        if (reported.isBlank()) {
+            throw new GradleException(missingWindowSignal(getRuntimeHelperVersion().get(),
+                    RecordClientGameTestTask.class.getPackage().getImplementationVersion(), display));
+        }
         try {
             return ClientGpuCapture.grabOffset(displayScreen, videoSize, ClientGpuCapture.windowRect(reported));
         } catch (IllegalArgumentException exception) {
             throw new GradleException(exception.getMessage() + " The client reported '" + reported.strip()
                     + "' as x y width height on display " + display + ".");
         }
+    }
+
+    /**
+     * Why the capture cannot be placed when the runtime helper wrote no window signal. The helper writes it from
+     * 3.4.0 on, together with its start signal, so a signal that is still missing means the client runs an older
+     * helper than this plugin expects, not that the client failed.
+     */
+    static String missingWindowSignal(String helperVersion, String pluginVersion, String display) {
+        String helper = helperVersion == null ? "" : helperVersion.strip();
+        String plugin = pluginVersion == null || pluginVersion.isBlank()
+                ? "this client-gametest-recorder plugin"
+                : "the client-gametest-recorder plugin " + pluginVersion.strip();
+        String needs = plugin + " needs it to place the capture on the client's window on display " + display + ".";
+        if (helper.isEmpty() || olderThanWindowSignalHelper(helper)) {
+            String named = helper.isEmpty() ? "" : " minecraftmodconventions " + helper;
+            return "The client's runtime helper" + named + " wrote no window signal: helpers older than "
+                    + WINDOW_SIGNAL_HELPER_VERSION + " never write it, and " + needs
+                    + " Set minecraftmodconventions_version to the plugin's version.";
+        }
+        return "The client's runtime helper wrote no window signal, although minecraftmodconventions_version is "
+                + helper + " and helpers from " + WINDOW_SIGNAL_HELPER_VERSION + " on write it with the start signal:"
+                + " the client runs an older copy of the helper (one bundled in a mod, for example), and " + needs;
+    }
+
+    /** True when {@code version} is a {@code major.minor...} version before the first helper that writes a window. */
+    static boolean olderThanWindowSignalHelper(String version) {
+        Matcher matcher = Pattern.compile("^(\\d+)\\.(\\d+)").matcher(version.strip());
+        if (!matcher.find()) {
+            return false;
+        }
+        int major = Integer.parseInt(matcher.group(1));
+        int minor = Integer.parseInt(matcher.group(2));
+        return major < WINDOW_SIGNAL_HELPER_MAJOR
+                || (major == WINDOW_SIGNAL_HELPER_MAJOR && minor < WINDOW_SIGNAL_HELPER_MINOR);
     }
 
     /** The start of the client's own log, where it names the graphics device and the SDL video driver. */
