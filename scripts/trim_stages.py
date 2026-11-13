@@ -14,14 +14,16 @@ A clip ends TRAIL_SECONDS after its last STAGE_END.
 Where a clip starts comes from the picture, not from the log's clock: a marker's time lands on the video only roughly
 (up to 0.5 s off on a screen-grab take), and a cut by it can open on the previous stage's caption. The caption panel
 (top right, see CAPTION_CROP) is compared by its residual, its pixels with each row's mean brightness removed, so the
-world behind the translucent panel counts for little. A frame shows the stage's caption when it is far closer to that
-caption than the caption changes by, measured against the caption itself, the median of five panels 0.5 to 0.9 s
-after the STAGE_START: the encoder's noise on the first frames of a caption then no longer decides the cut. The clip
-opens on the first frame at or after the clock's start, 0.10 s before the STAGE_START, that shows its caption and
-holds still for the next 0.2 s, since a caption can be drawn in two steps. It never opens earlier, so settle frames a
-test keeps off film stay out, except that a clock start still showing the previous stage's caption moves the cut on to
-where the new one appears. After encoding, the first frame of every clip in OUT.mp4 must match its own caption, and
-match it better than the previous clip's; the run fails otherwise.
+world behind the translucent panel counts for little. The stage's caption is the median of five panels 0.5 to 0.9 s
+after the STAGE_START; a frame shows it when it is closer to it than to the caption the previous clip ended on, by a
+quarter of the distance between the two, so neither the drift of the world behind the panel nor the encoder's noise
+on a caption's first frames decides the cut. The first clip has no previous caption, so its frames are held to a
+quarter of the caption change itself. The clip opens on the first frame at or after the clock's start, 0.10 s before
+the STAGE_START, that shows its caption and holds still for the next 0.2 s, since a caption can be drawn in two
+steps. It never opens earlier, so settle frames a test keeps off film stay out, except that a clock start still
+showing the previous stage's caption moves the cut on to where the new one appears. After encoding, the first frame of
+every clip in OUT.mp4 must match its own caption, and match it better than the caption its previous clip ended on;
+the run fails otherwise.
 
 --clock cuts by the log's clock instead, 0.10 s before each STAGE_START, for a recording without captions.
 
@@ -47,9 +49,10 @@ SEARCH_AFTER = 15
 REFERENCE_OFFSETS = (15, 18, 21, 24, 27)
 SETTLE = 6
 CHANGED = 1.5  # the largest frame-to-frame change near a marker when its caption is drawn
-CLOSER = 0.25  # of the caption change near the marker: a frame this close to its own caption shows it
-STILL = 0.6  # frame-to-frame change of a panel whose caption has settled
-OWN_CAPTION = 4.0  # the encoded clip's first frame against its caption, allowing for the second encode
+CLOSER = 0.25  # of the caption change: the first clip's frame this close to its own caption shows it
+MARGIN = 0.25  # of the distance between two captions: how much closer to its own a later clip's frame must be
+STILL = 0.1  # of the caption change: a settled caption moves the panel less than this from frame to frame
+OWN_CAPTION = 4.0  # how much worse the second encode may leave a clip's first frame than the source frame
 
 
 def arguments(argv):
@@ -137,35 +140,50 @@ def mean_diff(a, b):
     return sum(abs(x - y) for x, y in zip(a, b)) / len(a)
 
 
+def median_panel(samples):
+    """The pixel-wise median of panels: it keeps what they show and drops the frames' noise."""
+    return bytes(sorted(values)[len(values) // 2] for values in zip(*samples))
+
+
 def caption_start(panels, marker, lowest, highest, finish, rate, stage, clock, previous=None):
     """The frame a clip opens on and the stage's own caption, from `panels` of the frames around it.
 
     The clip never opens before `clock`, the frame the log's clock puts 0.10 s before the marker; it moves forward to
     where the stage's caption appears only when `clock` does not show that caption yet, which covers a clock start
-    still on the previous clip's caption (`previous`), so settle frames a test keeps off film stay out. Without a
-    `previous` caption, a frame shows its own when it is within CLOSER of the caption change near the marker of it,
-    which the encoder's noise on a caption's first frames fits under; with one, it must also be closer to its own
-    caption than to that one.
+    still on the previous clip's caption (`previous`), so settle frames a test keeps off film stay out.
+
+    The stage's caption is the median of five panels 0.5 to 0.9 s after the marker. A frame shows its own caption
+    when it is closer to it than to `previous`, the caption the previous clip ended on, by MARGIN of the distance
+    between the two: the world behind the translucent panel drifts, so neither an absolute distance nor how far the
+    panel happens to move decides the cut, and an off-film change in the gap cannot raise the bar either. The first
+    clip has no previous caption to compare with, so its frames are held to the caption change itself: within CLOSER
+    of it. Either way the caption must have settled: the panel may not move by more than STILL of the caption change
+    over the next SETTLE frames, which a caption drawn in two steps breaks and the drift of the world behind it,
+    a fraction of the caption's own change, does not.
 
     `panels` maps a frame to its residual panel and must hold every frame from lowest - 1 to SETTLE frames past the
     search window, and the REFERENCE_OFFSETS frames after the marker."""
     last = finish - 1
-    samples = [panels[min(last, marker + at_rate(offset, rate))] for offset in REFERENCE_OFFSETS]
-    reference = bytes(sorted(values)[len(values) // 2] for values in zip(*samples))
+    reference = median_panel([panels[min(last, marker + at_rate(offset, rate))] for offset in REFERENCE_OFFSETS])
     lo = max(lowest, 1)
     hi = min(highest, marker + at_rate(SEARCH_AFTER, rate))
+    settle = at_rate(SETTLE, rate)
     change = {k: mean_diff(panels[k - 1], panels[k])
-              for k in range(lo, hi + at_rate(SETTLE, rate) + 1) if k - 1 in panels and k in panels}
+              for k in range(lo, hi + settle + 1) if k - 1 in panels and k in panels}
     biggest = max((change.get(k, 0.0) for k in range(lo, hi + 1)), default=0.0)
     if biggest < CHANGED:
         raise SystemExit(f"{stage}: the caption never changes near frame {marker} (largest change {biggest:.1f}); "
                          "a recording without captions is cut with --clock")
-    limit = CLOSER * biggest
+    apart = None if previous is None else mean_diff(previous, reference)
     for k in range(max(lo, clock), hi + 1):
         to_own = mean_diff(panels[k], reference)
-        if to_own >= limit or (previous is not None and to_own >= mean_diff(panels[k], previous)):
+        if apart is None:
+            shows_own = to_own < CLOSER * biggest
+        else:
+            shows_own = to_own + MARGIN * apart <= mean_diff(panels[k], previous)
+        if not shows_own:
             continue
-        settled = all(change.get(j, 0.0) < STILL for j in range(k + 1, min(k + at_rate(SETTLE, rate), last + 1)))
+        settled = all(change.get(j, 0.0) < STILL * biggest for j in range(k + 1, min(k + settle, last + 1)))
         if settled:
             return k, reference
     raise SystemExit(f"{stage}: no frame near frame {marker} shows the stage's caption")
@@ -211,47 +229,54 @@ def read_panels(video, wanted):
 
 def caption_cuts(video, merged, rate):
     """Moves each clip's start to the first frame from its clock start that shows its own caption; returns each
-    clip's caption."""
+    clip's own caption, the caption it ends on and how far its first frame then sits from its own caption."""
+    settle = at_rate(SETTLE, rate)
     wanted = set()
     previous_end = 0
     for _, finish, marker, _ in merged:
         hi = min(finish - 1, marker + at_rate(SEARCH_AFTER, rate) + at_rate(SETTLE, rate))
         wanted.update(range(max(0, previous_end - 1), hi + 1))
         wanted.update(min(finish - 1, marker + at_rate(offset, rate)) for offset in REFERENCE_OFFSETS)
+        # The caption the clip ends on, which is the one the next clip must not open on: a merged clip shows the
+        # caption of the last stage it holds there, not the one its first stage's marker introduced.
+        wanted.update(range(max(0, finish - 1 - settle), finish))
         previous_end = finish
     panels = read_panels(video, wanted)
-    references = []
+    captions = []
     previous_end = 0
     for clip in merged:
         begin, finish, marker, ids = clip
         stage = ids.split("+")[0]
         clip[0], reference = caption_start(panels, marker, previous_end, finish - 1, finish, rate, stage, begin,
-                                           references[-1] if references else None)
+                                           captions[-1]["ending"] if captions else None)
         print(f"{stage}: marker frame {marker}, caption from frame {clip[0]} ({(marker - clip[0]) / rate:+.2f} s)")
-        references.append(reference)
+        captions.append({"own": reference,
+                         "ending": median_panel([panels[j] for j in range(max(0, finish - 1 - settle), finish)]),
+                         "measured": mean_diff(panels[clip[0]], reference)})
         previous_end = finish
-    return references
+    return captions
 
 
-def check_first_frames(out_path, stages, references):
+def check_first_frames(out_path, stages, captions):
     """Fails unless every clip of the cut opens on its own caption rather than the previous clip's.
 
-    The first clip has no previous caption to compare with, so it keeps the fixed OWN_CAPTION allowance for the
-    second encode; every later clip must be closer to its own caption than to the previous one, because how far the
-    encoded first frame lands from its caption depends on the host's encoder: the same take measured 0.1 to 4.2
-    while the caption change stayed near 27."""
+    The first clip has no previous caption to compare with, so the second encode may only leave its first frame
+    OWN_CAPTION worse than the source frame it was cut from, which keeps a take whose world drifts behind the panel
+    from failing here; every later clip must be closer to its own caption than to the caption the previous clip
+    ended on, because how far the encoded first frame lands from its caption depends on the host's encoder: the
+    same take measured 0.1 to 4.2 while the caption change stayed near 27."""
     panels = read_panels(out_path, {stage["startFrame"] for stage in stages})
     previous = None
-    for stage, reference in zip(stages, references):
+    for stage, caption in zip(stages, captions):
         first = panels[stage["startFrame"]]
-        own = mean_diff(first, reference)
+        own = mean_diff(first, caption["own"])
         if previous is None:
-            if own >= OWN_CAPTION:
+            if own >= caption["measured"] + OWN_CAPTION:
                 raise SystemExit(f"{stage['stage']}: the clip's first frame does not show its own caption ({own:.1f})")
         elif own >= mean_diff(first, previous):
             raise SystemExit(f"{stage['stage']}: the clip's first frame still shows the previous caption "
                              f"({own:.1f} to its own, {mean_diff(first, previous):.1f} to the previous)")
-        previous = reference
+        previous = caption["ending"]
 
 
 def frame_count(video):
@@ -294,12 +319,12 @@ def main(argv):
     rate = float(meta.get("fps") or 30)
     times, size, sound = probe(video)
     merged = clips(windows, times, video_start_ms, rate)
-    references = None
+    captions = None
     if not args.clock:
         if size != VIDEO_SIZE:
             raise SystemExit(f"the video is {size[0]}x{size[1]}, but the caption panel is only measured at the "
                              f"{VIDEO_SIZE[0]}x{VIDEO_SIZE[1]} recording standard; cut it with --clock")
-        references = caption_cuts(video, merged, rate)
+        captions = caption_cuts(video, merged, rate)
     for index, (begin, finish, _, ids) in enumerate(merged):
         print(f"clip {index}: frames {begin} - {finish} ({(finish - begin) / rate:.2f}s) {ids}")
     encode(video, out_path, merged, times, rate, sound)
@@ -312,8 +337,8 @@ def main(argv):
     joined = frame_count(out_path)
     if joined != frame:
         raise SystemExit(f"the joined video has {joined} frames but its clips add up to {frame}; stage frames would be wrong")
-    if references is not None:
-        check_first_frames(out_path, stages, references)
+    if captions is not None:
+        check_first_frames(out_path, stages, captions)
     out_path.with_suffix(".stages.json").write_text(json.dumps(stages, indent=2) + "\n")
     print("wrote", out_path)
 
