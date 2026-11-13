@@ -945,6 +945,42 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
     }
 
     /**
+     * What the recorder does about the display {@code GTR_RECORDING_DISPLAY} names, from what it saw of it: capture
+     * on it, fall back to the recorder's own virtual display with a reason to log, or, when {@code requiredGpuWait}
+     * is set ({@value #REQUIRE_GPU_ENV}), stop before the client starts. {@code lockProblem} is why this recording
+     * does not hold the display's lock, null when it does or when no display is set, and {@code infoStatus} and
+     * {@code infoOutput} are what {@code xdpyinfo} answered for it.
+     */
+    static CardDisplay cardDisplay(String gpuDisplay, String lockProblem, int infoStatus, String infoOutput,
+            Duration requiredGpuWait) {
+        if (gpuDisplay == null) {
+            String missing = "no recording display is set (the " + ClientGpuCapture.DISPLAY_PROPERTY + " Gradle"
+                    + " property, " + ClientGpuCapture.DISPLAY_ENV + " or " + ClientGpuCapture.DISPLAY_FILE + ")";
+            // A run that names no display records on the recorder's own one by design, so nothing is reported.
+            return requiredGpuWait == null
+                    ? new CardDisplay(null, null, null)
+                    : new CardDisplay(null, null, requiredGpuFailure(missing));
+        }
+        if (lockProblem == null && infoStatus == 0 && !ClientGpuCapture.screen(infoOutput).isEmpty()) {
+            return new CardDisplay(gpuDisplay, null, null);
+        }
+        String problem = lockProblem != null
+                ? lockProblem
+                : "X display " + gpuDisplay + " does not answer: " + infoOutput.lines().findFirst().orElse("");
+        if (requiredGpuWait != null) {
+            return new CardDisplay(null, null, requiredGpuFailure(problem));
+        }
+        return new CardDisplay(null, problem, null);
+    }
+
+    /**
+     * What {@link #cardDisplay} settled on: capture on {@code display}, or fall back to the recorder's own virtual
+     * display with {@code fallbackReason} to log (null when there is nothing to report), or stop before the client
+     * starts with {@code failure}.
+     */
+    record CardDisplay(String display, String fallbackReason, String failure) {}
+
+    /**
      * The display this recording captures, and the process that serves it when the recorder started
      * one. A display named by {@code GTR_RECORDING_DISPLAY} is used as it is: the machine's card is
      * behind its GLX, which is what makes the client present as fast as the card does. A named display
@@ -956,14 +992,11 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
     private DisplayResolution startDisplay(String requested, String configuredDisplay, String configuredScreen,
             Duration requiredGpuWait) {
         String gpuDisplay = ClientGpuCapture.display(requested);
-        String fallback = null;
-        if (gpuDisplay == null && requiredGpuWait != null) {
-            throw new RecordingPreflightException(requiredGpuFailure("no recording display is set (the "
-                    + ClientGpuCapture.DISPLAY_PROPERTY + " Gradle property, " + ClientGpuCapture.DISPLAY_ENV + " or "
-                    + ClientGpuCapture.DISPLAY_FILE + ")"));
-        }
+        String lockProblem = null;
+        int infoStatus = 0;
+        String infoOutput = "";
+        ExclusiveDisplayLock lock = null;
         if (gpuDisplay != null) {
-            ExclusiveDisplayLock lock = null;
             try {
                 lock = ExclusiveDisplayLock.tryAcquire(gpuDisplay);
                 if (lock == null && requiredGpuWait != null) {
@@ -972,48 +1005,55 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
                     lock = ExclusiveDisplayLock.acquireWithin(gpuDisplay, requiredGpuWait);
                 }
             } catch (UncheckedIOException exception) {
-                fallback = exception.getMessage();
+                lockProblem = exception.getMessage();
             } catch (InterruptedException exception) {
                 Thread.currentThread().interrupt();
                 throw new RecordingPreflightException("Interrupted while waiting for the recording display "
                         + gpuDisplay + ". The client was not started.");
             }
             if (lock == null) {
-                if (fallback == null) {
-                    fallback = displayTakenReason(gpuDisplay, requiredGpuWait);
+                if (lockProblem == null) {
+                    lockProblem = displayTakenReason(gpuDisplay, requiredGpuWait);
                 }
-                if (requiredGpuWait != null) {
-                    throw new RecordingPreflightException(requiredGpuFailure(fallback));
-                }
+            } else {
+                CommandResult info = runCommand(List.of("xdpyinfo", "-display", gpuDisplay), Map.of(), true);
+                infoStatus = info.status();
+                infoOutput = info.output();
+            }
+        }
+        CardDisplay card = cardDisplay(gpuDisplay, lockProblem, infoStatus, infoOutput, requiredGpuWait);
+        if (card.failure() != null) {
+            if (lock != null) {
+                lock.close();
+            }
+            throw new RecordingPreflightException(card.failure());
+        }
+        if (card.display() != null) {
+            String screen = ClientGpuCapture.screen(infoOutput);
+            // One overlay standard: the window and the capture stay the standard size, whatever
+            // the card display's own size is, and a display too small to hold it is an error.
+            String standard = ClientGameTestOptions.DEFAULT_RECORDER_SCREEN;
+            if (!ClientGpuCapture.fits(screen, standard)) {
+                lock.close();
+                throw new GradleException("The recording display " + gpuDisplay + " is " + screen
+                        + ", too small to record at the standard " + standard + " window and capture. Point "
+                        + ClientGpuCapture.DISPLAY_ENV + " at a display of at least that size, or unset it to"
+                        + " record on the recorder's own virtual display.");
+            }
+            getLogger().lifecycle("Recording X display {} ({}), which renders with the machine's graphics card.",
+                    gpuDisplay, screen);
+            getLogger().lifecycle("The client's window is visible on that display while it runs; it is the"
+                    + " standard {}, and the capture starts at the window once it shows.", standard);
+            return new DisplayResolution(gpuDisplay, standard, screen, null, gpuDisplay, null, lock);
+        }
+        String fallback = card.fallbackReason();
+        if (fallback != null) {
+            if (lock == null) {
                 getLogger().lifecycle(
                         "Recording display {} is taken; recording on the recorder's own virtual display. {}",
                         gpuDisplay, fallback);
             } else {
-                CommandResult info = runCommand(List.of("xdpyinfo", "-display", gpuDisplay), Map.of(), true);
-                String screen = ClientGpuCapture.screen(info.output());
-                if (info.status() == 0 && !screen.isEmpty()) {
-                    // One overlay standard: the window and the capture stay the standard size, whatever
-                    // the card display's own size is, and a display too small to hold it is an error.
-                    String standard = ClientGameTestOptions.DEFAULT_RECORDER_SCREEN;
-                    if (!ClientGpuCapture.fits(screen, standard)) {
-                        lock.close();
-                        throw new GradleException("The recording display " + gpuDisplay + " is " + screen
-                                + ", too small to record at the standard " + standard + " window and capture. Point "
-                                + ClientGpuCapture.DISPLAY_ENV + " at a display of at least that size, or unset it to"
-                                + " record on the recorder's own virtual display.");
-                    }
-                    getLogger().lifecycle("Recording X display {} ({}), which renders with the machine's graphics card.",
-                            gpuDisplay, screen);
-                    getLogger().lifecycle("The client's window is visible on that display while it runs; it is the"
-                            + " standard {}, and the capture starts at the window once it shows.", standard);
-                    return new DisplayResolution(gpuDisplay, standard, screen, null, gpuDisplay, null, lock);
-                }
                 lock.close();
-                fallback = "X display " + gpuDisplay + " does not answer: "
-                        + info.output().lines().findFirst().orElse("");
-                if (requiredGpuWait != null) {
-                    throw new RecordingPreflightException(requiredGpuFailure(fallback));
-                }
                 getLogger().warn(
                         "The recording display {} was ignored; recording on the recorder's own virtual display. {}",
                         requested, fallback);
