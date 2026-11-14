@@ -626,6 +626,45 @@ class ModPublishingPluginTest {
     }
 
     @Test
+    void submitsModrinthProjectForReviewOnlyOnceTheVersionIsUploaded() throws Exception {
+        try (var server = FakeModrinthServer.start(true, false)) {
+            server.setVersionUploadRejection("fixture upload failure");
+            writeBuildFile("""
+                    dryRun = false
+                    maxRetries = 1
+                    modrinth {
+                        enabled = true
+                        projectId = 'AbCdEf12'
+                        token = 'fixture-token'
+                        apiEndpoint = '%s'
+                        submitForReview = true
+                    }
+                    """.formatted(server.apiEndpoint()), "");
+
+            BuildResult failed = runGradleAndFail("publishModrinth", "--configuration-cache");
+
+            assertEquals(TaskOutcome.FAILED, failed.task(":publishModrinth").getOutcome());
+            assertFalse(failed.getOutput().contains("Configuration cache problems"), failed::getOutput);
+            assertFalse(server.requests("POST", "/version").isEmpty(), failed::getOutput);
+            assertEquals(
+                    0,
+                    server.requests("PATCH", "/project/AbCdEf12").size(),
+                    () -> "requests: " + server.requests()
+            );
+            assertEquals("draft", server.projectStatus());
+
+            // The rejected upload still created the version, so the retry skips the upload and submits.
+            server.setVersionUploadRejection(null);
+            server.setPublishedVersionExists(true);
+            BuildResult retried = runGradle("publishModrinth", "--configuration-cache");
+
+            assertEquals(TaskOutcome.SKIPPED, retried.task(":publishModrinth").getOutcome());
+            assertEquals(TaskOutcome.SUCCESS, retried.task(":submitModrinthProjectForReview").getOutcome());
+            assertEquals("processing", server.projectStatus());
+        }
+    }
+
+    @Test
     void warnsAboutARefusedModrinthReviewUnlessModrinthIsRequired() throws Exception {
         try (var server = FakeModrinthServer.start(true, false)) {
             server.setReviewRejection("project must have no required validation nags before or during review or approval");
@@ -953,6 +992,7 @@ class ModPublishingPluginTest {
         private volatile int githubFailuresRemaining;
         private volatile String projectStatus = "draft";
         private volatile String reviewRejection;
+        private volatile String versionUploadRejection;
 
         private FakeModrinthServer(
                 HttpServer server,
@@ -1009,6 +1049,10 @@ class ModPublishingPluginTest {
 
         void setReviewRejection(String reviewRejection) {
             this.reviewRejection = reviewRejection;
+        }
+
+        void setVersionUploadRejection(String versionUploadRejection) {
+            this.versionUploadRejection = versionUploadRejection;
         }
 
         void setPublishedVersionExists(boolean publishedVersionExists) {
@@ -1123,6 +1167,10 @@ class ModPublishingPluginTest {
                 return;
             }
             if ("POST".equals(exchange.getRequestMethod()) && "/version".equals(path)) {
+                if (versionUploadRejection != null) {
+                    respond(exchange, 400, "{\"error\":\"invalid_input\",\"description\":\"" + versionUploadRejection + "\"}");
+                    return;
+                }
                 publishedVersionExists = true;
                 respond(
                         exchange,
