@@ -26,14 +26,15 @@ Where a clip starts depends on what the take records, and the run prints which s
   clock start and 0.5 s after the STAGE_START (a caption drawn in two steps counts as one), the clip opens where it
   ends. With none up to 0.9 s, the caption is taken to be on screen already and the clip opens at the clock start; a
   later clip then needs a step since the previous clip ended, or the clock start may still show that clip's caption.
-  The panel is watched up to LATE (2 s) after the STAGE_START, or to the stage's end if that comes first; a caption
-  that comes later still is not seen. The run fails, naming --clock, when the panel changes more than once after the
-  clock start, or changes more than 0.5 s after the STAGE_START, or drifts so fast that a change as small as NEAREST
-  could hide in it. A camera cut in a stage's first 0.5 s, while its caption is already on screen, still opens the
-  clip at the cut, and so does an on-film cut about ten times the caption's own change before the caption comes.
+  The panel is watched up to LATE (2 s) after the STAGE_START; a caption that comes later still is not seen. Every
+  one of these windows stops at the stage's end, where the next stage of a merged clip may draw its own caption. The
+  run fails, naming --clock, when the panel changes more than once after the clock start, or changes more than 0.5 s
+  after the STAGE_START, or drifts so fast that a change as small as NEAREST could hide in it. A camera cut in a
+  stage's first 0.5 s, while its caption is already on screen, still opens the clip at the cut, and so does an on-film
+  cut about ten times the caption's own change before the caption comes.
   After encoding, every later clip's first frame in OUT.mp4 must be closer to its own caption, read 0.5 to 0.9 s
-  after its STAGE_START, than to the caption its previous clip ended on, and the first clip's may sit at most
-  OWN_CAPTION further from its caption than the source frame did.
+  after its STAGE_START or last before its stage ends, than to the caption its previous clip ended on, and the first
+  clip's may sit at most OWN_CAPTION further from its caption than the source frame did.
 
 --clock cuts by the log's clock instead, 0.10 s before each STAGE_START, for a recording without captions.
 
@@ -165,18 +166,20 @@ def caption_start(panels, marker, lowest, finish, rate, stage, clock, first, unt
 
     `clock` is the frame the log's clock puts 0.10 s before the marker, `lowest` the frame after the previous clip,
     `first` whether this is the first clip and `until` the frame the clip's first stage ends at. The stage's own
-    caption is the median of five panels 0.5 to 0.9 s after the marker; it is only used to check the encode. The cut
-    comes from the steps in the panel (see the module docstring): the world behind the panel drifts and can change off
-    film, so neither the distance to a caption read at another moment nor a fixed limit decides where a caption
-    appears.
+    caption is the median of five panels 0.5 to 0.9 s after the marker, or the last ones before `until`; it is only
+    used to check the encode. The cut comes from the steps in the panel (see the module docstring): the world behind
+    the panel drifts and can change off film, so neither the distance to a caption read at another moment nor a fixed
+    limit decides where a caption appears.
 
     `panels` maps a frame to its residual panel and must hold every frame from lowest - 1 to LATE after the marker."""
-    last = finish - 1
-    reference = median_panel([panels[min(last, marker + at_rate(offset, rate))] for offset in REFERENCE_OFFSETS])
+    # A merged clip's next stage may draw its caption before this one's 0.9 s are up: the frames from its first
+    # stage's end on show that caption, not this one's.
+    own_last = min(finish, until) - 1
+    reference = median_panel([panels[min(own_last, marker + at_rate(offset, rate))] for offset in REFERENCE_OFFSETS])
     lo = max(lowest, 1)
-    read = min(last, marker + at_rate(SEARCH_AFTER, rate))
-    end = min(last, marker + at_rate(REFERENCE_OFFSETS[-1], rate))
-    late = min(last, until - 1, marker + at_rate(LATE, rate))
+    read = min(own_last, marker + at_rate(SEARCH_AFTER, rate))
+    end = min(own_last, marker + at_rate(REFERENCE_OFFSETS[-1], rate))
+    late = min(own_last, marker + at_rate(LATE, rate))
     change = {k: mean_diff(panels[k - 1], panels[k]) for k in range(lo, max(end, late) + 1)}
     biggest = max((change[k] for k in range(lo, read + 1)), default=0.0)
     if biggest < CHANGED:

@@ -238,6 +238,17 @@ class CaptionStartTest(unittest.TestCase):
         begin, _ = trim_stages.caption_start(panels, 35, 20, 80, 30, "b", 32, False, 70)
         self.assertEqual(begin, 32)
 
+    def test_a_short_first_stage_of_a_clip_is_not_opened_on_the_next_stages_caption(self) -> None:
+        # Stage a lasts 0.3 s (marker 120, end 129) and its caption came off film at frame 100; the next stage of the
+        # clip draws its caption at frame 131, inside the 0.5 s in which a's caption could still arrive. Taking that
+        # step would drop stage a from the clip, so the clip opens at the clock start and a's caption is read before
+        # its stage ends.
+        own, following = bytes([110] * 100), bytes([210] * 100)
+        panels = {k: bytes([10] * 100) if k < 100 else own if k < 131 else following for k in range(80, 200)}
+        begin, reference = trim_stages.caption_start(panels, 120, 90, 200, 30, "a", 117, False, 129)
+        self.assertEqual(begin, 117)
+        self.assertEqual(reference, own)
+
 
 class FirstFramesTest(unittest.TestCase):
     def test_a_clip_whose_first_frame_is_not_its_caption_fails(self) -> None:
