@@ -87,18 +87,40 @@ class GameCaptureTest {
     @Test
     void aClockFileThatIsNotYetWholeIsNotAStart(@TempDir Path dir) throws IOException {
         Path clock = dir.resolve("take.clock");
+        GameCapture.ClockReader reader = new GameCapture.ClockReader();
 
         // The recorder replaces the clock in one move, but a poll that catches a missing, length-0 or part-written
         // file must wait for the next poll instead of throwing out of renderFrame.
-        assertNull(GameCapture.readClock(clock));
+        assertNull(reader.read(clock));
         Files.writeString(clock, "");
-        assertNull(GameCapture.readClock(clock));
+        assertNull(reader.read(clock));
         Files.writeString(clock, "1794499511733333 30 1920");
-        assertNull(GameCapture.readClock(clock));
+        assertNull(reader.read(clock));
         Files.writeString(clock, "1794499511733333 3O 1920 1080");
-        assertNull(GameCapture.readClock(clock));
+        assertNull(reader.read(clock));
+        assertNull(reader.takeProblem());
         Files.writeString(clock, "1794499511733333 30 1920 1080\n");
-        assertEquals(new GameCapture.Clock(START_US, 30, 1920, 1080), GameCapture.readClock(clock));
+        assertEquals(new GameCapture.Clock(START_US, 30, 1920, 1080), reader.read(clock));
+    }
+
+    @Test
+    void aClockThatNeverParsesIsReportedOnceWithWhatItReads(@TempDir Path dir) throws IOException {
+        Path clock = dir.resolve("take.clock");
+        Files.writeString(clock, "1794499511733333 3O 1920 1080\n");
+        GameCapture.ClockReader reader = new GameCapture.ClockReader();
+
+        for (int poll = 1; poll < GameCapture.ClockReader.PATIENCE; poll++) {
+            assertNull(reader.read(clock));
+            assertNull(reader.takeProblem(), "poll " + poll);
+        }
+        assertNull(reader.read(clock));
+        String problem = reader.takeProblem();
+        assertTrue(problem != null && problem.contains("\"1794499511733333 3O 1920 1080\""), problem);
+        assertTrue(problem.contains("t0Us fps width height"), problem);
+
+        // It keeps waiting, but says so only once.
+        assertNull(reader.read(clock));
+        assertNull(reader.takeProblem());
     }
 
     @Test
