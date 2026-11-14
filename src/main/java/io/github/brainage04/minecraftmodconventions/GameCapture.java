@@ -54,9 +54,8 @@ public final class GameCapture {
     private static String startFailure;
 
     private final Clock clock;
-    /** The wall clock's reading when the capture started, and the monotonic reading it is anchored to. */
-    private final long epochBaseUs;
-    private final long nanoBase;
+    /** The capture's wall-clock reading and the monotonic one taken with it; the sound tells time from it too. */
+    private final Anchor anchor;
     private final GpuBuffer[] buffers = new GpuBuffer[BUFFERS];
     private final int[] states = new int[BUFFERS];
     private final long[] presentUs = new long[BUFFERS];
@@ -79,9 +78,7 @@ public final class GameCapture {
 
     private GameCapture(Clock clock) {
         this.clock = clock;
-        long nanos = System.nanoTime();
-        this.epochBaseUs = epochMicros();
-        this.nanoBase = nanos;
+        this.anchor = Anchor.now();
         long size = (long) clock.width() * clock.height() * BYTES_PER_PIXEL;
         for (int i = 0; i < BUFFERS; i++) {
             buffers[i] = RenderSystem.getDevice().createBuffer(() -> "Recording capture", GpuBuffer.USAGE_MAP_READ | GpuBuffer.USAGE_COPY_DST, size);
@@ -173,7 +170,7 @@ public final class GameCapture {
                 return null;
             }
             active = new GameCapture(clock);
-            GameCaptureAudio.startWriting(active.clock.startUs());
+            GameCaptureAudio.startWriting(active.clock.startUs(), active.anchor);
             return active;
         }
     }
@@ -214,18 +211,26 @@ public final class GameCapture {
         return lastPresentUs;
     }
 
-    /**
-     * The capture's wall-clock time, anchored to one monotonic reading when the capture started. The sound's samples
-     * follow {@link System#nanoTime()} (see {@link GameCaptureAudio}), so a wall-clock step during a take would
-     * otherwise move the video timeline against the sound by the size of the step.
-     */
     private long nowUs() {
-        return anchoredUs(epochBaseUs, nanoBase, System.nanoTime());
+        return anchor.us(System.nanoTime());
     }
 
-    /** The wall-clock microsecond time {@code nowNanos} of a clock anchored at {@code epochBaseUs}/{@code nanoBase}. */
-    static long anchoredUs(long epochBaseUs, long nanoBase, long nowNanos) {
-        return epochBaseUs + (nowNanos - nanoBase) / 1000L;
+    /**
+     * A wall-clock reading in microseconds and the {@link System#nanoTime()} reading taken with it, so later times
+     * follow the monotonic clock. The picture's slots and the sound's samples both take their times from the capture's
+     * one anchor: two readings taken apart would move the video timeline against the sound by any wall-clock step
+     * between them.
+     */
+    record Anchor(long epochUs, long nanos) {
+        static Anchor now() {
+            long nanos = System.nanoTime();
+            return new Anchor(epochMicros(), nanos);
+        }
+
+        /** The wall-clock microsecond time of the monotonic reading {@code nowNanos}. */
+        long us(long nowNanos) {
+            return epochUs + Math.floorDiv(nowNanos - nanos, 1000L);
+        }
     }
 
     private synchronized void frame(GpuTexture texture, long presentTimeUs) {
