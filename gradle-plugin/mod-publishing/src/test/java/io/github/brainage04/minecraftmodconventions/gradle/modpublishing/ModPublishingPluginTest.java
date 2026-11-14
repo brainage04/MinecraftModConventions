@@ -340,6 +340,34 @@ class ModPublishingPluginTest {
     }
 
     @Test
+    void privateRepositorySendsNoGitHubFallbackLinksAndClearsSyncedOnes() throws Exception {
+        try (var server = FakeModrinthServer.start(false)) {
+            writeBuildFile("""
+                    github.repository = 'brainage04/publisher-fixture'
+                    modrinth {
+                        token = 'fixture-token'
+                        apiEndpoint = '%s'
+                        privateRepository = true
+                    }
+                    """.formatted(server.apiEndpoint()), "");
+
+            BuildResult result = runGradle("syncModrinthProject");
+
+            assertEquals(TaskOutcome.SUCCESS, result.task(":syncModrinthProject").getOutcome());
+            String createBody = server.singleRequest("POST", "/project").utf8Body();
+            assertFalse(createBody.contains("github.com"), createBody);
+            assertTrue(createBody.contains("https://example.invalid/source"), createBody);
+            JsonObject update = JsonParser.parseString(
+                    server.singleRequest("PATCH", "/project/publisher-fixture").utf8Body()
+            ).getAsJsonObject();
+            assertEquals("https://example.invalid/source", update.get("source_url").getAsString());
+            for (String link : List.of("issues_url", "wiki_url", "license_url")) {
+                assertTrue(update.has(link) && update.get(link).isJsonNull(), link + " in " + update);
+            }
+        }
+    }
+
+    @Test
     void updatesChangedModrinthIconThenSkipsMatchingContent() throws Exception {
         try (var server = FakeModrinthServer.start(true)) {
             writeBuildFile(modrinthSyncConfiguration(server.apiEndpoint()), "");
