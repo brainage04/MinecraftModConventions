@@ -1,6 +1,8 @@
 package io.github.brainage04.minecraftmodconventions.gradle.recorder;
 
 import org.gradle.api.GradleException;
+import org.gradle.api.Project;
+import org.gradle.testfixtures.ProjectBuilder;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -199,6 +201,20 @@ class RecordClientGameTestTaskTest {
         String unset = RecordClientGameTestTask.missingWindowSignal("", "3.5.0", ":1");
         assertTrue(unset.startsWith("The client's runtime helper wrote no window signal: helpers older than 3.4.0"),
                 unset);
+    }
+
+    @Test
+    void aBlankWindowSignalFailsNamingTheConfiguredHelperVersion(@TempDir Path directory) throws IOException {
+        Project project = ProjectBuilder.builder().withProjectDir(directory.toFile()).build();
+        RecordClientGameTestTask task = project.getTasks().register("record", RecordClientGameTestTask.class).get();
+        task.getRuntimeHelperVersion().set("3.3.0");
+        Path signal = Files.writeString(directory.resolve("window.txt"), " \n");
+
+        GradleException failure = assertThrows(GradleException.class,
+                () -> task.windowGrabOffset(signal.toFile(), ":1", "1920x1080", "1920x1080"));
+
+        assertEquals(RecordClientGameTestTask.missingWindowSignal("3.3.0",
+                RecordClientGameTestTask.class.getPackage().getImplementationVersion(), ":1"), failure.getMessage());
     }
 
     @Test

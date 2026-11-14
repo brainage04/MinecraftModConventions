@@ -996,7 +996,7 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
      * recording helper from inside the client and read from the window signal. Vanilla centres a
      * windowed client on its monitor, so the display's origin is not the window's.
      */
-    private int[] windowGrabOffset(File windowSignal, String display, String displayScreen, String videoSize) {
+    int[] windowGrabOffset(File windowSignal, String display, String displayScreen, String videoSize) {
         long deadline = System.currentTimeMillis() + 5_000L;
         while (System.currentTimeMillis() < deadline && (!windowSignal.isFile() || windowSignal.length() == 0)) {
             sleep(50L);
