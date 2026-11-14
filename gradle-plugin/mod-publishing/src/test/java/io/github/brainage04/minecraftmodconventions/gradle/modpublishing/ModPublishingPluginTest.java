@@ -83,9 +83,13 @@ class ModPublishingPluginTest {
                           "slug": "publisher-fixture",
                           "categories": ["library"],
                           "dependency_overrides": {
-                            "fzzy_config": { "project_slug": "fzzy-config" },
+                            "fzzy_config": { "project_slug": "fzzy-config", "curseforge_slug": "fzzy-config" },
                             "modmenu": { "skip": true },
-                            "bad_mod": { "project_id": "AbCdEf12", "dependency_type": "incompatible" }
+                            "bad_mod": {
+                              "project_id": "AbCdEf12",
+                              "dependency_type": "incompatible",
+                              "curseforge_slug": "bad-mod"
+                            }
                           },
                           "version": {
                             "game_versions": ["26.1.2"],
@@ -308,6 +312,74 @@ class ModPublishingPluginTest {
         BuildResult result = runGradle("verifyInferredMetadata");
 
         assertEquals(TaskOutcome.SUCCESS, result.task(":verifyInferredMetadata").getOutcome());
+    }
+
+    @Test
+    void declaresCurseForgeRelationsFromFabricDependencies() throws Exception {
+        Files.writeString(
+                projectDirectory.resolve(".modrinth/project.json"),
+                """
+                        {
+                          "slug": "publisher-fixture",
+                          "dependency_overrides": {
+                            "fzzy_config": { "curseforge_slug": "fzzy-config" },
+                            "modmenu": { "curseforge_slug": "modmenu" },
+                            "bad_mod": { "dependency_type": "incompatible", "curseforge_slug": "bad-mod" }
+                          }
+                        }
+                        """
+        );
+        try (var server = FakeModrinthServer.start(true)) {
+            writeBuildFile("""
+                    dryRun = false
+                    curseforge {
+                        enabled = true
+                        projectId = '12345'
+                        token = 'fixture-token'
+                        apiEndpoint = '%s'
+                    }
+                    """.formatted(server.apiEndpoint()), "");
+
+            BuildResult result = runGradle("publishCurseforge");
+
+            assertEquals(TaskOutcome.SUCCESS, result.task(":publishCurseforge").getOutcome());
+            String upload = server.singleRequest("POST", "/api/projects/12345/upload-file").utf8Body();
+            assertTrue(upload.contains("\"relations\":{\"projects\":["), upload);
+            assertTrue(upload.contains("{\"slug\":\"fzzy-config\",\"type\":\"requiredDependency\"}"), upload);
+            assertTrue(upload.contains("{\"slug\":\"modmenu\",\"type\":\"optionalDependency\"}"), upload);
+            assertTrue(upload.contains("{\"slug\":\"bad-mod\",\"type\":\"incompatible\"}"), upload);
+        }
+    }
+
+    @Test
+    void rejectsCurseForgePublicationWithADependencyThatHasNoCurseForgeSlug() throws IOException {
+        Files.writeString(
+                projectDirectory.resolve(".modrinth/project.json"),
+                """
+                        {
+                          "slug": "publisher-fixture",
+                          "dependency_overrides": {
+                            "modmenu": { "curseforge_skip": true },
+                            "bad_mod": { "dependency_type": "incompatible", "curseforge_slug": "bad-mod" }
+                          }
+                        }
+                        """
+        );
+        writeBuildFile("""
+                dryRun = true
+                curseforge {
+                    enabled = true
+                    projectId = '12345'
+                }
+                """, "");
+
+        BuildResult result = runGradleAndFail("publishCurseforge");
+
+        assertEquals(TaskOutcome.FAILED, result.task(":validateModPublication").getOutcome());
+        assertTrue(
+                result.getOutput().contains("No CurseForge slug for the fabric.mod.json dependencies fzzy_config;"),
+                result.getOutput()
+        );
     }
 
     @Test
@@ -1005,6 +1077,29 @@ class ModPublishingPluginTest {
             if ("POST".equals(exchange.getRequestMethod())
                     && "/repos/brainage04/publisher-fixture/releases/generate-notes".equals(path)) {
                 respond(exchange, 200, "{\"body\":\"Generated release notes\"}");
+                return;
+            }
+            if ("GET".equals(exchange.getRequestMethod()) && "/api/game/version-types".equals(path)) {
+                respond(exchange, 200, """
+                        [{"id":1,"name":"Minecraft","slug":"minecraft-release"},
+                         {"id":2,"name":"Modloader","slug":"modloader"},
+                         {"id":3,"name":"Environment","slug":"environment"},
+                         {"id":4,"name":"Java","slug":"java"}]
+                        """);
+                return;
+            }
+            if ("GET".equals(exchange.getRequestMethod()) && "/api/game/versions".equals(path)) {
+                respond(exchange, 200, """
+                        [{"id":101,"gameVersionTypeID":1,"name":"26.1.2","slug":"26-1-2"},
+                         {"id":102,"gameVersionTypeID":2,"name":"Fabric","slug":"fabric"},
+                         {"id":103,"gameVersionTypeID":3,"name":"Client","slug":"client"},
+                         {"id":104,"gameVersionTypeID":3,"name":"Server","slug":"server"},
+                         {"id":105,"gameVersionTypeID":4,"name":"Java 25","slug":"java-25"}]
+                        """);
+                return;
+            }
+            if ("POST".equals(exchange.getRequestMethod()) && "/api/projects/12345/upload-file".equals(path)) {
+                respond(exchange, 200, "{\"id\":555}");
                 return;
             }
             respond(exchange, 404, "{}");
