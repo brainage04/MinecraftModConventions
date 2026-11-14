@@ -232,6 +232,27 @@ class CaptionStartTest(unittest.TestCase):
         self.assertIn("b: the caption panel changes at frame 70, 1.2 s after the marker", str(failure.exception))
         self.assertIn("--clock", str(failure.exception))
 
+    def test_a_stage_repeated_with_its_caption_opens_at_the_clock_without_a_change(self) -> None:
+        # Stage b is filmed again right after its own clip, its caption on screen all along: no change is right here,
+        # because the caption the clock start shows is b's own. Any other later clip still needs a change.
+        panels = {k: bytes([110] * 100) for k in range(0, 80)}
+        begin, reference = trim_stages.caption_start(panels, 35, 20, 80, 30, "b", 32, False, 80, True)
+        self.assertEqual(begin, 32)
+        self.assertEqual(reference, bytes([110] * 100))
+        with self.assertRaises(SystemExit) as failure:
+            trim_stages.caption_start(panels, 35, 20, 80, 30, "b", 32, False, 80)
+        self.assertIn("b: the caption never changes near frame 35", str(failure.exception))
+
+    def test_only_a_repeated_stage_opens_without_a_step_since_the_previous_clip(self) -> None:
+        # The world drifts 1.6 a frame, so the panel changes near the marker but no step stands out from the drift.
+        # A repeated stage opens at the clock on its own caption; any other clip may still show the previous one.
+        panels = {k: bytes([(16 * k // 10) % 256] * 100) for k in range(0, 80)}
+        begin, _ = trim_stages.caption_start(panels, 35, 20, 80, 30, "b", 32, False, 80, True)
+        self.assertEqual(begin, 32)
+        with self.assertRaises(SystemExit) as failure:
+            trim_stages.caption_start(panels, 35, 20, 80, 30, "b", 32, False, 80, False)
+        self.assertIn("b: the caption panel does not change between the previous clip", str(failure.exception))
+
     def test_a_change_after_the_first_stage_of_a_clip_ends_belongs_to_the_next_stage(self) -> None:
         # The same panels in a clip whose first stage ends at frame 70: the change there is the next stage's caption.
         panels = {k: bytes([10 if k < 25 else 110 if k < 70 else 210] * 100) for k in range(0, 80)}
@@ -289,6 +310,28 @@ class FirstFramesTest(unittest.TestCase):
             with self.assertRaises(SystemExit) as failure:
                 trim_stages.check_first_frames(Path("cut.mp4"), stages, captions)
         self.assertIn("c: the clip's first frame still shows the previous caption", str(failure.exception))
+
+    def test_a_repeated_stage_may_open_on_the_caption_its_previous_clip_ended_on(self) -> None:
+        # Stage a is filmed twice with one caption: the previous clip's caption is a's own, so the second clip is held
+        # to the first clip's rule, and a frame that does not show the caption still fails.
+        stages = [{"stage": "a", "startFrame": 0, "endFrameExclusive": 10},
+                  {"stage": "a", "startFrame": 10, "endFrameExclusive": 20}]
+        caption = bytes([110] * 100)
+        captions = [{"own": caption, "ending": caption, "measured": 0.0}] * 2
+        with mock.patch.object(trim_stages, "read_panels", return_value={0: caption, 10: caption}):
+            trim_stages.check_first_frames(Path("cut.mp4"), stages, captions)
+        with mock.patch.object(trim_stages, "read_panels", return_value={0: caption, 10: bytes([200] * 100)}):
+            with self.assertRaises(SystemExit) as failure:
+                trim_stages.check_first_frames(Path("cut.mp4"), stages, captions)
+        self.assertIn("a: the clip's first frame does not show its own caption", str(failure.exception))
+
+
+class RepeatsTest(unittest.TestCase):
+    def test_a_clip_repeats_the_stage_its_previous_clip_ended_on(self) -> None:
+        self.assertTrue(trim_stages.repeats("a", "a"))
+        self.assertTrue(trim_stages.repeats("a+b", "b+c"))
+        self.assertFalse(trim_stages.repeats("b+a", "b"))
+        self.assertFalse(trim_stages.repeats(None, "a"))
 
 
 class MarkedCutsTest(unittest.TestCase):
@@ -595,6 +638,22 @@ class CaptionCutTest(unittest.TestCase):
         self.assertEqual(by_clock.returncode, 0, by_clock.stdout + by_clock.stderr)
         self.assertIn("cut by the log's clock", by_clock.stdout)
         self.assertEqual(json.loads(video.with_name("cut.stages.json").read_text())[1]["startFrame"], 37)
+
+    def test_a_stage_filmed_twice_with_one_caption_opens_both_clips_at_the_clock(self) -> None:
+        # Caption A stays on screen through both takes of stage a, so the panel never changes between the clips.
+        log, video, meta = make_recording(
+            self.directory,
+            [(CAPTION_A, 12, 179)],
+            [("STAGE_START", "a", 0.5), ("STAGE_END", "a", 1.5), ("STAGE_START", "a", 3.0),
+             ("STAGE_END", "a", 4.0)])
+
+        result = cut(log, video, meta)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("a: marker frame 15, caption from frame 12", result.stdout)
+        self.assertIn("a: marker frame 90, caption from frame 87", result.stdout)
+        stages = json.loads(video.with_name("cut.stages.json").read_text())
+        self.assertEqual([stage["stage"] for stage in stages], ["a", "a"])
 
     def test_a_take_without_captions_fails_unless_cut_by_the_clock(self) -> None:
         log, video, meta = make_recording(
