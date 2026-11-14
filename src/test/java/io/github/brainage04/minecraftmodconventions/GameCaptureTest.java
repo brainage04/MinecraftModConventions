@@ -3,10 +3,12 @@ package io.github.brainage04.minecraftmodconventions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.IntBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -110,6 +112,59 @@ class GameCaptureTest {
         assertEquals(START_US, GameCapture.anchoredUs(START_US, 0L, 0L));
         assertEquals(START_US + 2_000_000L, GameCapture.anchoredUs(START_US, 5_000_000L, 2_005_000_000L));
         assertEquals(START_US + 1L, GameCapture.anchoredUs(START_US, 0L, 1_999L));
+    }
+
+    @Test
+    void eachCaptionIsMarkedAtTheFirstSlotWrittenWithIt() throws IOException {
+        GameCapture.Slots slots = new GameCapture.Slots(new GameCapture.Clock(START_US, 30, 1, 1), _ -> {});
+        ByteArrayOutputStream video = new ByteArrayOutputStream();
+        ClientGameTestRecordingHud.Step a = new ClientGameTestRecordingHud.Step("stage.a", "A", "");
+        ClientGameTestRecordingHud.Step b = new ClientGameTestRecordingHud.Step("stage.b", "B", "");
+        ClientGameTestRecordingHud.Step c = new ClientGameTestRecordingHud.Step("stage.c", "C", "");
+
+        // Before any caption: the first frame fills slot 0 and the next frame's present ends slot 1.
+        slots.advance(frame(0, 10_000, null), START_US + 10_000, video);
+        // Caption a is drawn from the frame presented at 40 ms, which fills slot 2 once the next frame comes.
+        slots.advance(frame(1, 40_000, a), START_US + 40_000, video);
+        slots.advance(frame(2, 75_000, a), START_US + 75_000, video);
+        // A frame without the panel, then a again: a keeps the mark of its first slot.
+        slots.advance(frame(3, 110_000, null), START_US + 110_000, video);
+        slots.advance(frame(4, 140_000, a), START_US + 140_000, video);
+        slots.advance(frame(5, 170_000, b), START_US + 170_000, video);
+        // The client presents nothing for a second, so the slots older than the hold repeat b's frame (6 to 28).
+        slots.advance(null, START_US + 1_200_000, video);
+        // c's first frame, presented at 500 ms, reaches the writer only after its slots went to b's frame: c is
+        // marked at the slot that shows it (29), not at the slot its present falls in (15).
+        slots.advance(frame(6, 500_000, c), START_US + 1_200_000, video);
+        slots.advance(frame(7, 1_250_000, c), START_US + 1_250_000, video);
+
+        byte[] expected = new byte[38];
+        byte[] firstSlots = {0, 0, 1, 2, 3, 4};
+        System.arraycopy(firstSlots, 0, expected, 0, firstSlots.length);
+        Arrays.fill(expected, 6, 29, (byte) 5);
+        Arrays.fill(expected, 29, 38, (byte) 6);
+        assertArrayEquals(expected, video.toByteArray());
+        assertEquals(38, slots.written());
+        assertEquals(22 + 8, slots.repeated());
+        assertEquals("[{\"id\":\"stage.a\",\"slot\":2,\"presentUs\":" + (START_US + 40_000) + "},"
+                + "{\"id\":\"stage.b\",\"slot\":6,\"presentUs\":" + (START_US + 170_000) + "},"
+                + "{\"id\":\"stage.c\",\"slot\":29,\"presentUs\":" + (START_US + 500_000) + "}]",
+                slots.captionMarks());
+    }
+
+    @Test
+    void aCaptionMarkKeepsAnIdTheJsonWouldOtherwiseBreakOn() throws IOException {
+        GameCapture.Slots slots = new GameCapture.Slots(new GameCapture.Clock(START_US, 30, 1, 1), _ -> {});
+        ClientGameTestRecordingHud.Step odd = new ClientGameTestRecordingHud.Step("say \"hi\" \\ there", "T", "");
+
+        slots.advance(frame(0, 10_000, odd), START_US + 10_000, new ByteArrayOutputStream());
+
+        assertEquals("[{\"id\":\"say \\\"hi\\\" \\\\ there\",\"slot\":0,\"presentUs\":" + (START_US + 10_000) + "}]",
+                slots.captionMarks());
+    }
+
+    private static GameCapture.Frame frame(int value, long presentAfterStartUs, ClientGameTestRecordingHud.Step caption) {
+        return new GameCapture.Frame(new byte[] {(byte) value}, START_US + presentAfterStartUs, caption);
     }
 
     @Test

@@ -39,6 +39,8 @@ public final class ClientGameTestRecordingHud {
     private static final Object LOG_LOCK = new Object();
     private static final ArrayDeque<String> LOG_LINES = new ArrayDeque<>(MAX_LOG_LINES);
     private static volatile Step currentStep;
+    /** The step whose caption the last HUD extraction drew, on the render thread only; see {@link #takeDrawnStep}. */
+    private static Step drawnStep;
     private static volatile PerformanceOverlayPlacement overlayPlacement = PerformanceOverlayPlacement.TOP_RIGHT;
     private static boolean registered;
 
@@ -109,13 +111,27 @@ public final class ClientGameTestRecordingHud {
         }
     }
 
+    /**
+     * The step whose caption is in the frame about to be presented, or null when no caption panel was drawn into it,
+     * and forgets it. {@code Minecraft.renderFrame} extracts the HUD, this panel included, in
+     * {@code GameRenderer.extract}, draws it into the main target in {@code GameRenderer.render} and then presents
+     * ({@code Minecraft.java:1282,1289,1317}, {@code GameRenderer.java:452,507} in the 26.3 sources), so read right
+     * before the present this names the caption the frame shows.
+     */
+    static Step takeDrawnStep() {
+        Step step = drawnStep;
+        drawnStep = null;
+        return step;
+    }
+
     private static void render(GuiGraphicsExtractor graphics, net.minecraft.client.DeltaTracker deltaTracker) {
         Minecraft client = Minecraft.getInstance();
         if (client.player == null || !isEnabledForEnvironment()) {
             return;
         }
 
-        List<HudLine> lines = lines();
+        Step step = currentStep;
+        List<HudLine> lines = lines(step);
         if (lines.isEmpty()) {
             return;
         }
@@ -145,6 +161,7 @@ public final class ClientGameTestRecordingHud {
                     true);
             textY += lineHeight;
         }
+        drawnStep = step;
         renderPerformance(graphics, font, client, SCREEN_MARGIN + panelHeight(captionLinesAtMost(SHOWCASE_PROFILE)));
     }
 
@@ -204,11 +221,10 @@ public final class ClientGameTestRecordingHud {
         };
     }
 
-    private static List<HudLine> lines() {
+    private static List<HudLine> lines(Step step) {
         ArrayList<HudLine> lines = new ArrayList<>();
         lines.add(new HudLine(SHOWCASE_PROFILE ? "Feature showcase" : "GameTest Recording", HEADER_COLOR));
 
-        Step step = currentStep;
         if (step != null) {
             if (!SHOWCASE_PROFILE && !step.id().isBlank()) {
                 lines.add(new HudLine("Scenario: " + step.id(), LABEL_COLOR));
@@ -286,7 +302,7 @@ public final class ClientGameTestRecordingHud {
         return String.join(" ", parts);
     }
 
-    private record Step(String id, String title, String subtitle) {
+    record Step(String id, String title, String subtitle) {
     }
 
     private record HudLine(String text, int color) {

@@ -1,5 +1,7 @@
 package io.github.brainage04.minecraftmodconventions;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
 import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.renderpearl.api.buffers.GpuBuffer;
@@ -17,6 +19,7 @@ import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.LockSupport;
+import java.util.function.Consumer;
 
 /**
  * Records the game's own picture: each frame is copied out of the main render target before it is presented, the
@@ -28,6 +31,10 @@ import java.util.concurrent.locks.LockSupport;
  * {@code t0 + k / fps} and shows the newest frame presented before it, so the video keeps the timing of a screen
  * grab without its tears. A present waits only while the present before it falls between the same two slots, so the
  * client presents at most once per slot and a late frame never waits.
+ *
+ * <p>Each frame carries the caption the HUD drew into it, so the capture knows the first slot that shows each
+ * caption; the recording's boundaries list them as {@code gameCaptureCaptionMarks}, which {@code trim_stages.py}
+ * cuts by.
  */
 public final class GameCapture {
     private static final String PREFIX = "CLIENT_GAMETEST_RECORDING_";
@@ -61,16 +68,16 @@ public final class GameCapture {
     private final int[] states = new int[BUFFERS];
     private final long[] presentUs = new long[BUFFERS];
     private final long[] issued = new long[BUFFERS];
+    private final ClientGameTestRecordingHud.Step[] captions = new ClientGameTestRecordingHud.Step[BUFFERS];
     private final BlockingQueue<byte[]> spare = new ArrayBlockingQueue<>(QUEUED_FRAMES + 2);
     private final BlockingQueue<Frame> frames = new ArrayBlockingQueue<>(QUEUED_FRAMES);
     private final Thread writer;
+    private final Slots slots;
     private long frameCount;
     private long dropped;
     private long readbacks;
     private long readbackNanosTotal;
     private long readbackNanosMax;
-    private volatile long slotsWritten;
-    private volatile long repeatedSlots;
     /** The last present's time, on the render thread only. */
     private long lastPresentUs = Long.MIN_VALUE;
     private volatile String failure;
@@ -90,6 +97,7 @@ public final class GameCapture {
             spare.add(new byte[(int) size]);
         }
         writer = new Thread(this::write, "Recording capture writer");
+        slots = new Slots(clock, spare::add);
         writer.setDaemon(true);
         writer.start();
     }
@@ -106,6 +114,7 @@ public final class GameCapture {
      * with the reason.
      */
     public static void beforePresent(RenderTarget target) {
+        ClientGameTestRecordingHud.Step caption = ClientGameTestRecordingHud.takeDrawnStep();
         GameCapture capture = capture();
         GpuTexture texture = target.getColorTexture();
         if (capture == null || texture == null || capture.failure != null || capture.stopped) {
@@ -121,7 +130,7 @@ public final class GameCapture {
             capture.fail(formatProblem);
             return;
         }
-        capture.frame(texture, capture.awaitPresentTime());
+        capture.frame(texture, capture.awaitPresentTime(), caption);
     }
 
     /** Adds the capture's counts to the recording's boundary evidence; nothing when the game is not captured. */
@@ -141,8 +150,9 @@ public final class GameCapture {
             evidence.setProperty("gameCaptureReadbackMsMax", String.format(java.util.Locale.ROOT, "%.3f",
                     capture.readbackNanosMax / 1e6));
         }
-        evidence.setProperty("gameCaptureSlots", Long.toString(capture.slotsWritten));
-        evidence.setProperty("gameCaptureRepeatedSlots", Long.toString(capture.repeatedSlots));
+        evidence.setProperty("gameCaptureSlots", Long.toString(capture.slots.written()));
+        evidence.setProperty("gameCaptureRepeatedSlots", Long.toString(capture.slots.repeated()));
+        evidence.setProperty("gameCaptureCaptionMarks", capture.slots.captionMarks());
         if (capture.failure != null) {
             evidence.setProperty("gameCaptureFailure", capture.failure);
         }
@@ -228,7 +238,7 @@ public final class GameCapture {
         return epochBaseUs + (nowNanos - nanoBase) / 1000L;
     }
 
-    private synchronized void frame(GpuTexture texture, long presentTimeUs) {
+    private synchronized void frame(GpuTexture texture, long presentTimeUs, ClientGameTestRecordingHud.Step caption) {
         if (stopped) {
             return;
         }
@@ -259,6 +269,7 @@ public final class GameCapture {
         int index = slot;
         states[index] = 1;
         presentUs[index] = presentTimeUs;
+        captions[index] = caption;
         issued[index] = frameCount;
         RenderSystem.getDevice().createCommandEncoder().copyTextureToBuffer(texture, buffers[index], 0L, () -> {
             synchronized (this) {
@@ -280,7 +291,7 @@ public final class GameCapture {
             readbacks++;
             readbackNanosTotal += took;
             readbackNanosMax = Math.max(readbackNanosMax, took);
-            if (!frames.offer(new Frame(bytes, presentUs[index]))) {
+            if (!frames.offer(new Frame(bytes, presentUs[index], captions[index]))) {
                 spare.add(bytes);
                 dropped++;
             }
@@ -291,35 +302,9 @@ public final class GameCapture {
     private void write() {
         long periodNanos = 1_000_000_000L / clock.framesPerSecond();
         try (OutputStream out = new FileOutputStream(VIDEO.toFile())) {
-            byte[] shown = null;
-            boolean shownWritten = false;
-            long slot = 0;
             while (true) {
                 Frame frame = frames.poll(periodNanos, TimeUnit.NANOSECONDS);
-                if (frame == null && shown == null) {
-                    continue;
-                }
-                // Every slot before this frame's present shows the frame before it (the first frame for the slots
-                // before any frame arrived).
-                long until = clock.slotsToFill(frame == null ? null : frame.presentUs(), nowUs());
-                byte[] fill = shown == null ? frame.bytes() : shown;
-                for (; slot < until; slot++) {
-                    out.write(fill);
-                    slotsWritten++;
-                    if (fill == shown) {
-                        if (shownWritten) {
-                            repeatedSlots++;
-                        }
-                        shownWritten = true;
-                    }
-                }
-                if (frame != null) {
-                    if (shown != null) {
-                        spare.add(shown);
-                    }
-                    shown = frame.bytes();
-                    shownWritten = false;
-                }
+                slots.advance(frame, nowUs(), out);
             }
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
@@ -375,7 +360,91 @@ public final class GameCapture {
         System.err.println("[CLIENT_GAMETEST_RECORDING] CAPTURE_FAILURE: " + message);
     }
 
-    private record Frame(byte[] bytes, long presentUs) {}
+    record Frame(byte[] bytes, long presentUs, ClientGameTestRecordingHud.Step caption) {}
+
+    /**
+     * The capture's slots as the writer fills them, and the first slot that shows each caption. Only the writer
+     * thread advances it; the counts and marks are read when the recording ends.
+     */
+    static final class Slots {
+        private final Clock clock;
+        /** Takes back the bytes of a frame no slot will show again. */
+        private final Consumer<byte[]> release;
+        private final JsonArray marks = new JsonArray();
+        private ClientGameTestRecordingHud.Step marked;
+        private Frame shown;
+        private boolean shownWritten;
+        private long slot;
+        private volatile long written;
+        private volatile long repeated;
+
+        Slots(Clock clock, Consumer<byte[]> release) {
+            this.clock = clock;
+            this.release = release;
+        }
+
+        /**
+         * Writes the slots due at {@code nowUs} when {@code frame} (null for none) reaches the writer. Every slot
+         * before the frame's present shows the frame before it, or the first frame for the slots before any frame
+         * arrived.
+         */
+        void advance(Frame frame, long nowUs, OutputStream out) throws IOException {
+            if (frame == null && shown == null) {
+                return;
+            }
+            long until = clock.slotsToFill(frame == null ? null : frame.presentUs(), nowUs);
+            Frame fill = shown == null ? frame : shown;
+            for (; slot < until; slot++) {
+                out.write(fill.bytes());
+                written++;
+                mark(fill);
+                if (fill == shown) {
+                    if (shownWritten) {
+                        repeated++;
+                    }
+                    shownWritten = true;
+                }
+            }
+            if (frame != null) {
+                if (shown != null) {
+                    release.accept(shown.bytes());
+                }
+                shown = frame;
+                shownWritten = false;
+            }
+        }
+
+        /**
+         * Marks the slot being written when it is the first to show its frame's caption. A frame can reach the
+         * writer after the slots its present falls in were filled (see {@link Clock#slotsToFill}), so only the
+         * slot written decides; a caption that comes back after frames without the panel keeps its first mark.
+         */
+        private synchronized void mark(Frame fill) {
+            ClientGameTestRecordingHud.Step caption = fill.caption();
+            if (caption == null || caption == marked) {
+                return;
+            }
+            marked = caption;
+            JsonObject mark = new JsonObject();
+            mark.addProperty("id", caption.id());
+            mark.addProperty("slot", slot);
+            mark.addProperty("presentUs", fill.presentUs());
+            marks.add(mark);
+        }
+
+        long written() {
+            return written;
+        }
+
+        long repeated() {
+            return repeated;
+        }
+
+        /** Each caption's id, its first slot (the raw capture's frame index) and that frame's present time, as JSON. */
+        synchronized String captionMarks() {
+            return marks.toString();
+        }
+    }
 
     /** The capture's start, rate and frame size, as the recorder writes them: {@code t0Us fps width height}. */
     record Clock(long startUs, int framesPerSecond, int width, int height) {
