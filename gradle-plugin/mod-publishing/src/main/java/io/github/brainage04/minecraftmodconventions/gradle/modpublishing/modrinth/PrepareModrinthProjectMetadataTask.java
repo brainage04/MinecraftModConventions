@@ -4,6 +4,7 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
+import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import io.github.brainage04.minecraftmodconventions.gradle.modpublishing.JsonValues;
@@ -28,7 +29,9 @@ import java.nio.file.Path;
 /** Produces deterministic Modrinth project create/update payloads from Fabric metadata. */
 @CacheableTask
 public abstract class PrepareModrinthProjectMetadataTask extends DefaultTask {
-    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+    // Modrinth's project PATCH clears a link given as null (EditProject's double_option fields,
+    // modrinth/code apps/labrinth/src/routes/v2/projects.rs:521-567), so nulls must reach the payload.
+    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().serializeNulls().create();
 
     @InputFile
     @PathSensitive(PathSensitivity.RELATIVE)
@@ -63,6 +66,9 @@ public abstract class PrepareModrinthProjectMetadataTask extends DefaultTask {
     @Input
     public abstract Property<String> getDiscordUrl();
 
+    @Input
+    public abstract Property<Boolean> getPrivateRepository();
+
     @OutputFile
     public abstract RegularFileProperty getOutputFile();
 
@@ -74,7 +80,7 @@ public abstract class PrepareModrinthProjectMetadataTask extends DefaultTask {
                 : new JsonObject();
         String body = Files.readString(getProjectBody().get().getAsFile().toPath(), StandardCharsets.UTF_8);
         String repository = required(getRepository().getOrElse(""), "GitHub repository");
-        String repositoryUrl = "https://github.com/" + repository;
+        String repositoryUrl = getPrivateRepository().getOrElse(false) ? "" : "https://github.com/" + repository;
         String modId = required(JsonValues.string(mod, "id"), "fabric.mod.json id");
         String slug = firstNonBlank(JsonValues.string(config, "slug"), modId);
         String description = firstNonBlank(
@@ -83,20 +89,20 @@ public abstract class PrepareModrinthProjectMetadataTask extends DefaultTask {
                 JsonValues.string(mod, "description")
         );
         JsonObject contact = object(mod, "contact");
-        String issuesUrl = firstNonBlank(JsonValues.string(config, "issues_url"), JsonValues.string(contact, "issues"), repositoryUrl + "/issues");
+        String issuesUrl = firstNonBlank(JsonValues.string(config, "issues_url"), JsonValues.string(contact, "issues"), repositoryLink(repositoryUrl, "/issues"));
         String sourceUrl = firstNonBlank(
                 JsonValues.string(config, "source_url"),
                 JsonValues.string(contact, "sources"),
                 JsonValues.string(contact, "homepage"),
                 repositoryUrl
         );
-        String wikiUrl = firstNonBlank(JsonValues.string(config, "wiki_url"), JsonValues.string(contact, "wiki"), repositoryUrl + "/wiki");
+        String wikiUrl = firstNonBlank(JsonValues.string(config, "wiki_url"), JsonValues.string(contact, "wiki"), repositoryLink(repositoryUrl, "/wiki"));
         String licenseFileName = getLicenseFile().isPresent()
                 ? getLicenseFile().get().getAsFile().getName()
                 : "LICENSE";
         String licenseUrl = firstNonBlank(
                 JsonValues.string(config, "license_url"),
-                repositoryUrl + "/blob/HEAD/" + licenseFileName
+                repositoryLink(repositoryUrl, "/blob/HEAD/" + licenseFileName)
         );
         SideSupport support = inferSupport(mod);
         String clientSide = firstNonBlank(JsonValues.string(config, "client_side"), support.client());
@@ -105,10 +111,10 @@ public abstract class PrepareModrinthProjectMetadataTask extends DefaultTask {
         JsonObject update = new JsonObject();
         addString(update, "description", description);
         update.addProperty("body", body);
-        addString(update, "issues_url", issuesUrl);
-        addString(update, "source_url", sourceUrl);
-        addString(update, "wiki_url", wikiUrl);
-        addString(update, "license_url", licenseUrl);
+        addLink(update, "issues_url", issuesUrl);
+        addLink(update, "source_url", sourceUrl);
+        addLink(update, "wiki_url", wikiUrl);
+        addLink(update, "license_url", licenseUrl);
         addString(update, "client_side", clientSide);
         addString(update, "server_side", serverSide);
 
@@ -190,6 +196,18 @@ public abstract class PrepareModrinthProjectMetadataTask extends DefaultTask {
         if (value != null && !value.isBlank()) {
             target.addProperty(name, value);
         }
+    }
+
+    private static void addLink(JsonObject target, String name, String value) {
+        if (value == null || value.isBlank()) {
+            target.add(name, JsonNull.INSTANCE);
+        } else {
+            target.addProperty(name, value);
+        }
+    }
+
+    private static String repositoryLink(String repositoryUrl, String path) {
+        return repositoryUrl.isEmpty() ? "" : repositoryUrl + path;
     }
 
     private static String required(String value, String name) {

@@ -28,7 +28,8 @@ import java.nio.file.Path;
 /** Creates a missing Modrinth project and synchronizes its mutable project metadata. */
 @DisableCachingByDefault(because = "This task synchronizes remote Modrinth state")
 public abstract class SyncModrinthProjectTask extends DefaultTask {
-    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+    // A null link in the update payload clears it on Modrinth (see PrepareModrinthProjectMetadataTask).
+    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().serializeNulls().create();
 
     @InputFile
     @PathSensitive(PathSensitivity.RELATIVE)

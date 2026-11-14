@@ -166,6 +166,7 @@ public final class ModPublishingPlugin implements Plugin<Project> {
                 providers.gradleProperty("modrinthApiEndpoint").orElse("https://api.modrinth.com/v2")
         );
         extension.getModrinth().getDiscordUrl().convention("https://discord.gg/N4zfhBx8Fm");
+        extension.getModrinth().getPrivateRepository().convention(booleanProperty(project, "modrinthPrivateRepository"));
 
         extension.getCurseforge().getEnabled().convention(booleanProperty(project, "publishCurseforge"));
         extension.getCurseforge().getProjectId().convention(providers.gradleProperty("curseforgeProjectId"));
@@ -377,6 +378,7 @@ public final class ModPublishingPlugin implements Plugin<Project> {
                             extension.getModrinth().getRepositoryDescription().orElse("")
                     );
                     task.getDiscordUrl().convention(extension.getModrinth().getDiscordUrl());
+                    task.getPrivateRepository().convention(extension.getModrinth().getPrivateRepository());
                     task.getOutputFile().convention(
                             project.getLayout().getBuildDirectory().file("mod-publishing/modrinth-project-metadata.json")
                     );
