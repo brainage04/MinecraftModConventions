@@ -431,6 +431,97 @@ class ModPublishingPluginTest {
     }
 
     @Test
+    void submitsDraftModrinthProjectForReviewOnlyWhenOptedIn() throws Exception {
+        try (var server = FakeModrinthServer.start(true, false)) {
+            writeBuildFile("""
+                    dryRun = false
+                    modrinth {
+                        enabled = true
+                        projectId = 'AbCdEf12'
+                        token = 'fixture-token'
+                        apiEndpoint = '%s'
+                    }
+                    """.formatted(server.apiEndpoint()), "");
+
+            runGradle("publishModrinth");
+
+            assertEquals(1, server.requests("POST", "/version").size());
+            assertEquals(0, server.requests("PATCH", "/project/AbCdEf12").size());
+            assertEquals("draft", server.projectStatus());
+
+            BuildResult submitted = runGradleWithEnvironment(
+                    Map.of("MODRINTH_SUBMIT_FOR_REVIEW", "true"),
+                    "publishModrinth"
+            );
+
+            assertEquals(TaskOutcome.SKIPPED, submitted.task(":publishModrinth").getOutcome());
+            assertEquals(
+                    TaskOutcome.SUCCESS,
+                    submitted.task(":submitModrinthProjectForReview").getOutcome()
+            );
+            RecordedRequest submission = server.singleRequest("PATCH", "/project/AbCdEf12");
+            assertEquals("fixture-token", submission.authorization());
+            assertEquals(
+                    "processing",
+                    JsonParser.parseString(submission.utf8Body()).getAsJsonObject().get("status").getAsString()
+            );
+            assertEquals("processing", server.projectStatus());
+
+            runGradleWithEnvironment(Map.of("MODRINTH_SUBMIT_FOR_REVIEW", "true"), "publishModrinth");
+
+            assertEquals(1, server.requests("PATCH", "/project/AbCdEf12").size());
+        }
+    }
+
+    @Test
+    void submitsDraftModrinthProjectForReviewAfterTheFirstUpload() throws Exception {
+        try (var server = FakeModrinthServer.start(true, false)) {
+            writeBuildFile("""
+                    dryRun = false
+                    modrinth {
+                        enabled = true
+                        projectId = 'AbCdEf12'
+                        token = 'fixture-token'
+                        apiEndpoint = '%s'
+                        submitForReview = true
+                    }
+                    """.formatted(server.apiEndpoint()), "");
+
+            runGradle("publishModrinth");
+
+            List<RecordedRequest> requests = server.requests();
+            int upload = requests.indexOf(server.singleRequest("POST", "/version"));
+            int submission = requests.indexOf(server.singleRequest("PATCH", "/project/AbCdEf12"));
+            assertTrue(upload < submission, () -> "requests: " + requests);
+            assertEquals("processing", server.projectStatus());
+        }
+    }
+
+    @Test
+    void reportsModrinthReviewRejectionWithItsReason() throws Exception {
+        try (var server = FakeModrinthServer.start(true, false)) {
+            server.setReviewRejection("project must have no required validation nags before or during review or approval");
+            writeBuildFile("""
+                    dryRun = false
+                    modrinth {
+                        enabled = true
+                        projectId = 'AbCdEf12'
+                        token = 'fixture-token'
+                        apiEndpoint = '%s'
+                        submitForReview = true
+                    }
+                    """.formatted(server.apiEndpoint()), "");
+
+            BuildResult result = runGradleAndFail("publishModrinth");
+
+            assertEquals(TaskOutcome.SUCCESS, result.task(":publishModrinth").getOutcome());
+            assertEquals(TaskOutcome.FAILED, result.task(":submitModrinthProjectForReview").getOutcome());
+            assertTrue(result.getOutput().contains("required validation nags"), result.getOutput());
+            assertEquals("draft", server.projectStatus());
+        }
+    }
+
+    @Test
     void skipsExistingGitHubAssetThenResumesIncompleteRelease() throws Exception {
         try (var server = FakeModrinthServer.start(true)) {
             server.setGitHubReleaseState(true, true);
@@ -713,6 +804,8 @@ class ModPublishingPluginTest {
         private volatile boolean githubAssetExists;
         private volatile String iconUrl = "https://cdn.modrinth.com/data/AbCdEf12/old_icon.png";
         private volatile int githubFailuresRemaining;
+        private volatile String projectStatus = "draft";
+        private volatile String reviewRejection;
 
         private FakeModrinthServer(
                 HttpServer server,
@@ -757,6 +850,18 @@ class ModPublishingPluginTest {
 
         synchronized int requestCount() {
             return requests.size();
+        }
+
+        synchronized List<RecordedRequest> requests() {
+            return List.copyOf(requests);
+        }
+
+        String projectStatus() {
+            return projectStatus;
+        }
+
+        void setReviewRejection(String reviewRejection) {
+            this.reviewRejection = reviewRejection;
         }
 
         void setPublishedVersionExists(boolean publishedVersionExists) {
@@ -849,6 +954,25 @@ class ModPublishingPluginTest {
                                 ? "[{\"id\":\"version-1\",\"version_number\":\"1.2.3\"}]"
                                 : "[]"
                 );
+                return;
+            }
+            if ("GET".equals(exchange.getRequestMethod()) && "/project/AbCdEf12".equals(path)) {
+                respond(exchange, 200, """
+                        {"id":"AbCdEf12","status":"%s"}
+                        """.formatted(projectStatus));
+                return;
+            }
+            if ("PATCH".equals(exchange.getRequestMethod()) && "/project/AbCdEf12".equals(path)) {
+                if (reviewRejection != null) {
+                    respond(exchange, 400, "{\"error\":\"invalid_input\",\"description\":\"" + reviewRejection + "\"}");
+                    return;
+                }
+                JsonObject edit = JsonParser.parseString(new String(requestBody, StandardCharsets.UTF_8))
+                        .getAsJsonObject();
+                if (edit.has("status")) {
+                    projectStatus = edit.get("status").getAsString();
+                }
+                respond(exchange, 204, "");
                 return;
             }
             if ("POST".equals(exchange.getRequestMethod()) && "/version".equals(path)) {
