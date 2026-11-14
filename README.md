@@ -528,7 +528,9 @@ modPublishing {
 
 `publishGithub`, `publishModrinth` and `publishCurseforge` can be retried independently; `publishMods` runs all enabled ones. The Modrinth description is synced from `README.md` and the icon from `assets/<mod_id>/icon.png`. `build` and `check` never contact these services.
 
-The Modrinth project sync points the issues, source, wiki and license links at `https://github.com/<repository>` pages unless `.modrinth/project.json` (`issues_url`, `source_url`, `wiki_url`, `license_url`) or the `contact` block of `fabric.mod.json` sets them. A mod in a private repository sets `modrinthPrivateRepository=true` in `gradle.properties` (or `modrinth { privateRepository.set(true) }`). The sync then still sends the links set there, and clears every other one of the four links on the Modrinth project.
+The Modrinth project sync points the issues, source, wiki and license links at `https://github.com/<repository>` pages unless something else sets them. `.modrinth/project.json` can set all four (`issues_url`, `source_url`, `wiki_url`, `license_url`). The `contact` block of `fabric.mod.json` can set the issues, source and wiki links (`issues`, `sources` or `homepage`, `wiki`), but not the license link.
+
+A mod in a private repository sets `modrinthPrivateRepository=true` in `gradle.properties` (or `modrinth { privateRepository.set(true) }`). The sync then sends no GitHub links of its own. It still sends the links set in `.modrinth/project.json` and in the `contact` block of `fabric.mod.json`. Every sync removes each of the four links that neither file sets, including a link someone set by hand on the Modrinth website, so put any link you want to keep in `.modrinth/project.json`.
 
 `maven-central-publishing` is for libraries. See [docs/PUBLISHING.md](docs/PUBLISHING.md) for credentials and the release command.
 

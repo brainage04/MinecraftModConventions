@@ -283,6 +283,7 @@ class ModPublishingPluginTest {
         assertEquals("required", create.get("server_side").getAsString());
         assertEquals("https://example.invalid/source", update.get("source_url").getAsString());
         assertEquals("https://github.com/brainage04/publisher-fixture/issues", update.get("issues_url").getAsString());
+        assertTrue(update.entrySet().stream().noneMatch(entry -> entry.getValue().isJsonNull()), update.toString());
         assertTrue(metadata.get("has_icon").getAsBoolean());
     }
 
