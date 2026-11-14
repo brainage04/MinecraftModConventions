@@ -32,6 +32,8 @@ public final class GameCaptureAudio {
     private static Renderer renderer;
     /** Where the recording's sound starts, and the clock to place a device's samples by; null until it starts. */
     private static volatile Start start;
+    /** Opens the sound pipe at the first write; null when the recording takes no sound. */
+    private static volatile Pipe pipe = AUDIO == null ? null : () -> new FileOutputStream(AUDIO.toFile());
     /** The sound pipe, shared by every device the sound engine opens, so a reload does not end the stream. */
     private static OutputStream out;
     // Written under WRITE_LOCK, read without it: the sound writer holds that lock while it waits on the pipe, and the
@@ -129,6 +131,19 @@ public final class GameCaptureAudio {
         evidence.setProperty("gameSoundSilentFrames", Long.toString(silentFrames));
     }
 
+    /**
+     * Starts a new sound stream into {@code target}, from sample 0, in place of the recording's pipe; null writes
+     * nothing. For tests, which have no recording to write to.
+     */
+    static void writeTo(Pipe target) {
+        synchronized (WRITE_LOCK) {
+            pipe = target;
+            out = null;
+            writtenFrames = 0;
+            silentFrames = 0;
+        }
+    }
+
     private static void stopRendering() {
         if (renderer == null) {
             return;
@@ -154,6 +169,12 @@ public final class GameCaptureAudio {
     @FunctionalInterface
     interface SampleSource {
         void render(ByteBuffer buffer, int frames);
+    }
+
+    /** Opens the stream the recording's sound is written to. */
+    @FunctionalInterface
+    interface Pipe {
+        OutputStream open() throws IOException;
     }
 
     /**
@@ -188,14 +209,15 @@ public final class GameCaptureAudio {
                     long first = rendered;
                     rendered += count;
                     Start capture = start;
-                    if (!writing || capture == null || AUDIO == null) {
+                    Pipe target = pipe;
+                    if (!writing || capture == null || target == null) {
                         continue;
                     }
                     if (offset == Long.MIN_VALUE) {
                         offset = SoundClock.deviceStartIndex(capture.anchor(), capture.startUs(), renderStartNanos);
                     }
                     try {
-                        write(buffer, bytes, count, offset + first);
+                        write(target, buffer, bytes, count, offset + first);
                     } catch (IOException exception) {
                         // The recorder stops ffmpeg once it has the sound it needs, which closes the pipe.
                         System.out.println("[CLIENT_GAMETEST_RECORDING] The sound pipe closed: " + exception.getMessage());
@@ -212,10 +234,11 @@ public final class GameCaptureAudio {
      * are dropped, and a gap before the first rendered frame is filled with silence, so the recording's sample
      * {@code n} stays at {@code t0 + n / rate}.
      */
-    private static void write(ByteBuffer buffer, byte[] bytes, int count, long firstIndex) throws IOException {
+    private static void write(Pipe target, ByteBuffer buffer, byte[] bytes, int count, long firstIndex)
+            throws IOException {
         synchronized (WRITE_LOCK) {
             if (out == null) {
-                out = new FileOutputStream(AUDIO.toFile());
+                out = target.open();
             }
             long gap = firstIndex - writtenFrames;
             if (gap > 0) {

@@ -5,7 +5,9 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.io.PrintStream;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.IntBuffer;
 import java.nio.file.Files;
@@ -299,6 +301,133 @@ class GameCaptureTest {
         assertFalse(stalledThread.get().isAlive());
         // Once its write returns, the stalled writer renders nothing more from the device that closed under it.
         assertEquals(1, stalledRenders.get());
+    }
+
+    @Test
+    void aWriteStalledOnAFullPipeKeepsBothDevicesSoundAtItsPlaceOnThePicturesClock() throws InterruptedException {
+        byte firstDevice = 0x11;
+        byte nextDevice = 0x22;
+        ByteArrayOutputStream recording = new ByteArrayOutputStream();
+        CountDownLatch stalled = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        CountDownLatch nextWritten = new CountDownLatch(1);
+        // ffmpeg stops reading for a moment: the first device's first write of its own sound blocks in out.write,
+        // holding the write lock, and a resource reload opens the next device meanwhile.
+        GameCaptureAudio.writeTo(() -> new OutputStream() {
+            private boolean held;
+
+            @Override
+            public void write(int value) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public void write(byte[] bytes, int offset, int length) {
+                if (!held && bytes[offset] == firstDevice) {
+                    held = true;
+                    stalled.countDown();
+                    awaitUninterruptibly(release);
+                }
+                if (bytes[offset] == nextDevice) {
+                    nextWritten.countDown();
+                }
+                recording.write(bytes, offset, length);
+            }
+        });
+        GameCapture.Anchor anchor = GameCapture.Anchor.now();
+        // The capture started 1 s before the first device opened, so its sound starts 48000 samples in.
+        long captureStartUs = anchor.us(System.nanoTime()) - 1_000_000L;
+        GameCaptureAudio.startWriting(captureStartUs, anchor);
+        MarkedSource first = new MarkedSource(firstDevice);
+        MarkedSource next = new MarkedSource(nextDevice);
+        try {
+            GameCaptureAudio.startRendering(first);
+            assertTrue(stalled.await(5, TimeUnit.SECONDS), "the first device's sound reaches the recording");
+            GameCaptureAudio.startRendering(next);
+            assertTrue(next.rendered.await(5, TimeUnit.SECONDS));
+            release.countDown();
+            assertTrue(nextWritten.await(5, TimeUnit.SECONDS), "the next device's sound reaches the recording");
+        } finally {
+            release.countDown();
+            GameCaptureAudio.deviceClosing();
+            GameCaptureAudio.writeTo(null);
+        }
+
+        byte[] bytes = recording.toByteArray();
+        int firstStart = frameOf(bytes, firstDevice);
+        int nextStart = frameOf(bytes, nextDevice);
+        // Within 5 ms: the device's start is known from its first render to the time between two clock readings.
+        assertNear(first.expectedIndex(anchor, captureStartUs), firstStart, "where the first device's sound starts");
+        assertNear(next.expectedIndex(anchor, captureStartUs), nextStart, "where the next device's sound starts");
+        // The stalled write lands whole and first; the first device renders nothing more, and silence fills the time
+        // up to the next device's first sample.
+        int firstEnd = firstStart + first.firstFrames;
+        for (int frame = 0; frame < bytes.length / 4; frame++) {
+            byte expected = frame < firstStart || frame >= firstEnd && frame < nextStart ? 0
+                    : frame < firstEnd ? firstDevice : nextDevice;
+            assertEquals(expected, bytes[frame * 4], "frame " + frame);
+        }
+    }
+
+    /** A device that renders one marker byte, and when it was first asked for samples. */
+    private static final class MarkedSource implements GameCaptureAudio.SampleSource {
+        private final byte marker;
+        private final CountDownLatch rendered = new CountDownLatch(1);
+        private long firstNanos;
+        private int firstFrames;
+
+        MarkedSource(byte marker) {
+            this.marker = marker;
+        }
+
+        @Override
+        public void render(ByteBuffer buffer, int frames) {
+            if (rendered.getCount() > 0) {
+                firstNanos = System.nanoTime();
+                firstFrames = frames;
+                rendered.countDown();
+            }
+            for (int i = 0; i < frames * 4; i++) {
+                buffer.put(marker);
+            }
+        }
+
+        /**
+         * The recording's index of this device's first sample. Its first call asks for every sample due since the
+         * device started, so the device started that many samples before it.
+         */
+        long expectedIndex(GameCapture.Anchor anchor, long captureStartUs) {
+            long startNanos = firstNanos - firstFrames * 1_000_000_000L / GameCaptureAudio.SAMPLE_RATE;
+            return GameCaptureAudio.SoundClock.frameIndex(anchor.us(startNanos), captureStartUs);
+        }
+    }
+
+    private static void assertNear(long expected, int actual, String what) {
+        assertTrue(Math.abs(expected - actual) <= 240, what + ": sample " + actual + ", expected " + expected);
+    }
+
+    private static int frameOf(byte[] bytes, byte marker) {
+        for (int frame = 0; frame < bytes.length / 4; frame++) {
+            if (bytes[frame * 4] == marker) {
+                return frame;
+            }
+        }
+        throw new AssertionError("no frame of " + marker);
+    }
+
+    private static void awaitUninterruptibly(CountDownLatch latch) {
+        boolean interrupted = false;
+        while (true) {
+            try {
+                latch.await();
+                break;
+            } catch (InterruptedException exception) {
+                interrupted = true;
+            }
+        }
+        if (interrupted) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     @Test
