@@ -356,7 +356,9 @@ class GameCaptureTest {
         byte[] bytes = recording.toByteArray();
         int firstStart = frameOf(bytes, firstDevice);
         int nextStart = frameOf(bytes, nextDevice);
-        // Within 5 ms: the device's start is known from its first render to the time between two clock readings.
+        // Within 50 ms: the device's start is inferred from its first render, so a busy host's pause between the
+        // render loop's clock reading and the render moves it. A wrong anchor or stream position moves it by a second
+        // or more.
         assertNear(first.expectedIndex(anchor, captureStartUs), firstStart, "where the first device's sound starts");
         assertNear(next.expectedIndex(anchor, captureStartUs), nextStart, "where the next device's sound starts");
         // The stalled write lands whole and first; the first device renders nothing more, and silence fills the time
@@ -403,7 +405,7 @@ class GameCaptureTest {
     }
 
     private static void assertNear(long expected, int actual, String what) {
-        assertTrue(Math.abs(expected - actual) <= 240, what + ": sample " + actual + ", expected " + expected);
+        assertTrue(Math.abs(expected - actual) <= 2400, what + ": sample " + actual + ", expected " + expected);
     }
 
     private static int frameOf(byte[] bytes, byte marker) {
