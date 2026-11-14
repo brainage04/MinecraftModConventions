@@ -7,9 +7,14 @@ import java.io.IOException;
 import java.nio.IntBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -148,6 +153,38 @@ class GameCaptureTest {
         assertEquals(48_000, GameCaptureAudio.SoundClock.frameIndex(START_US + 1_000_000, START_US));
         // A device that started rendering 2 ms before the capture: its sample 0 lies before the recording's.
         assertEquals(-96, GameCaptureAudio.SoundClock.frameIndex(START_US - 2_000, START_US));
+    }
+
+    @Test
+    void aSoundWriterThatDoesNotStopInTimeDoesNotSilenceTheNextDevice() throws InterruptedException {
+        CountDownLatch stalled = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        AtomicInteger stalledRenders = new AtomicInteger();
+        AtomicReference<Thread> stalledThread = new AtomicReference<>();
+        GameCaptureAudio.startRendering((buffer, frames) -> {
+            stalledRenders.incrementAndGet();
+            stalledThread.set(Thread.currentThread());
+            stalled.countDown();
+            release.await();
+        });
+        try {
+            assertTrue(stalled.await(5, TimeUnit.SECONDS));
+            // A resource reload closes the device while its writer is stalled for longer than the one-second join,
+            // then opens the next device, whose mix must still reach the recording.
+            GameCaptureAudio.deviceClosing();
+            assertTrue(stalledThread.get().isAlive());
+            CountDownLatch nextRenders = new CountDownLatch(3);
+            GameCaptureAudio.startRendering((buffer, frames) -> nextRenders.countDown());
+            assertTrue(nextRenders.await(5, TimeUnit.SECONDS), "the next device's mix is rendered");
+        } finally {
+            release.countDown();
+        }
+        stalledThread.get().join(5_000L);
+        GameCaptureAudio.deviceClosing();
+
+        assertFalse(stalledThread.get().isAlive());
+        // Once its write returns, the stalled writer renders nothing more from the device that closed under it.
+        assertEquals(1, stalledRenders.get());
     }
 
     @Test
