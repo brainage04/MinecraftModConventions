@@ -14,13 +14,13 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class RecordingSoundTraceTest {
     /**
-     * A sound the engine refuses is not noted in a traced recording's sound list. NeoForge's {@code PlaySoundEvent}
-     * cancels a sound the same way: its patch to {@code SoundEngine.play} returns {@code NOT_STARTED} when the event
-     * leaves no sound, before the engine reads anything else of it.
+     * A sound the engine refuses is not noted in a traced recording's sound list. This one fails
+     * {@code canPlaySound}, one of vanilla's {@code NOT_STARTED} answers, and the one a NeoForge copy of the hook
+     * meets when {@code PlaySoundEvent} cancels a sound.
      *
      * <p>The engine reads a sound's name only after {@code canPlaySound} (26.3 {@code SoundEngine.java:368-373}), so
      * on this path only the recorder's hook can ask for it, and it asks only to note the sound. A started sound needs
-     * an OpenAL device, which a unit test does not have.
+     * a sound device and the client's options, which a unit test does not have.
      */
     @Test
     void aSoundTheEngineDoesNotStartIsNotNoted() throws ReflectiveOperationException {
