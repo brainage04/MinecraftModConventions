@@ -28,7 +28,8 @@ Where a clip starts depends on what the take records, and the run prints which s
   later clip then needs a step since the previous clip ended, or the clock start may still show that clip's caption.
   The panel is watched up to LATE (2 s) after the STAGE_START; a caption that comes later still is not seen. Every
   one of these windows stops at the stage's end, where the next stage of a merged clip may draw its own caption. The
-  run fails, naming --clock, when the panel changes more than once after the clock start, or changes more than 0.5 s
+  run fails, naming --clock, when the stage lasts no more than 0.5 s from its STAGE_START, so that its caption may
+  only come after it ends, when the panel changes more than once after the clock start, or changes more than 0.5 s
   after the STAGE_START, or drifts so fast that a change as small as NEAREST could hide in it. A camera cut in a
   stage's first 0.5 s, while its caption is already on screen, still opens the clip at the cut, and so does an on-film
   cut about ten times the caption's own change before the caption comes.
@@ -172,6 +173,10 @@ def caption_start(panels, marker, lowest, finish, rate, stage, clock, first, unt
     limit decides where a caption appears.
 
     `panels` maps a frame to its residual panel and must hold every frame from lowest - 1 to LATE after the marker."""
+    if until <= marker + at_rate(SEARCH_AFTER, rate):
+        raise SystemExit(f"{stage}: the stage lasts {(until - marker) / rate:.2f} s from its marker (frame {marker}), "
+                         "less than the 0.5 s its caption may come after it, so the picture cannot show its caption "
+                         "arriving; cut with --clock")
     # A merged clip's next stage may draw its caption before this one's 0.9 s are up: the frames from its first
     # stage's end on show that caption, not this one's.
     own_last = min(finish, until) - 1

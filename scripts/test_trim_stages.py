@@ -238,16 +238,26 @@ class CaptionStartTest(unittest.TestCase):
         begin, _ = trim_stages.caption_start(panels, 35, 20, 80, 30, "b", 32, False, 70)
         self.assertEqual(begin, 32)
 
-    def test_a_short_first_stage_of_a_clip_is_not_opened_on_the_next_stages_caption(self) -> None:
-        # Stage a lasts 0.3 s (marker 120, end 129) and its caption came off film at frame 100; the next stage of the
-        # clip draws its caption at frame 131, inside the 0.5 s in which a's caption could still arrive. Taking that
-        # step would drop stage a from the clip, so the clip opens at the clock start and a's caption is read before
-        # its stage ends.
+    def test_a_first_stage_shorter_than_its_caption_window_is_not_opened_on_the_next_stages_caption(self) -> None:
+        # Stage a lasts 0.6 s (marker 120, end 138) and its caption came off film at frame 100; the next stage of the
+        # clip draws its caption at frame 139, inside the 0.9 s in which a's caption is read. That step is not a's, so
+        # the clip opens at the clock start and a's caption is read before its stage ends.
         own, following = bytes([110] * 100), bytes([210] * 100)
-        panels = {k: bytes([10] * 100) if k < 100 else own if k < 131 else following for k in range(80, 200)}
-        begin, reference = trim_stages.caption_start(panels, 120, 90, 200, 30, "a", 117, False, 129)
+        panels = {k: bytes([10] * 100) if k < 100 else own if k < 139 else following for k in range(80, 200)}
+        begin, reference = trim_stages.caption_start(panels, 120, 90, 200, 30, "a", 117, False, 138)
         self.assertEqual(begin, 117)
         self.assertEqual(reference, own)
+
+    def test_a_stage_shorter_than_its_captions_lag_fails_naming_the_clock(self) -> None:
+        # Stage a lasts 0.3 s (marker 120, end 129), less than the 0.5 s its caption may lag the marker: its caption
+        # comes at 132, after it ends, and the next stage's at 141. Whatever the picture shows before 129 may be the
+        # caption before a's, so the cut must not open there.
+        panels = {k: bytes([10 if k < 100 else 60 if k < 132 else 110 if k < 141 else 210] * 100)
+                  for k in range(80, 200)}
+        with self.assertRaises(SystemExit) as failure:
+            trim_stages.caption_start(panels, 120, 90, 200, 30, "a", 117, False, 129)
+        self.assertIn("a: the stage lasts 0.30 s from its marker (frame 120)", str(failure.exception))
+        self.assertIn("--clock", str(failure.exception))
 
 
 class FirstFramesTest(unittest.TestCase):
