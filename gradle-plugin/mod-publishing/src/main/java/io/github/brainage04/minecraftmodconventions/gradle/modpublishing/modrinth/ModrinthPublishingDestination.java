@@ -17,6 +17,8 @@ public abstract class ModrinthPublishingDestination extends PublishingDestinatio
 
     public abstract Property<String> getDiscordUrl();
 
+    public abstract Property<Boolean> getSubmitForReview();
+
     public abstract RegularFileProperty getProjectConfig();
 
     public abstract RegularFileProperty getProjectBody();

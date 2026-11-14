@@ -6,6 +6,7 @@ import io.github.brainage04.minecraftmodconventions.gradle.modpublishing.github.
 import io.github.brainage04.minecraftmodconventions.gradle.modpublishing.github.ResolveModReleaseNotesTask;
 import io.github.brainage04.minecraftmodconventions.gradle.modpublishing.modrinth.CheckModrinthVersionTask;
 import io.github.brainage04.minecraftmodconventions.gradle.modpublishing.modrinth.PrepareModrinthProjectMetadataTask;
+import io.github.brainage04.minecraftmodconventions.gradle.modpublishing.modrinth.SubmitModrinthProjectForReviewTask;
 import io.github.brainage04.minecraftmodconventions.gradle.modpublishing.modrinth.SyncModrinthIconTask;
 import io.github.brainage04.minecraftmodconventions.gradle.modpublishing.modrinth.SyncModrinthProjectTask;
 import org.gradle.api.GradleException;
@@ -30,6 +31,7 @@ public final class ModPublishingPlugin implements Plugin<Project> {
     public static final String PREPARE_MODRINTH_TASK_NAME = "prepareModrinthProjectMetadata";
     public static final String SYNC_MODRINTH_PROJECT_TASK_NAME = "syncModrinthProject";
     public static final String SYNC_MODRINTH_ICON_TASK_NAME = "syncModrinthIcon";
+    public static final String SUBMIT_MODRINTH_FOR_REVIEW_TASK_NAME = "submitModrinthProjectForReview";
 
     private static final String UPSTREAM_PLUGIN_ID = "me.modmuss50.mod-publish-plugin";
 
@@ -60,6 +62,7 @@ public final class ModPublishingPlugin implements Plugin<Project> {
                 prepareModrinth
         );
         registerIconSync(project, extension, prepareModrinth, syncProject);
+        registerReviewSubmission(project, extension);
 
         configurePublicationTask(project, "publishGithub", extension.getGithub().getEnabled(), validate);
         configurePublicationTask(project, "publishModrinth", extension.getModrinth().getEnabled(), validate);
@@ -166,6 +169,12 @@ public final class ModPublishingPlugin implements Plugin<Project> {
                 providers.gradleProperty("modrinthApiEndpoint").orElse("https://api.modrinth.com/v2")
         );
         extension.getModrinth().getDiscordUrl().convention("https://discord.gg/N4zfhBx8Fm");
+        extension.getModrinth().getSubmitForReview().convention(
+                providers.environmentVariable("MODRINTH_SUBMIT_FOR_REVIEW")
+                        .orElse(providers.gradleProperty("modrinthSubmitForReview"))
+                        .map(value -> strictBoolean(value, "MODRINTH_SUBMIT_FOR_REVIEW or modrinthSubmitForReview"))
+                        .orElse(false)
+        );
 
         extension.getCurseforge().getEnabled().convention(booleanProperty(project, "publishCurseforge"));
         extension.getCurseforge().getProjectId().convention(providers.gradleProperty("curseforgeProjectId"));
@@ -447,6 +456,33 @@ public final class ModPublishingPlugin implements Plugin<Project> {
             sync.onlyIf("Modrinth publication is enabled", ignored -> extension.getModrinth().getEnabled().get());
             sync.getOutputs().upToDateWhen(ignored -> false);
         });
+    }
+
+    private static void registerReviewSubmission(Project project, ModPublishingExtension extension) {
+        Provider<String> userAgent = extension.getGithub().getRepository()
+                .orElse("unknown")
+                .map(repository -> repository + "/gradle mod-publisher");
+        Provider<Boolean> enabled = extension.getModrinth().getEnabled();
+        Provider<Boolean> submitForReview = extension.getModrinth().getSubmitForReview();
+        TaskProvider<SubmitModrinthProjectForReviewTask> submit = project.getTasks().register(
+                SUBMIT_MODRINTH_FOR_REVIEW_TASK_NAME,
+                SubmitModrinthProjectForReviewTask.class,
+                task -> {
+                    task.setGroup("publishing");
+                    task.setDescription("Submits a draft Modrinth project for review once a version is uploaded.");
+                    task.getDryRun().convention(extension.getDryRun());
+                    task.getProjectId().convention(extension.getModrinth().getProjectId().orElse(""));
+                    task.getApiEndpoint().convention(extension.getModrinth().getApiEndpoint());
+                    task.getUserAgent().convention(userAgent);
+                    task.getMaxRetries().convention(extension.getMaxRetries());
+                    task.getToken().convention(extension.getModrinth().getToken().orElse(""));
+                    task.mustRunAfter("publishModrinth");
+                    task.onlyIf("Modrinth publication is enabled", ignored -> enabled.get());
+                    task.onlyIf("Modrinth review submission is enabled", ignored -> submitForReview.get());
+                    task.getOutputs().upToDateWhen(ignored -> false);
+                }
+        );
+        project.getTasks().named("publishModrinth").configure(task -> task.finalizedBy(submit));
     }
 
     private static void configurePublicationTask(
