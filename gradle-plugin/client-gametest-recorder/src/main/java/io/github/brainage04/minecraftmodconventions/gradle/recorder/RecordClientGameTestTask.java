@@ -94,10 +94,11 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
     static final String GAME_SOUND_LINE = "Game sound renders into the recording through an OpenAL loopback device";
 
     /**
-     * The line the client prints with the reason when it cannot capture the game, such as a frame that stopped
-     * matching the recording's size or a libopenal without {@code ALC_SOFT_loopback}.
+     * The start of the line the client prints with the reason when it cannot capture the game, such as a frame that
+     * stopped matching the recording's size or a libopenal without {@code ALC_SOFT_loopback}. The client's copy is
+     * {@code GameTestRecorderEnvironment.CAPTURE_FAILURE_LINE} in the runtime helper; a test checks the two match.
      */
-    static final String CAPTURE_FAILURE_LINE = "CAPTURE_FAILURE: ";
+    static final String CAPTURE_FAILURE_LINE = "[CLIENT_GAMETEST_RECORDING] CAPTURE_FAILURE: ";
 
     /** The first runtime helper that reports the client's window: MinecraftModConventions 3.4.0 (2fc08f1). */
     static final int WINDOW_SIGNAL_HELPER_MAJOR = 3;
@@ -319,10 +320,9 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
                 if (line.contains(GAME_SOUND_LINE)) {
                     gameSoundCaptured.set(true);
                 }
-                int marker = line.indexOf(CAPTURE_FAILURE_LINE);
-                if (marker >= 0) {
-                    clientCaptureFailure.compareAndSet(null,
-                            line.substring(marker + CAPTURE_FAILURE_LINE.length()).strip());
+                String reason = clientCaptureFailure(line);
+                if (reason != null) {
+                    clientCaptureFailure.compareAndSet(null, reason);
                 }
             });
 
@@ -831,6 +831,12 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
             return null;
         }
         return "Capturing the game failed: " + reason.strip();
+    }
+
+    /** The reason on a client output line that carries {@link #CAPTURE_FAILURE_LINE}, or null for any other line. */
+    static String clientCaptureFailure(String line) {
+        int marker = line.indexOf(CAPTURE_FAILURE_LINE);
+        return marker < 0 ? null : line.substring(marker + CAPTURE_FAILURE_LINE.length()).strip();
     }
 
     /**

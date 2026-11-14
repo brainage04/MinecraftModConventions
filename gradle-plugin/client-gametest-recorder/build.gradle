@@ -23,3 +23,10 @@ dependencies {
 	compileOnly "dev.architectury:architectury-loom:${rootProject.architectury_loom_version}"
 	implementation project(':gradle-plugin:production-gametests')
 }
+
+tasks.named("test") {
+	// The client prints the capture failure line from the runtime helper, which this plugin cannot depend on.
+	def recorderEnvironment = rootProject.file("src/main/java/io/github/brainage04/minecraftmodconventions/GameTestRecorderEnvironment.java")
+	inputs.file(recorderEnvironment)
+	systemProperty "mmc.recorderEnvironmentSource", recorderEnvironment.absolutePath
+}

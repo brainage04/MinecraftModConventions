@@ -355,9 +355,12 @@ public final class GameCapture {
     }
 
     /** Prints the reason on the recorder's failure line, which fails the take with it. */
-    private static void reportFailure(String message) {
-        // The recorder reads this line from the client's output; see RecordClientGameTestTask.CAPTURE_FAILURE_LINE.
-        System.err.println("[CLIENT_GAMETEST_RECORDING] CAPTURE_FAILURE: " + message);
+    static void reportFailure(String message) {
+        System.err.println(captureFailureLine(message));
+    }
+
+    static String captureFailureLine(String message) {
+        return GameTestRecorderEnvironment.CAPTURE_FAILURE_LINE + message;
     }
 
     record Frame(byte[] bytes, long presentUs, ClientGameTestRecordingHud.Step caption) {}
