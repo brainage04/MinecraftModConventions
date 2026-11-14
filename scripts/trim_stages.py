@@ -14,23 +14,26 @@ A clip ends TRAIL_SECONDS after its last STAGE_END.
 Where a clip starts depends on what the take records, and the run prints which source it used:
 
 - A game capture (the default since 3.5.0) records, for every caption, the first captured frame the HUD drew it into
-  (`boundaries.gameCaptureCaptionMarks`, read with `boundaries.rawStartFrameIndex`). A clip opens on the first frame
-  from its clock start, 0.10 s before its STAGE_START, that shows its stage's caption: the first caption whose id is the
-  stage's id (or ends in "." and the stage's id) and that is still on screen after the previous clip ended. A stage
-  with no such caption, or whose caption comes only after its clip ends, fails the run.
+  (`boundaries.gameCaptureCaptionMarks`, read with `boundaries.rawStartFrameIndex`); a caption is on screen from its
+  mark to the next one. A stage's caption has the stage's id, or ends in "." and the stage's id. A clip opens at its
+  clock start, 0.10 s before its STAGE_START, when the caption on screen there is the stage's, else on the stage's
+  first caption drawn after the clock start. The run fails, naming --clock, when there is no such caption before the
+  clip ends, or when the stage's id matches more than one caption id.
 - A screen grab (x11grab) has no marks, so the caption panel (top right, see CAPTION_CROP) is read from the picture.
   A frame's panel is compared with the frame before it by its residual, its pixels with each row's mean brightness
   removed, so the world behind the translucent panel counts for little. A caption shows up as a step: a change of at
-  least CHANGED and STEP times the panel's typical change from frame to frame (its drift). With no step between the
-  clock start and 0.9 s after the STAGE_START, the caption was already on screen and the clip opens at the clock
-  start; a later clip then needs a step since the previous clip ended, or the clock start may still show that clip's
-  caption. With one step (a caption drawn in two steps counts as one), the clip opens where it ends. The run fails,
-  naming --clock, when the panel changes more than once after the clock start, changes 0.5 to 0.9 s after the
-  STAGE_START, or drifts so fast that a change as small as NEAREST could hide in it. A camera cut in a stage's first
-  0.5 s, while its caption is already on screen, still opens the clip at the cut. After encoding, every later clip's
-  first frame in OUT.mp4 must be closer to its own caption, read 0.5 to 0.9 s after its STAGE_START, than to the
-  caption its previous clip ended on, and the first clip's may sit at most OWN_CAPTION further from its caption than
-  the source frame did.
+  least CHANGED and STEP times the panel's typical change from frame to frame (its drift). With one step between the
+  clock start and 0.5 s after the STAGE_START (a caption drawn in two steps counts as one), the clip opens where it
+  ends. With none up to 0.9 s, the caption is taken to be on screen already and the clip opens at the clock start; a
+  later clip then needs a step since the previous clip ended, or the clock start may still show that clip's caption.
+  The panel is watched up to LATE (2 s) after the STAGE_START, or to the stage's end if that comes first; a caption
+  that comes later still is not seen. The run fails, naming --clock, when the panel changes more than once after the
+  clock start, or changes more than 0.5 s after the STAGE_START, or drifts so fast that a change as small as NEAREST
+  could hide in it. A camera cut in a stage's first 0.5 s, while its caption is already on screen, still opens the
+  clip at the cut, and so does an on-film cut about ten times the caption's own change before the caption comes.
+  After encoding, every later clip's first frame in OUT.mp4 must be closer to its own caption, read 0.5 to 0.9 s
+  after its STAGE_START, than to the caption its previous clip ended on, and the first clip's may sit at most
+  OWN_CAPTION further from its caption than the source frame did.
 
 --clock cuts by the log's clock instead, 0.10 s before each STAGE_START, for a recording without captions.
 
@@ -54,6 +57,7 @@ CAPTION_CROP = (760, 110, 1140, 0)
 # Frame counts are given at 30 frames a second and scale with the capture's rate.
 SEARCH_AFTER = 15  # a caption may still arrive up to here after its marker; the frames after it show the caption
 REFERENCE_OFFSETS = (15, 18, 21, 24, 27)
+LATE = 60  # the panel is watched up to here after a marker, or to its stage's end: a later caption is not seen
 SETTLE = 6  # steps closer together than this are one caption being drawn
 CHANGED = 1.5  # the smallest change that counts as a step: encoder noise on a still panel stays below it
 STEP = 2.0  # a step is a change this many times the panel's typical change from frame to frame
@@ -109,7 +113,8 @@ def frame_at(times, seconds):
 
 
 def clips(windows, times, video_start_ms, rate):
-    """[begin frame, end frame (exclusive), first marker frame, ids] for each clip, by the log's clock.
+    """[begin frame, end frame (exclusive), first marker frame, ids, first stage's end frame] for each clip, by the log's
+    clock.
 
     A clip begins LEAD_SECONDS before its first stage starts and ends TRAIL_SECONDS after its last one ends; stages
     whose windows touch are joined into one clip."""
@@ -119,13 +124,14 @@ def clips(windows, times, video_start_ms, rate):
         start = (start_ms - video_start_ms) / 1000.0
         marker = frame_at(times, start)
         begin = frame_at(times, max(0.0, start - LEAD_SECONDS))
-        finish = min(len(times), frame_at(times, (finish_ms - video_start_ms) / 1000.0) + trail)
+        ends = frame_at(times, (finish_ms - video_start_ms) / 1000.0)
+        finish = min(len(times), ends + trail)
         if merged and begin <= merged[-1][1]:
             merged[-1][1] = max(merged[-1][1], finish)
             merged[-1][3] += "+" + stage
         else:
-            merged.append([begin, finish, marker, stage])
-    for begin, finish, _, ids in merged:
+            merged.append([begin, finish, marker, stage, ends])
+    for begin, finish, _, ids, _ in merged:
         if finish <= begin:
             raise SystemExit(f"{ids}: empty clip {begin}..{finish}")
     return merged
@@ -154,22 +160,24 @@ def median_panel(samples):
     return bytes(sorted(values)[len(values) // 2] for values in zip(*samples))
 
 
-def caption_start(panels, marker, lowest, finish, rate, stage, clock, first):
+def caption_start(panels, marker, lowest, finish, rate, stage, clock, first, until):
     """The frame a clip opens on and the stage's own caption, from `panels` of the frames around it.
 
-    `clock` is the frame the log's clock puts 0.10 s before the marker, `lowest` the frame after the previous clip and
-    `first` whether this is the first clip. The stage's own caption is the median of five panels 0.5 to 0.9 s after
-    the marker; it is only used to check the encode. The cut comes from the steps in the panel (see the module
-    docstring): the world behind the panel drifts and can change off film, so neither the distance to a caption
-    read at another moment nor a fixed limit decides where a caption appears.
+    `clock` is the frame the log's clock puts 0.10 s before the marker, `lowest` the frame after the previous clip,
+    `first` whether this is the first clip and `until` the frame the clip's first stage ends at. The stage's own
+    caption is the median of five panels 0.5 to 0.9 s after the marker; it is only used to check the encode. The cut
+    comes from the steps in the panel (see the module docstring): the world behind the panel drifts and can change off
+    film, so neither the distance to a caption read at another moment nor a fixed limit decides where a caption
+    appears.
 
-    `panels` maps a frame to its residual panel and must hold every frame from lowest - 1 to 0.9 s after the marker."""
+    `panels` maps a frame to its residual panel and must hold every frame from lowest - 1 to LATE after the marker."""
     last = finish - 1
     reference = median_panel([panels[min(last, marker + at_rate(offset, rate))] for offset in REFERENCE_OFFSETS])
     lo = max(lowest, 1)
     read = min(last, marker + at_rate(SEARCH_AFTER, rate))
     end = min(last, marker + at_rate(REFERENCE_OFFSETS[-1], rate))
-    change = {k: mean_diff(panels[k - 1], panels[k]) for k in range(lo, end + 1)}
+    late = min(last, until - 1, marker + at_rate(LATE, rate))
+    change = {k: mean_diff(panels[k - 1], panels[k]) for k in range(lo, max(end, late) + 1)}
     biggest = max((change[k] for k in range(lo, read + 1)), default=0.0)
     if biggest < CHANGED:
         raise SystemExit(f"{stage}: the caption never changes near frame {marker} (largest change {biggest:.1f}); "
@@ -192,6 +200,11 @@ def caption_start(panels, marker, lowest, finish, rate, stage, clock, first):
                          f"{', '.join(str(event[-1]) for event in events[:-1])} and {events[-1][-1]}, after the "
                          f"clock start (frame {clock}), so the picture cannot tell which brings the stage's caption; "
                          "cut with --clock")
+    late_steps = [k for k in range(end + 1, late + 1) if change[k] >= bar]
+    if late_steps:
+        raise SystemExit(f"{stage}: the caption panel changes at frame {late_steps[0]}, "
+                         f"{(late_steps[0] - marker) / rate:.1f} s after the marker (frame {marker}), after its "
+                         "caption is read, so the clip may open on the previous caption; cut with --clock")
     if events:
         opens = events[0][-1]
         if opens > read:
@@ -248,9 +261,8 @@ def caption_cuts(video, merged, rate):
     settle = at_rate(SETTLE, rate)
     wanted = set()
     previous_end = 0
-    for _, finish, marker, _ in merged:
-        wanted.update(range(max(0, previous_end - 1),
-                            min(finish - 1, marker + at_rate(REFERENCE_OFFSETS[-1], rate)) + 1))
+    for _, finish, marker, _, _ in merged:
+        wanted.update(range(max(0, previous_end - 1), min(finish - 1, marker + at_rate(LATE, rate)) + 1))
         # The caption the clip ends on, which is the one the next clip must not open on: a merged clip shows the
         # caption of the last stage it holds there, not the one its first stage's marker introduced.
         wanted.update(range(max(0, finish - 1 - settle), finish))
@@ -259,9 +271,10 @@ def caption_cuts(video, merged, rate):
     captions = []
     previous_end = 0
     for clip in merged:
-        begin, finish, marker, ids = clip
+        begin, finish, marker, ids, until = clip
         stage = ids.split("+")[0]
-        clip[0], reference = caption_start(panels, marker, previous_end, finish, rate, stage, begin, not captions)
+        clip[0], reference = caption_start(panels, marker, previous_end, finish, rate, stage, begin, not captions,
+                                           until)
         print(f"{stage}: marker frame {marker}, caption from frame {clip[0]} ({(marker - clip[0]) / rate:+.2f} s)")
         captions.append({"own": reference,
                          "ending": median_panel([panels[j] for j in range(max(0, finish - 1 - settle), finish)]),
@@ -284,28 +297,33 @@ def caption_marks(meta):
 def marked_cuts(merged, marks):
     """Moves each clip's start to the first frame from its clock start that shows its stage's caption, by the marks.
 
-    A stage's caption is the first one whose id is the stage's id, or ends in "." and the stage's id, as a mod that
-    prefixes its captions names them, and that is still on screen after the previous clip ended: a caption is on
-    screen from its mark to the next caption's."""
-    previous_end = 0
+    A stage's caption is one whose id is the stage's id, or ends in "." and the stage's id, as a mod that prefixes its
+    captions names them; a stage id that more than one caption id matches fails. A caption is on screen from its mark
+    to the next caption's mark. The clip opens at its clock start when the caption on screen there is the stage's,
+    else on the stage's first caption drawn after the clock start; a stage with neither before its clip ends fails."""
     for clip in merged:
-        begin, finish, marker, ids = clip
+        begin, finish, marker, ids, _ = clip
         stage = ids.split("+")[0]
-        own = None
-        for index, (caption, frame) in enumerate(marks):
-            replaced = marks[index + 1][1] if index + 1 < len(marks) else None
-            if (replaced is None or replaced > previous_end) and (caption == stage or caption.endswith("." + stage)):
-                own = caption, frame
-                break
-        if own is None:
-            raise SystemExit(f"{stage}: no caption with the stage's id was drawn after the previous clip; show it with "
-                             "the stage's id, or cut with --clock")
-        if own[1] >= finish:
-            raise SystemExit(f"{stage}: its caption {own[0]} is first drawn at frame {own[1]}, after the clip ends "
-                             f"at frame {finish}")
-        clip[0] = max(begin, own[1])
-        print(f"{stage}: marker frame {marker}, caption {own[0]} drawn from frame {own[1]}, clip from frame {clip[0]}")
-        previous_end = finish
+        names = sorted({caption for caption, _ in marks if caption == stage or caption.endswith("." + stage)})
+        if len(names) > 1:
+            raise SystemExit(f"{stage}: the stage's id names more than one caption ({', '.join(names)}); give the "
+                             "stage its caption's full id, or cut with --clock")
+        on_screen = [(caption, frame) for caption, frame in marks if frame <= begin]
+        if on_screen and on_screen[-1][0] in names:
+            caption, drawn = on_screen[-1]
+            opens = begin
+        else:
+            later = [(caption, frame) for caption, frame in marks if caption in names and frame > begin]
+            if not later:
+                raise SystemExit(f"{stage}: no caption with the stage's id is on screen at the clock start (frame "
+                                 f"{begin}) or drawn after it; show it with the stage's id, or cut with --clock")
+            caption, drawn = later[0]
+            if drawn >= finish:
+                raise SystemExit(f"{stage}: its caption {caption} is first drawn at frame {drawn}, after the clip ends "
+                                 f"at frame {finish}; cut with --clock")
+            opens = drawn
+        clip[0] = opens
+        print(f"{stage}: marker frame {marker}, caption {caption} drawn from frame {drawn}, clip from frame {opens}")
 
 
 def check_first_frames(out_path, stages, captions):
@@ -387,13 +405,13 @@ def main(argv):
                              f"{VIDEO_SIZE[0]}x{VIDEO_SIZE[1]} recording standard; cut it with --clock")
         print("cut by the caption panel's pixels (no caption marks: a screen grab or a take before 3.6.0)")
         captions = caption_cuts(video, merged, rate)
-    for index, (begin, finish, _, ids) in enumerate(merged):
+    for index, (begin, finish, _, ids, _) in enumerate(merged):
         print(f"clip {index}: frames {begin} - {finish} ({(finish - begin) / rate:.2f}s) {ids}")
     encode(video, out_path, merged, times, rate, sound)
 
     stages = []
     frame = 0
-    for begin, finish, _, ids in merged:
+    for begin, finish, _, ids, _ in merged:
         stages.append({"stage": ids, "startFrame": frame, "endFrameExclusive": frame + finish - begin})
         frame += finish - begin
     joined = frame_count(out_path)

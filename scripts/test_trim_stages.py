@@ -128,7 +128,7 @@ class ClipsTest(unittest.TestCase):
         times = [n / 30 for n in range(300)]
         windows = [[1_000, 2_000, "a"], [2_050, 3_000, "b"], [5_000, 6_000, "c"]]
         self.assertEqual(trim_stages.clips(windows, times, 0, 30),
-                         [[27, 94, 30, "a+b"], [147, 184, 150, "c"]])
+                         [[27, 94, 30, "a+b", 60], [147, 184, 150, "c", 180]])
 
 
 class CaptionStartTest(unittest.TestCase):
@@ -136,14 +136,14 @@ class CaptionStartTest(unittest.TestCase):
         old, half, new = bytes([10] * 100), bytes([60] * 100), bytes([200] * 100)
         # The caption is drawn in two steps, at frames 40 and 41; the marker says 35, so the clock starts at 32.
         panels = {k: old if k < 40 else half if k == 40 else new for k in range(0, 80)}
-        begin, reference = trim_stages.caption_start(panels, 35, 1, 80, 30, "b", 32, True)
+        begin, reference = trim_stages.caption_start(panels, 35, 1, 80, 30, "b", 32, True, 80)
         self.assertEqual(begin, 41)
         self.assertEqual(reference, new)
 
     def test_a_caption_that_never_changes_near_the_marker_fails(self) -> None:
         panels = {k: bytes([10] * 100) for k in range(0, 80)}
         with self.assertRaises(SystemExit) as failure:
-            trim_stages.caption_start(panels, 35, 1, 80, 30, "b", 32, True)
+            trim_stages.caption_start(panels, 35, 1, 80, 30, "b", 32, True, 80)
         self.assertIn("b: the caption never changes near frame 35", str(failure.exception))
         self.assertIn("--clock", str(failure.exception))
 
@@ -153,7 +153,7 @@ class CaptionStartTest(unittest.TestCase):
         old, new = bytes([10] * 100), bytes([110] * 100)
         noisy = bytes([125] * 40 + [110] * 60)
         panels = {k: old if k < 40 else noisy if k < 47 else new for k in range(0, 80)}
-        begin, reference = trim_stages.caption_start(panels, 41, 1, 80, 30, "b", 38, True)
+        begin, reference = trim_stages.caption_start(panels, 41, 1, 80, 30, "b", 38, True, 80)
         self.assertEqual(begin, 40)
         self.assertEqual(reference, new)
 
@@ -166,7 +166,7 @@ class CaptionStartTest(unittest.TestCase):
         panels = {k: previous for k in range(0, 40)}
         panels.update({k: own for k in range(40, 80)})
         panels[30] = bytes([255] * 100)
-        begin, reference = trim_stages.caption_start(panels, 35, 1, 80, 30, "b", 32, False)
+        begin, reference = trim_stages.caption_start(panels, 35, 1, 80, 30, "b", 32, False, 80)
         self.assertEqual(begin, 40)
         self.assertEqual(reference, own)
 
@@ -175,7 +175,7 @@ class CaptionStartTest(unittest.TestCase):
         # Caption B is drawn in two steps at frames 40 and 42; its first step is within the caption change of the
         # settled caption, so only the panel still moving gives it away.
         panels = {k: old if k < 40 else drawn if k < 42 else new for k in range(0, 80)}
-        begin, reference = trim_stages.caption_start(panels, 35, 1, 80, 30, "b", 32, True)
+        begin, reference = trim_stages.caption_start(panels, 35, 1, 80, 30, "b", 32, True, 80)
         self.assertEqual(begin, 42)
         self.assertEqual(reference, new)
 
@@ -184,7 +184,7 @@ class CaptionStartTest(unittest.TestCase):
         # caption is not something the picture can tell, so the cut stops instead of guessing.
         panels = {k: bytes([10 if k < 40 else 60 if k < 50 else 110] * 100) for k in range(0, 80)}
         with self.assertRaises(SystemExit) as failure:
-            trim_stages.caption_start(panels, 35, 1, 80, 30, "b", 32, False)
+            trim_stages.caption_start(panels, 35, 1, 80, 30, "b", 32, False, 80)
         self.assertIn("b: the caption panel changes at frames 40 and 50", str(failure.exception))
         self.assertIn("--clock", str(failure.exception))
 
@@ -194,7 +194,7 @@ class CaptionStartTest(unittest.TestCase):
         panels = {k: bytes([10 if k < 53 else 110] * 100) for k in range(0, 80)}
         panels[20] = bytes([60] * 100)
         with self.assertRaises(SystemExit) as failure:
-            trim_stages.caption_start(panels, 35, 1, 80, 30, "b", 32, False)
+            trim_stages.caption_start(panels, 35, 1, 80, 30, "b", 32, False, 80)
         self.assertIn("b: the caption panel changes at frame 53, 0.5 to 0.9 s after the marker", str(failure.exception))
         self.assertIn("--clock", str(failure.exception))
 
@@ -203,7 +203,7 @@ class CaptionStartTest(unittest.TestCase):
         # differ by less than that: the cut cannot tell whether the clock start shows the stage's caption.
         panels = {k: bytes([(3 * k) % 256] * 100) for k in range(0, 80)}
         with self.assertRaises(SystemExit) as failure:
-            trim_stages.caption_start(panels, 35, 1, 80, 30, "b", 32, True)
+            trim_stages.caption_start(panels, 35, 1, 80, 30, "b", 32, True, 80)
         self.assertIn("b: the world behind the caption panel moves 3.0 a frame", str(failure.exception))
         self.assertIn("--clock", str(failure.exception))
 
@@ -212,16 +212,31 @@ class CaptionStartTest(unittest.TestCase):
         # but no step stands out from the drift: the clock start may still show the previous clip's caption.
         panels = {k: bytes([(16 * k // 10) % 256] * 100) for k in range(0, 80)}
         with self.assertRaises(SystemExit) as failure:
-            trim_stages.caption_start(panels, 35, 20, 80, 30, "b", 32, False)
+            trim_stages.caption_start(panels, 35, 20, 80, 30, "b", 32, False, 80)
         self.assertIn("b: the caption panel does not change between the previous clip and frame 50", str(failure.exception))
         self.assertIn("--clock", str(failure.exception))
 
     def test_a_later_clip_whose_caption_came_before_the_clock_opens_at_the_clock(self) -> None:
         # The caption changed off film, after the previous clip ended at frame 20 and before the clock at 32.
         panels = {k: bytes([10 if k < 25 else 110] * 100) for k in range(0, 80)}
-        begin, reference = trim_stages.caption_start(panels, 35, 20, 80, 30, "b", 32, False)
+        begin, reference = trim_stages.caption_start(panels, 35, 20, 80, 30, "b", 32, False, 80)
         self.assertEqual(begin, 32)
         self.assertEqual(reference, bytes([110] * 100))
+
+    def test_a_caption_that_comes_after_its_caption_is_read_fails_naming_the_clock(self) -> None:
+        # The panel changed off film before the clock (frame 25), but the stage's caption comes only at frame 70,
+        # 1.2 s after the marker: the clock start shows the previous caption, and so does the reading window.
+        panels = {k: bytes([10 if k < 25 else 110 if k < 70 else 210] * 100) for k in range(0, 80)}
+        with self.assertRaises(SystemExit) as failure:
+            trim_stages.caption_start(panels, 35, 20, 80, 30, "b", 32, False, 80)
+        self.assertIn("b: the caption panel changes at frame 70, 1.2 s after the marker", str(failure.exception))
+        self.assertIn("--clock", str(failure.exception))
+
+    def test_a_change_after_the_first_stage_of_a_clip_ends_belongs_to_the_next_stage(self) -> None:
+        # The same panels in a clip whose first stage ends at frame 70: the change there is the next stage's caption.
+        panels = {k: bytes([10 if k < 25 else 110 if k < 70 else 210] * 100) for k in range(0, 80)}
+        begin, _ = trim_stages.caption_start(panels, 35, 20, 80, 30, "b", 32, False, 70)
+        self.assertEqual(begin, 32)
 
 
 class FirstFramesTest(unittest.TestCase):
@@ -284,44 +299,67 @@ class MarkedCutsTest(unittest.TestCase):
         self.assertIsNone(trim_stages.caption_marks({"boundaries": {"rawStartFrameIndex": 100}}))
 
     def test_a_caption_drawn_before_the_clock_opens_the_clip_at_the_clock(self) -> None:
-        clips = [[27, 94, 30, "a"]]
+        clips = [[27, 94, 30, "a", 90]]
         trim_stages.marked_cuts(clips, [("a", 10)])
         self.assertEqual(clips[0][0], 27)
 
     def test_a_caption_drawn_after_the_clock_opens_the_clip_where_it_is_drawn(self) -> None:
         # The stage is marked before its caption is shown; the title card before it has another id, and the
         # readouts that follow with the stage's id come later than its first caption.
-        clips = [[27, 94, 30, "a"]]
+        clips = [[27, 94, 30, "a", 90]]
         trim_stages.marked_cuts(clips, [("intro", -40), ("a", 33), ("a", 40)])
         self.assertEqual(clips[0][0], 33)
 
     def test_a_repeated_stage_opens_on_the_caption_it_shows_after_the_previous_clip(self) -> None:
         # Stage a's first caption went off screen when b's came, before b's clip ended: the second clip of a opens
         # on a's new caption, not at its clock start, which still shows b.
-        clips = [[10, 40, 13, "a"], [60, 100, 63, "b"], [120, 150, 123, "a"]]
+        clips = [[10, 40, 13, "a", 36], [60, 100, 63, "b", 96], [120, 150, 123, "a", 146]]
         trim_stages.marked_cuts(clips, [("a", 5), ("b", 58), ("a", 125)])
         self.assertEqual([clip[0] for clip in clips], [10, 60, 125])
 
     def test_a_stage_keeps_a_caption_still_on_screen_from_before_the_previous_clip_ended(self) -> None:
-        clips = [[10, 40, 13, "a"], [60, 100, 63, "a"]]
+        clips = [[10, 40, 13, "a", 36], [60, 100, 63, "a", 96]]
         trim_stages.marked_cuts(clips, [("a", 5)])
         self.assertEqual([clip[0] for clip in clips], [10, 60])
 
     def test_a_caption_id_with_the_mods_prefix_belongs_to_the_stage(self) -> None:
-        clips = [[57, 100, 60, "nether"]]
+        clips = [[57, 100, 60, "nether", 96]]
         trim_stages.marked_cuts(clips, [("dimensionstructurevariants.nether", 70)])
         self.assertEqual(clips[0][0], 70)
 
     def test_a_stage_without_a_caption_of_its_id_fails_naming_the_clock(self) -> None:
         with self.assertRaises(SystemExit) as failure:
-            trim_stages.marked_cuts([[57, 100, 60, "nether"]], [("overworld", 10), ("netherite", 58)])
+            trim_stages.marked_cuts([[57, 100, 60, "nether", 96]], [("overworld", 10), ("netherite", 58)])
         self.assertIn("nether: no caption with the stage's id", str(failure.exception))
         self.assertIn("--clock", str(failure.exception))
 
-    def test_a_caption_first_drawn_after_its_clip_ends_fails(self) -> None:
+    def test_a_caption_first_drawn_after_its_clip_ends_fails_naming_the_clock(self) -> None:
         with self.assertRaises(SystemExit) as failure:
-            trim_stages.marked_cuts([[57, 100, 60, "a"]], [("a", 100)])
+            trim_stages.marked_cuts([[57, 100, 60, "a", 96]], [("a", 100)])
         self.assertIn("a: its caption a is first drawn at frame 100, after the clip ends", str(failure.exception))
+        self.assertIn("--clock", str(failure.exception))
+
+    def test_a_caption_replaced_before_the_clock_start_opens_the_clip_where_it_comes_back(self) -> None:
+        # Stage b's caption is shown off film at 50, a rehearsal caption replaces it at 60, and b's comes back at 80:
+        # the clock start (65) shows the rehearsal.
+        clips = [[10, 40, 13, "a", 36], [65, 120, 68, "b", 116]]
+        trim_stages.marked_cuts(clips, [("a", 5), ("b", 50), ("rehearsal", 60), ("b", 80)])
+        self.assertEqual([clip[0] for clip in clips], [10, 80])
+
+    def test_a_caption_replaced_before_the_clock_start_and_never_shown_again_fails_naming_the_clock(self) -> None:
+        with self.assertRaises(SystemExit) as failure:
+            trim_stages.marked_cuts([[30, 90, 33, "b", 86]], [("b", 5), ("rehearsal", 20)])
+        self.assertIn("b: no caption with the stage's id", str(failure.exception))
+        self.assertIn("--clock", str(failure.exception))
+
+    def test_a_stage_id_that_two_captions_end_in_fails_naming_the_clock(self) -> None:
+        # Two mods' captions end in the same short stage id; neither may stand in for the other.
+        clips = [[10, 40, 13, "first", 36], [60, 120, 63, "runway", 116], [130, 200, 133, "runway", 196]]
+        with self.assertRaises(SystemExit) as failure:
+            trim_stages.marked_cuts(clips, [("x.first", 5), ("ice.runway", 50), ("roller.runway", 140)])
+        self.assertIn("runway: the stage's id names more than one caption (ice.runway, roller.runway)",
+                      str(failure.exception))
+        self.assertIn("--clock", str(failure.exception))
 
 
 @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"), "ffmpeg is not installed")
@@ -443,6 +481,26 @@ class CaptionCutTest(unittest.TestCase):
         self.assertEqual([stage["stage"] for stage in stages], ["a+b", "c"])
         self.assertGreater(brightness(video.with_name("cut.mp4"), stages[1]["startFrame"], C_ONLY), 200,
                            "clip c must open on caption C")
+
+    def test_a_caption_that_comes_after_its_caption_is_read_on_a_switched_world_fails_naming_the_clock(self) -> None:
+        # The world switches off film at frame 70 and caption b comes at frame 112, 1.0 s after the marker (81):
+        # the clock start and the reading window both show the previous caption, similar or not.
+        for name, second in [("similar", CAPTION_C_LIKE), ("unrelated", CAPTION_C)]:
+            with self.subTest(name):
+                directory = self.directory / name
+                directory.mkdir()
+                log, video, meta = make_recording(
+                    directory,
+                    [(CAPTION_B, 12, 111), (second, 112, 179)],
+                    [("STAGE_START", "a", 0.5), ("STAGE_END", "a", 2.0), ("STAGE_START", "b", 2.7),
+                     ("STAGE_END", "b", 5.0)],
+                    world=SWITCHING)
+
+                result = cut(log, video, meta)
+
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                self.assertIn("b: the caption panel changes at frame 112", result.stderr)
+                self.assertIn("--clock", result.stderr)
 
     def test_a_similar_caption_after_an_off_film_scene_change_opens_where_it_appears(self) -> None:
         # Captions B and C_LIKE differ by one small box, the log clock is 0.3 s early as on a screen grab, and the
