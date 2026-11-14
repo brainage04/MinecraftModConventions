@@ -29,11 +29,20 @@ B_ONLY = (1720, 45, 70, 20)
 C_ONLY = (1710, 80, 40, 18)
 
 
-# The world behind the panel, drifting one pixel's worth a frame the way a moving scene does, and drifting the
-# residual panel about 0.5 a frame with it: the reference taken 0.5-0.9 s after a marker then sits about 8 from a
-# caption's first frame, which the fixed limits of the first version could not take.
-DRIFTING = (f"nullsrc=size={WIDTH}x{HEIGHT}:rate={RATE}:duration=6,"
-            "geq=lum='128+60*sin(2*PI*(X/300+T*0.25))':cb=128:cr=128,format=yuv420p")
+
+def drifting(cycles_per_second: float) -> str:
+    """A world that moves behind the panel the way a moving scene does. At 0.25 cycles a second it moves the residual
+    panel 0.8 to 1.0 a frame, so the caption read 0.5-0.9 s after a marker sits about 8 from the caption's first
+    frame, which the fixed limits of the first version could not take."""
+    return (f"nullsrc=size={WIDTH}x{HEIGHT}:rate={RATE}:duration=6,"
+            f"geq=lum='128+60*sin(2*PI*(X/300+T*{cycles_per_second}))':cb=128:cr=128,format=yuv420p")
+
+
+DRIFTING = drifting(0.25)
+# A still world that turns into another picture at frame 70, between two clips, as a teleport or a camera cut off film
+# does: the residual panel moves 13 there, more than two near-identical captions differ (4.9).
+SWITCHING = (f"nullsrc=size={WIDTH}x{HEIGHT}:rate={RATE}:duration=6,"
+             "geq=lum='128+40*sin(2*PI*(X+if(lt(N,70),0,20))/41)*sin(2*PI*Y/29)':cb=128:cr=128,format=yuv420p")
 # The same world without the drift, its colours pinned: lavfi's gradients picks random colours even with a seed, so
 # two runs of an unpinned fixture coded different pictures and the test could pass or fail by luck.
 STILL = (f"gradients=size={WIDTH}x{HEIGHT}:rate={RATE}:duration=6:speed=0.02:seed=7:"
@@ -41,13 +50,13 @@ STILL = (f"gradients=size={WIDTH}x{HEIGHT}:rate={RATE}:duration=6:speed=0.02:see
 
 
 def make_recording(directory: Path, captions: list[tuple[list, int, int]], markers: list[tuple[str, str, float]],
-                   seconds: float = 6.0, drifting: bool = False,
+                   seconds: float = 6.0, world: str = STILL,
                    flash: tuple[int, int] | None = None) -> tuple[Path, Path, Path]:
     """A 1920x1080 take with the caption panel and its captions at frames [first, last], a log with the given
     STAGE_START/STAGE_END markers (kind, id, seconds into the video) and the recorder's metadata.
 
-    `drifting` models a world that moves behind the panel; `flash` draws a bright off-film screen over the panel at
-    frames [first, last], which is what a loading screen or a camera cut does between two stages."""
+    `world` is the picture behind the panel (STILL, DRIFTING, SWITCHING); `flash` draws a bright off-film screen over
+    the panel at frames [first, last], which is what a loading screen or a camera cut does between two stages."""
     boxes = [f"drawbox=x={x}:y={y}:w={w}:h={h}:color=white:t=fill" for x, y, w, h in HEADER]
     for caption, first, last in captions:
         boxes += [f"drawbox=x={x}:y={y}:w={w}:h={h}:color=white:t=fill:enable='between(n,{first},{last})'"
@@ -56,7 +65,7 @@ def make_recording(directory: Path, captions: list[tuple[list, int, int]], marke
         first, last = flash
         boxes += [f"drawbox=x={x}:y={y}:w={w}:h={h}:color=white:t=fill:enable='between(n,{first},{last})'"
                   for x, y, w, h in [(1150, 20, 400, 25), (1150, 55, 700, 25), (1150, 90, 300, 25)]]
-    source = (DRIFTING if drifting else STILL).replace("duration=6", f"duration={seconds}")
+    source = world.replace("duration=6", f"duration={seconds}")
     video = directory / "take.mp4"
     subprocess.run([
         "ffmpeg", "-v", "error", "-y",
@@ -127,15 +136,16 @@ class CaptionStartTest(unittest.TestCase):
         old, half, new = bytes([10] * 100), bytes([60] * 100), bytes([200] * 100)
         # The caption is drawn in two steps, at frames 40 and 41; the marker says 35, so the clock starts at 32.
         panels = {k: old if k < 40 else half if k == 40 else new for k in range(0, 80)}
-        begin, reference = trim_stages.caption_start(panels, 35, 1, 79, 80, 30, "b", 32)
+        begin, reference = trim_stages.caption_start(panels, 35, 1, 80, 30, "b", 32, True)
         self.assertEqual(begin, 41)
         self.assertEqual(reference, new)
 
     def test_a_caption_that_never_changes_near_the_marker_fails(self) -> None:
         panels = {k: bytes([10] * 100) for k in range(0, 80)}
         with self.assertRaises(SystemExit) as failure:
-            trim_stages.caption_start(panels, 35, 1, 79, 80, 30, "b", 32)
+            trim_stages.caption_start(panels, 35, 1, 80, 30, "b", 32, True)
         self.assertIn("b: the caption never changes near frame 35", str(failure.exception))
+        self.assertIn("--clock", str(failure.exception))
 
     def test_a_noisy_first_frame_of_a_caption_still_shows_it(self) -> None:
         # An encoder codes a scene change's first frames worse, so caption B's first seven frames sit 6 off the
@@ -143,20 +153,20 @@ class CaptionStartTest(unittest.TestCase):
         old, new = bytes([10] * 100), bytes([110] * 100)
         noisy = bytes([125] * 40 + [110] * 60)
         panels = {k: old if k < 40 else noisy if k < 47 else new for k in range(0, 80)}
-        begin, reference = trim_stages.caption_start(panels, 41, 1, 79, 80, 30, "b", 38)
+        begin, reference = trim_stages.caption_start(panels, 41, 1, 80, 30, "b", 38, True)
         self.assertEqual(begin, 40)
         self.assertEqual(reference, new)
 
-    def test_a_clock_frame_on_a_similar_previous_caption_stays_out_despite_an_off_film_change(self) -> None:
+    def test_a_similar_caption_after_an_off_film_change_opens_where_it_appears(self) -> None:
         # Two captions that share most of their text, and an off-film screen between them whose change is far
-        # larger than the caption's own: the frame the clock lands on still shows the previous caption, which only
-        # the comparison with that caption can tell, since against the caption change alone it passes.
+        # larger than the caption's own: the frame the clock lands on still shows the previous caption, and only the
+        # step where the new caption appears, after the clock, may open the clip.
         previous = bytes([10] * 60 + [200] * 40)
         own = bytes([10] * 60 + [200] * 30 + [120] * 10)
         panels = {k: previous for k in range(0, 40)}
         panels.update({k: own for k in range(40, 80)})
         panels[30] = bytes([255] * 100)
-        begin, reference = trim_stages.caption_start(panels, 35, 1, 79, 80, 30, "b", 32, previous=previous)
+        begin, reference = trim_stages.caption_start(panels, 35, 1, 80, 30, "b", 32, False)
         self.assertEqual(begin, 40)
         self.assertEqual(reference, own)
 
@@ -165,9 +175,53 @@ class CaptionStartTest(unittest.TestCase):
         # Caption B is drawn in two steps at frames 40 and 42; its first step is within the caption change of the
         # settled caption, so only the panel still moving gives it away.
         panels = {k: old if k < 40 else drawn if k < 42 else new for k in range(0, 80)}
-        begin, reference = trim_stages.caption_start(panels, 35, 1, 79, 80, 30, "b", 32)
+        begin, reference = trim_stages.caption_start(panels, 35, 1, 80, 30, "b", 32, True)
         self.assertEqual(begin, 42)
         self.assertEqual(reference, new)
+
+    def test_a_panel_that_changes_twice_after_the_clock_fails_naming_the_clock(self) -> None:
+        # A caption change and a second one 10 frames later, both after the clock: which of them brings the stage's
+        # caption is not something the picture can tell, so the cut stops instead of guessing.
+        panels = {k: bytes([10 if k < 40 else 60 if k < 50 else 110] * 100) for k in range(0, 80)}
+        with self.assertRaises(SystemExit) as failure:
+            trim_stages.caption_start(panels, 35, 1, 80, 30, "b", 32, False)
+        self.assertIn("b: the caption panel changes at frames 40 and 50", str(failure.exception))
+        self.assertIn("--clock", str(failure.exception))
+
+    def test_a_caption_that_changes_while_it_is_read_fails_naming_the_clock(self) -> None:
+        # The panel changes 0.6 s after the marker, inside the frames the stage's caption is read from, so the clock
+        # start may still show the caption before it.
+        panels = {k: bytes([10 if k < 53 else 110] * 100) for k in range(0, 80)}
+        panels[20] = bytes([60] * 100)
+        with self.assertRaises(SystemExit) as failure:
+            trim_stages.caption_start(panels, 35, 1, 80, 30, "b", 32, False)
+        self.assertIn("b: the caption panel changes at frame 53, 0.5 to 0.9 s after the marker", str(failure.exception))
+        self.assertIn("--clock", str(failure.exception))
+
+    def test_a_world_that_moves_too_fast_to_see_a_caption_change_fails_naming_the_clock(self) -> None:
+        # The panel moves 3 a frame, so a step must exceed 6 to stand out from it, and two near-identical captions
+        # differ by less than that: the cut cannot tell whether the clock start shows the stage's caption.
+        panels = {k: bytes([(3 * k) % 256] * 100) for k in range(0, 80)}
+        with self.assertRaises(SystemExit) as failure:
+            trim_stages.caption_start(panels, 35, 1, 80, 30, "b", 32, True)
+        self.assertIn("b: the world behind the caption panel moves 3.0 a frame", str(failure.exception))
+        self.assertIn("--clock", str(failure.exception))
+
+    def test_a_later_clip_whose_panel_never_changed_since_the_previous_clip_fails_naming_the_clock(self) -> None:
+        # The world drifts 1.6 a frame, which passes the bar for a caption that changes somewhere near the marker,
+        # but no step stands out from the drift: the clock start may still show the previous clip's caption.
+        panels = {k: bytes([(16 * k // 10) % 256] * 100) for k in range(0, 80)}
+        with self.assertRaises(SystemExit) as failure:
+            trim_stages.caption_start(panels, 35, 20, 80, 30, "b", 32, False)
+        self.assertIn("b: the caption panel does not change between the previous clip and frame 50", str(failure.exception))
+        self.assertIn("--clock", str(failure.exception))
+
+    def test_a_later_clip_whose_caption_came_before_the_clock_opens_at_the_clock(self) -> None:
+        # The caption changed off film, after the previous clip ended at frame 20 and before the clock at 32.
+        panels = {k: bytes([10 if k < 25 else 110] * 100) for k in range(0, 80)}
+        begin, reference = trim_stages.caption_start(panels, 35, 20, 80, 30, "b", 32, False)
+        self.assertEqual(begin, 32)
+        self.assertEqual(reference, bytes([110] * 100))
 
 
 class FirstFramesTest(unittest.TestCase):
@@ -179,6 +233,7 @@ class FirstFramesTest(unittest.TestCase):
             with self.assertRaises(SystemExit) as failure:
                 trim_stages.check_first_frames(Path("cut.mp4"), stages, captions)
         self.assertIn("a: the clip's first frame does not show its own caption", str(failure.exception))
+        self.assertIn("--clock", str(failure.exception))
 
     def test_the_first_clip_may_open_as_far_from_its_caption_as_the_source_frame_did(self) -> None:
         # A world that drifts behind the panel leaves a good first frame 6 off its caption, where the fixed
@@ -203,6 +258,7 @@ class FirstFramesTest(unittest.TestCase):
             with self.assertRaises(SystemExit) as failure:
                 trim_stages.check_first_frames(Path("cut.mp4"), stages, captions)
         self.assertIn("b: the clip's first frame still shows the previous caption", str(failure.exception))
+        self.assertIn("--clock", str(failure.exception))
 
     def test_a_clip_after_a_merged_one_is_checked_against_the_caption_it_ended_with(self) -> None:
         # Stages a and b are one clip that ends on caption B; stage c's own caption shares most of its text with B.
@@ -218,6 +274,54 @@ class FirstFramesTest(unittest.TestCase):
             with self.assertRaises(SystemExit) as failure:
                 trim_stages.check_first_frames(Path("cut.mp4"), stages, captions)
         self.assertIn("c: the clip's first frame still shows the previous caption", str(failure.exception))
+
+
+class MarkedCutsTest(unittest.TestCase):
+    def test_the_marks_are_read_as_frames_of_the_exported_video(self) -> None:
+        meta = {"boundaries": {"rawStartFrameIndex": 100, "gameCaptureCaptionMarks": json.dumps(
+            [{"id": "a", "slot": 90, "presentUs": 1}, {"id": "b", "slot": 130, "presentUs": 2}])}}
+        self.assertEqual(trim_stages.caption_marks(meta), [("a", -10), ("b", 30)])
+        self.assertIsNone(trim_stages.caption_marks({"boundaries": {"rawStartFrameIndex": 100}}))
+
+    def test_a_caption_drawn_before_the_clock_opens_the_clip_at_the_clock(self) -> None:
+        clips = [[27, 94, 30, "a"]]
+        trim_stages.marked_cuts(clips, [("a", 10)])
+        self.assertEqual(clips[0][0], 27)
+
+    def test_a_caption_drawn_after_the_clock_opens_the_clip_where_it_is_drawn(self) -> None:
+        # The stage is marked before its caption is shown; the title card before it has another id, and the
+        # readouts that follow with the stage's id come later than its first caption.
+        clips = [[27, 94, 30, "a"]]
+        trim_stages.marked_cuts(clips, [("intro", -40), ("a", 33), ("a", 40)])
+        self.assertEqual(clips[0][0], 33)
+
+    def test_a_repeated_stage_opens_on_the_caption_it_shows_after_the_previous_clip(self) -> None:
+        # Stage a's first caption went off screen when b's came, before b's clip ended: the second clip of a opens
+        # on a's new caption, not at its clock start, which still shows b.
+        clips = [[10, 40, 13, "a"], [60, 100, 63, "b"], [120, 150, 123, "a"]]
+        trim_stages.marked_cuts(clips, [("a", 5), ("b", 58), ("a", 125)])
+        self.assertEqual([clip[0] for clip in clips], [10, 60, 125])
+
+    def test_a_stage_keeps_a_caption_still_on_screen_from_before_the_previous_clip_ended(self) -> None:
+        clips = [[10, 40, 13, "a"], [60, 100, 63, "a"]]
+        trim_stages.marked_cuts(clips, [("a", 5)])
+        self.assertEqual([clip[0] for clip in clips], [10, 60])
+
+    def test_a_caption_id_with_the_mods_prefix_belongs_to_the_stage(self) -> None:
+        clips = [[57, 100, 60, "nether"]]
+        trim_stages.marked_cuts(clips, [("dimensionstructurevariants.nether", 70)])
+        self.assertEqual(clips[0][0], 70)
+
+    def test_a_stage_without_a_caption_of_its_id_fails_naming_the_clock(self) -> None:
+        with self.assertRaises(SystemExit) as failure:
+            trim_stages.marked_cuts([[57, 100, 60, "nether"]], [("overworld", 10), ("netherite", 58)])
+        self.assertIn("nether: no caption with the stage's id", str(failure.exception))
+        self.assertIn("--clock", str(failure.exception))
+
+    def test_a_caption_first_drawn_after_its_clip_ends_fails(self) -> None:
+        with self.assertRaises(SystemExit) as failure:
+            trim_stages.marked_cuts([[57, 100, 60, "a"]], [("a", 100)])
+        self.assertIn("a: its caption a is first drawn at frame 100, after the clip ends", str(failure.exception))
 
 
 @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"), "ffmpeg is not installed")
@@ -238,6 +342,7 @@ class CaptionCutTest(unittest.TestCase):
         result = cut(log, video, meta)
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("cut by the caption panel's pixels", result.stdout)
         out = video.with_name("cut.mp4")
         stages = json.loads(out.with_suffix(".stages.json").read_text())
         self.assertEqual(stages, [{"stage": "a", "startFrame": 0, "endFrameExclusive": 52},
@@ -289,11 +394,12 @@ class CaptionCutTest(unittest.TestCase):
             [(CAPTION_A, 12, 89), (CAPTION_B, 90, 121), (CAPTION_C, 122, 179)],
             [("STAGE_START", "a", 0.5), ("STAGE_END", "a", 2.0), ("STAGE_START", "b", 2.7),
              ("STAGE_END", "b", 4.0), ("STAGE_START", "c", 4.05), ("STAGE_END", "c", 5.5)],
-            drifting=True)
+            world=DRIFTING)
 
         result = cut(log, video, meta)
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("a: marker frame 15, caption from frame 12", result.stdout)
         self.assertIn("b: marker frame 81, caption from frame 90", result.stdout)
         stages = json.loads(video.with_name("cut.stages.json").read_text())
         self.assertGreater(brightness(video.with_name("cut.mp4"), stages[1]["startFrame"], B_ONLY), 200,
@@ -307,11 +413,12 @@ class CaptionCutTest(unittest.TestCase):
             [(CAPTION_A, 2, 51), (CAPTION_B, 52, 179)],
             [("STAGE_START", "a", 0.5), ("STAGE_END", "a", 1.2),
              ("STAGE_START", "b", 2.4), ("STAGE_END", "b", 3.5)],
-            drifting=True)
+            world=DRIFTING)
 
         result = cut(log, video, meta)
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("a: marker frame 15, caption from frame 12", result.stdout)
         self.assertIn("b: marker frame 72, caption from frame 69", result.stdout)
         stages = json.loads(video.with_name("cut.stages.json").read_text())
         self.assertGreater(brightness(video.with_name("cut.mp4"), stages[1]["startFrame"], B_ONLY), 200,
@@ -336,6 +443,100 @@ class CaptionCutTest(unittest.TestCase):
         self.assertEqual([stage["stage"] for stage in stages], ["a+b", "c"])
         self.assertGreater(brightness(video.with_name("cut.mp4"), stages[1]["startFrame"], C_ONLY), 200,
                            "clip c must open on caption C")
+
+    def test_a_similar_caption_after_an_off_film_scene_change_opens_where_it_appears(self) -> None:
+        # Captions B and C_LIKE differ by one small box, the log clock is 0.3 s early as on a screen grab, and the
+        # world behind the panel turns into another picture off film at frame 70: the clock start (78) still shows B
+        # in the new world and must not open clip b.
+        log, video, meta = make_recording(
+            self.directory,
+            [(CAPTION_B, 12, 89), (CAPTION_C_LIKE, 90, 179)],
+            [("STAGE_START", "a", 0.5), ("STAGE_END", "a", 2.0), ("STAGE_START", "b", 2.7),
+             ("STAGE_END", "b", 5.0)],
+            world=SWITCHING)
+
+        result = cut(log, video, meta)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("b: marker frame 81, caption from frame 90", result.stdout)
+        stages = json.loads(video.with_name("cut.stages.json").read_text())
+        self.assertGreater(brightness(video.with_name("cut.mp4"), stages[1]["startFrame"], C_ONLY), 200,
+                           "clip b must open on caption C")
+
+    def test_near_identical_captions_on_a_drifting_world_open_where_the_new_one_appears(self) -> None:
+        # The drift (0.8 to 1.0 a frame) is a fifth of the change between B and C_LIKE: the step still stands out.
+        log, video, meta = make_recording(
+            self.directory,
+            [(CAPTION_B, 12, 89), (CAPTION_C_LIKE, 90, 179)],
+            [("STAGE_START", "a", 0.5), ("STAGE_END", "a", 2.0), ("STAGE_START", "b", 2.7),
+             ("STAGE_END", "b", 5.0)],
+            world=DRIFTING)
+
+        result = cut(log, video, meta)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("a: marker frame 15, caption from frame 12", result.stdout)
+        self.assertIn("b: marker frame 81, caption from frame 90", result.stdout)
+        stages = json.loads(video.with_name("cut.stages.json").read_text())
+        self.assertGreater(brightness(video.with_name("cut.mp4"), stages[1]["startFrame"], C_ONLY), 200,
+                           "clip b must open on caption C")
+
+    def test_a_world_too_fast_to_tell_near_identical_captions_apart_fails_naming_the_clock(self) -> None:
+        # At 1 cycle a second the world moves the panel about 3.4 a frame, as much as B and C_LIKE differ.
+        log, video, meta = make_recording(
+            self.directory,
+            [(CAPTION_B, 12, 89), (CAPTION_C_LIKE, 90, 179)],
+            [("STAGE_START", "a", 0.5), ("STAGE_END", "a", 2.0), ("STAGE_START", "b", 2.7),
+             ("STAGE_END", "b", 5.0)],
+            world=drifting(1.0))
+
+        result = cut(log, video, meta)
+
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn("the world behind the caption panel moves", result.stderr)
+        self.assertIn("--clock", result.stderr)
+
+    def test_a_game_capture_is_cut_at_its_caption_marks_without_reading_the_picture(self) -> None:
+        # A 640x360 take, which the caption panel's pixels cannot be read from: the marks alone place the cut.
+        # Each frame's brightness is twice its index, so a clip's first frame tells which source frame it is.
+        video = self.directory / "take.mp4"
+        subprocess.run([
+            "ffmpeg", "-v", "error", "-y",
+            "-f", "lavfi", "-i", f"nullsrc=size=640x360:rate={RATE}:duration=4,geq=lum='2*N':cb=128:cr=128",
+            "-f", "lavfi", "-i", "sine=frequency=440:duration=4",
+            "-c:v", "libx264", "-preset", "ultrafast", "-qp", "0", "-pix_fmt", "yuv420p", "-c:a", "aac",
+            "-shortest", str(video),
+        ], check=True)
+        log = self.directory / "run.log"
+        log.write_text("".join(f"{kind} {START_MS + round(at * 1000)} {stage}\n" for kind, stage, at in [
+            ("STAGE_START", "a", 0.5), ("STAGE_END", "a", 1.5), ("STAGE_START", "b", 2.0), ("STAGE_END", "b", 3.5)]))
+        # The export starts at the raw capture's frame 100. Caption a was drawn before its clock (raw 110, frame
+        # 10), b only after its marker (raw 165, frame 65), as a test that marks the stage before it shows the
+        # caption draws it; the readout b2 that follows has another id.
+        marks = [{"id": "intro", "slot": 90, "presentUs": 0}, {"id": "a", "slot": 110, "presentUs": 0},
+                 {"id": "b", "slot": 165, "presentUs": 0}, {"id": "b2", "slot": 170, "presentUs": 0}]
+        meta = self.directory / "take.json"
+        meta.write_text(json.dumps({"fps": str(RATE), "boundaries": {
+            "selectedStartEpochSeconds": START_MS / 1000.0, "rawStartFrameIndex": 100,
+            "gameCaptureCaptionMarks": json.dumps(marks)}}))
+
+        result = cut(log, video, meta)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("cut by the game capture's caption marks", result.stdout)
+        self.assertIn("b: marker frame 60, caption b drawn from frame 65, clip from frame 65", result.stdout)
+        stages = json.loads(video.with_name("cut.stages.json").read_text())
+        self.assertEqual(stages, [{"stage": "a", "startFrame": 0, "endFrameExclusive": 37},
+                                  {"stage": "b", "startFrame": 37, "endFrameExclusive": 81}])
+        box = (0, 0, 64, 64)
+        # One source frame is 2.3 brighter than the one before it, as the gray read sees it.
+        self.assertAlmostEqual(brightness(video.with_name("cut.mp4"), 0, box), brightness(video, 12, box), delta=1)
+        self.assertAlmostEqual(brightness(video.with_name("cut.mp4"), 37, box), brightness(video, 65, box), delta=1)
+
+        by_clock = cut(log, video, meta, "--clock")
+        self.assertEqual(by_clock.returncode, 0, by_clock.stdout + by_clock.stderr)
+        self.assertIn("cut by the log's clock", by_clock.stdout)
+        self.assertEqual(json.loads(video.with_name("cut.stages.json").read_text())[1]["startFrame"], 37)
 
     def test_a_take_without_captions_fails_unless_cut_by_the_clock(self) -> None:
         log, video, meta = make_recording(
