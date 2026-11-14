@@ -133,9 +133,23 @@ class GameCaptureTest {
     void theCaptureClockDoesNotFollowAWallClockStep() {
         // The slots are anchored to one wall-clock reading and one monotonic one, so an NTP correction during a take
         // cannot move the video timeline against the sound's: two seconds of monotonic time is two seconds of slots.
-        assertEquals(START_US, GameCapture.anchoredUs(START_US, 0L, 0L));
-        assertEquals(START_US + 2_000_000L, GameCapture.anchoredUs(START_US, 5_000_000L, 2_005_000_000L));
-        assertEquals(START_US + 1L, GameCapture.anchoredUs(START_US, 0L, 1_999L));
+        assertEquals(START_US, new GameCapture.Anchor(START_US, 0L).us(0L));
+        assertEquals(START_US + 2_000_000L, new GameCapture.Anchor(START_US, 5_000_000L).us(2_005_000_000L));
+        assertEquals(START_US + 1L, new GameCapture.Anchor(START_US, 0L).us(1_999L));
+    }
+
+    @Test
+    void theSoundIsPlacedOnThePicturesAnchorNotOnAWallReadingOfItsOwn() {
+        // The capture starts with its anchor at monotonic 100 s. The sound device opened 30 s earlier, at client
+        // startup; a wall-clock step of +2 s in between would have put a wall reading taken at device open 2 s off
+        // the picture's timeline. Placed on the picture's anchor, the device's first sample is exactly 30 s before it.
+        GameCapture.Anchor anchor = new GameCapture.Anchor(START_US, 100_000_000_000L);
+
+        assertEquals(-30L * GameCaptureAudio.SAMPLE_RATE,
+                GameCaptureAudio.SoundClock.deviceStartIndex(anchor, START_US, 70_000_000_000L));
+        // A capture whose first slot is 1 s after the anchor: the device's sample at the anchor is 1 s before it.
+        assertEquals(-31L * GameCaptureAudio.SAMPLE_RATE,
+                GameCaptureAudio.SoundClock.deviceStartIndex(anchor, START_US + 1_000_000L, 70_000_000_000L));
     }
 
     @Test

@@ -10,7 +10,6 @@ import java.io.OutputStream;
 import java.nio.ByteBuffer;
 import java.nio.IntBuffer;
 import java.nio.file.Path;
-import java.time.Instant;
 import java.util.Properties;
 import java.util.concurrent.locks.LockSupport;
 
@@ -35,7 +34,8 @@ public final class GameCaptureAudio {
     private static volatile boolean running;
     /** Set when a renderer could not be stopped within its join: it still owns the sound pipe. */
     private static boolean stuck;
-    private static volatile long startUs = Long.MIN_VALUE;
+    /** Where the recording's sound starts, and the clock to place a device's samples by; null until it starts. */
+    private static volatile Start start;
     /** The sound pipe, shared by every device the sound engine opens, so a reload does not end the stream. */
     private static OutputStream out;
     // Written under WRITE_LOCK, read without it: the sound writer holds that lock while it waits on the pipe, and the
@@ -116,14 +116,17 @@ public final class GameCaptureAudio {
         }
     }
 
-    /** From now on the rendered mix goes to the recording, sample 0 at {@code captureStartUs}. */
-    static void startWriting(long captureStartUs) {
-        startUs = captureStartUs;
+    /**
+     * From now on the rendered mix goes to the recording, sample 0 at {@code captureStartUs} on the picture's
+     * {@code anchor}, so the sound and the picture tell time from the same wall-clock reading.
+     */
+    static void startWriting(long captureStartUs, GameCapture.Anchor anchor) {
+        start = new Start(captureStartUs, anchor);
     }
 
     /** Adds the sound capture's counts to the recording's boundary evidence. */
     static void describe(Properties evidence) {
-        if (startUs == Long.MIN_VALUE) {
+        if (start == null) {
             return;
         }
         evidence.setProperty("gameSoundFramesWritten", Long.toString(writtenFrames));
@@ -153,7 +156,6 @@ public final class GameCaptureAudio {
     }
 
     private static void render(long device) {
-        long renderStartUs = epochMicros();
         long renderStartNanos = System.nanoTime();
         ByteBuffer buffer = MemoryUtil.memAlloc(SAMPLE_RATE * BYTES_PER_FRAME);
         byte[] bytes = new byte[buffer.capacity()];
@@ -170,12 +172,12 @@ public final class GameCaptureAudio {
                     SOFTLoopback.alcRenderSamplesSOFT(device, buffer, count);
                     long first = rendered;
                     rendered += count;
-                    long captureStart = startUs;
-                    if (!writing || captureStart == Long.MIN_VALUE || AUDIO == null) {
+                    Start capture = start;
+                    if (!writing || capture == null || AUDIO == null) {
                         continue;
                     }
                     if (offset == Long.MIN_VALUE) {
-                        offset = SoundClock.frameIndex(renderStartUs, captureStart);
+                        offset = SoundClock.deviceStartIndex(capture.anchor(), capture.startUs(), renderStartNanos);
                     }
                     try {
                         write(buffer, bytes, count, offset + first);
@@ -222,6 +224,8 @@ public final class GameCaptureAudio {
         }
     }
 
+    private record Start(long startUs, GameCapture.Anchor anchor) {}
+
     /** The recording's sample clock. */
     static final class SoundClock {
         private SoundClock() {}
@@ -230,11 +234,14 @@ public final class GameCaptureAudio {
         static long frameIndex(long timeUs, long startUs) {
             return Math.floorDiv((timeUs - startUs) * SAMPLE_RATE, 1_000_000L);
         }
-    }
 
-    private static long epochMicros() {
-        Instant now = Instant.now();
-        return now.getEpochSecond() * 1_000_000L + now.getNano() / 1000L;
+        /**
+         * The recording's index of the sample a device rendered first, at the monotonic {@code deviceStartNanos}: the
+         * device's start is placed on the picture's {@code anchor}, not on a wall-clock reading of its own.
+         */
+        static long deviceStartIndex(GameCapture.Anchor anchor, long captureStartUs, long deviceStartNanos) {
+            return frameIndex(anchor.us(deviceStartNanos), captureStartUs);
+        }
     }
 
     private static Path path(String suffix) {
