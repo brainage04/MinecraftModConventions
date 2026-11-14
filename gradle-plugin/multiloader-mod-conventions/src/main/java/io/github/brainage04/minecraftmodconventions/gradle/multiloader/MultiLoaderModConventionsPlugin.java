@@ -3,6 +3,7 @@ package io.github.brainage04.minecraftmodconventions.gradle.multiloader;
 import io.github.brainage04.minecraftmodconventions.gradle.integration.IntegrationGameTestSuite;
 import io.github.brainage04.minecraftmodconventions.gradle.integration.IntegrationGameTestsPlugin;
 import io.github.brainage04.minecraftmodconventions.gradle.modpublishing.ModPublishingExtension;
+import io.github.brainage04.minecraftmodconventions.gradle.modpublishing.ModPublishingPlugin;
 import io.github.brainage04.minecraftmodconventions.gradle.production.ClientGameTestProductionRunTask;
 import io.github.brainage04.minecraftmodconventions.gradle.production.ClientLaunchEnvironment;
 import io.github.brainage04.minecraftmodconventions.gradle.production.ProductionGameTestExtension;
@@ -434,7 +435,13 @@ public final class MultiLoaderModConventionsPlugin implements Plugin<Project> {
     ) {
         ModPublishingExtension publishing = fabric.getExtensions().getByType(ModPublishingExtension.class);
         configureSharedPublishing(root, publishing);
-        fabric.getTasks().matching(task -> task.getName().startsWith("publish"))
+        gatePublication(fabric, fleetExtension);
+    }
+
+    private static void gatePublication(Project loader, MultiLoaderModConventionsExtension fleetExtension) {
+        loader.getTasks()
+                .matching(task -> task.getName().startsWith("publish")
+                        || task.getName().equals(ModPublishingPlugin.SUBMIT_MODRINTH_FOR_REVIEW_TASK_NAME))
                 .configureEach(task -> task.onlyIf(spec -> fleetExtension.getPublishing().get()));
     }
 
@@ -633,10 +640,15 @@ public final class MultiLoaderModConventionsPlugin implements Plugin<Project> {
         publishing.getDisplayName().set(requiredProperty(root, "mod_name") + " " + version + " (NeoForge)");
         publishing.getModLoaders().set(List.of("neoforge"));
         publishing.getFabricModJson().set(fabric.getLayout().getBuildDirectory().file("resources/main/fabric.mod.json"));
+        File neoForgeDependencies = root.file(".modrinth/neoforge-dependencies.json");
+        if (neoForgeDependencies.isFile()) {
+            publishing.getSourceFabricModJson().set(
+                    root.getLayout().getProjectDirectory().file(".modrinth/neoforge-dependencies.json")
+            );
+        }
         neoForge.getTasks().named("validateModPublication")
                 .configure(task -> task.dependsOn(fabric.getTasks().named("processResources")));
-        neoForge.getTasks().matching(task -> task.getName().startsWith("publish"))
-                .configureEach(task -> task.onlyIf(spec -> fleetExtension.getPublishing().get()));
+        gatePublication(neoForge, fleetExtension);
 
         neoForge.getTasks().named("jar", Jar.class).configure(task -> task.from(
                 root.file("LICENSE"),
@@ -658,12 +670,6 @@ public final class MultiLoaderModConventionsPlugin implements Plugin<Project> {
         if (icon.isFile()) {
             publishing.getModrinth().getIconFile().convention(
                     root.getLayout().getProjectDirectory().file(root.relativePath(icon))
-            );
-        }
-        File neoForgeDependencies = root.file(".modrinth/neoforge-dependencies.json");
-        if (neoForgeDependencies.isFile()) {
-            publishing.getSourceFabricModJson().set(
-                    root.getLayout().getProjectDirectory().file(".modrinth/neoforge-dependencies.json")
             );
         }
     }

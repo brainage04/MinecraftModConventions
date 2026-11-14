@@ -18,6 +18,11 @@ on:
         required: false
         default: true
         type: boolean
+      check_curseforge_dependencies:
+        description: Run checkCurseforgeDependencies before anything is published, so a fabric.mod.json dependency without a CurseForge slug stops the release here; pass true when the release publishes to CurseForge
+        required: false
+        default: false
+        type: boolean
       additional_artifact_pattern:
         description: Optional glob for one additional release JAR under build/libs
         required: false
@@ -193,6 +198,10 @@ jobs:
 
       - name: build
         run: ./gradlew clean build
+
+      - name: check CurseForge dependency slugs
+        if: inputs.check_curseforge_dependencies
+        run: ./gradlew checkCurseforgeDependencies
 
       - name: collect exact release artifacts
         id: artifact

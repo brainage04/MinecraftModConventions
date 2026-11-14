@@ -1,5 +1,6 @@
 package io.github.brainage04.minecraftmodconventions.gradle.modpublishing;
 
+import io.github.brainage04.minecraftmodconventions.gradle.modpublishing.curseforge.CheckCurseforgeDependenciesTask;
 import me.modmuss50.mpp.ReleaseType;
 import org.gradle.api.DefaultTask;
 import org.gradle.api.GradleException;
@@ -156,14 +157,7 @@ public abstract class ValidateModPublicationTask extends DefaultTask {
             if (requireTokens) {
                 required(getCurseforgeToken(), "modPublishing.curseforge.token or CURSEFORGE_TOKEN");
             }
-            List<String> withoutSlug = getCurseforgeDependenciesWithoutSlug().get();
-            if (!withoutSlug.isEmpty()) {
-                throw new GradleException(
-                        "No CurseForge slug for the fabric.mod.json dependencies " + String.join(", ", withoutSlug)
-                                + "; set dependency_overrides.<mod id>.curseforge_slug in .modrinth/project.json,"
-                                + " or curseforge_skip: true to leave a dependency off CurseForge."
-                );
-            }
+            CheckCurseforgeDependenciesTask.requireSlugs(getCurseforgeDependenciesWithoutSlug().get());
         }
     }
 

@@ -13,8 +13,12 @@ import org.gradle.api.tasks.Internal;
 import org.gradle.api.tasks.TaskAction;
 import org.gradle.work.DisableCachingByDefault;
 
+import java.io.IOException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 
 /** Submits a draft Modrinth project for moderator review, the step that makes a new project public. */
 @DisableCachingByDefault(because = "This task changes remote Modrinth state")
@@ -42,8 +46,14 @@ public abstract class SubmitModrinthProjectForReviewTask extends DefaultTask {
     @Internal
     public abstract Property<String> getToken();
 
+    @Input
+    public abstract Property<Boolean> getRequired();
+
+    @Internal
+    public abstract Property<String> getStepSummaryFile();
+
     @TaskAction
-    void submit() {
+    void submit() throws IOException {
         String projectId = getProjectId().getOrElse("").trim();
         if (getDryRun().get()) {
             getLogger().lifecycle("Would submit Modrinth project {} for review if it is a draft", projectId);
@@ -80,7 +90,23 @@ public abstract class SubmitModrinthProjectForReviewTask extends DefaultTask {
         edit.addProperty("status", PROCESSING);
         PublishingHttpClient.Response submission = client.patchJson(projectPath, edit.toString());
         if (submission.status() != 204) {
-            throw failure("submit Modrinth project " + projectId + " for review", submission);
+            GradleException refusal = failure("submit Modrinth project " + projectId + " for review", submission);
+            if (getRequired().get()) {
+                throw refusal;
+            }
+            getLogger().warn(refusal.getMessage());
+            String summary = getStepSummaryFile().getOrElse("");
+            if (!summary.isBlank()) {
+                Files.writeString(
+                        Path.of(summary),
+                        "- Modrinth: project " + projectId + " was not submitted for review: HTTP " + submission.status()
+                                + " " + submission.body().replaceAll("\\s+", " ").strip() + System.lineSeparator(),
+                        StandardCharsets.UTF_8,
+                        StandardOpenOption.CREATE,
+                        StandardOpenOption.APPEND
+                );
+            }
+            return;
         }
         getLogger().lifecycle("Submitted Modrinth project {} for review.", projectId);
     }

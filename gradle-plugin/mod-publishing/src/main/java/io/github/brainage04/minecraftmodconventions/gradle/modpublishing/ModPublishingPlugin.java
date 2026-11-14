@@ -2,6 +2,7 @@ package io.github.brainage04.minecraftmodconventions.gradle.modpublishing;
 
 import me.modmuss50.mpp.ModPublishExtension;
 import me.modmuss50.mpp.ReleaseType;
+import io.github.brainage04.minecraftmodconventions.gradle.modpublishing.curseforge.CheckCurseforgeDependenciesTask;
 import io.github.brainage04.minecraftmodconventions.gradle.modpublishing.github.PrepareGitHubReleaseTask;
 import io.github.brainage04.minecraftmodconventions.gradle.modpublishing.github.ResolveModReleaseNotesTask;
 import io.github.brainage04.minecraftmodconventions.gradle.modpublishing.modrinth.CheckModrinthVersionTask;
@@ -32,6 +33,7 @@ public final class ModPublishingPlugin implements Plugin<Project> {
     public static final String SYNC_MODRINTH_PROJECT_TASK_NAME = "syncModrinthProject";
     public static final String SYNC_MODRINTH_ICON_TASK_NAME = "syncModrinthIcon";
     public static final String SUBMIT_MODRINTH_FOR_REVIEW_TASK_NAME = "submitModrinthProjectForReview";
+    public static final String CHECK_CURSEFORGE_DEPENDENCIES_TASK_NAME = "checkCurseforgeDependencies";
 
     private static final String UPSTREAM_PLUGIN_ID = "me.modmuss50.mod-publish-plugin";
 
@@ -71,6 +73,15 @@ public final class ModPublishingPlugin implements Plugin<Project> {
                 "Publishes the validated release artifact to every enabled distribution destination."
         ));
 
+        TaskProvider<CheckCurseforgeDependenciesTask> checkCurseforgeDependencies = project.getTasks().register(
+                CHECK_CURSEFORGE_DEPENDENCIES_TASK_NAME,
+                CheckCurseforgeDependenciesTask.class,
+                task -> {
+                    task.setGroup("verification");
+                    task.setDescription("Fails when a fabric.mod.json dependency has no CurseForge slug.");
+                }
+        );
+
         project.afterEvaluate(ignored -> {
             List<String> withoutCurseforgeSlug = UpstreamModPublishingAdapter.configureProjectMetadata(
                     project,
@@ -78,6 +89,7 @@ public final class ModPublishingPlugin implements Plugin<Project> {
                     destinations
             );
             validate.configure(task -> task.getCurseforgeDependenciesWithoutSlug().set(withoutCurseforgeSlug));
+            checkCurseforgeDependencies.configure(task -> task.getDependenciesWithoutSlug().set(withoutCurseforgeSlug));
         });
     }
 
@@ -173,7 +185,7 @@ public final class ModPublishingPlugin implements Plugin<Project> {
         );
         extension.getModrinth().getDiscordUrl().convention("https://discord.gg/N4zfhBx8Fm");
         extension.getModrinth().getSubmitForReview().convention(
-                providers.environmentVariable("MODRINTH_SUBMIT_FOR_REVIEW")
+                nonBlankEnvironmentVariable(project, "MODRINTH_SUBMIT_FOR_REVIEW")
                         .orElse(providers.gradleProperty("modrinthSubmitForReview"))
                         .map(value -> strictBoolean(value, "MODRINTH_SUBMIT_FOR_REVIEW or modrinthSubmitForReview"))
                         .orElse(false)
@@ -479,6 +491,14 @@ public final class ModPublishingPlugin implements Plugin<Project> {
                     task.getUserAgent().convention(userAgent);
                     task.getMaxRetries().convention(extension.getMaxRetries());
                     task.getToken().convention(extension.getModrinth().getToken().orElse(""));
+                    task.getRequired().convention(
+                            nonBlankEnvironmentVariable(project, "MODRINTH_REVIEW_REQUIRED")
+                                    .map(value -> strictBoolean(value, "MODRINTH_REVIEW_REQUIRED"))
+                                    .orElse(false)
+                    );
+                    task.getStepSummaryFile().convention(
+                            project.getProviders().environmentVariable("GITHUB_STEP_SUMMARY")
+                    );
                     task.mustRunAfter("publishModrinth");
                     task.onlyIf("Modrinth publication is enabled", ignored -> enabled.get());
                     task.onlyIf("Modrinth review submission is enabled", ignored -> submitForReview.get());
@@ -486,6 +506,12 @@ public final class ModPublishingPlugin implements Plugin<Project> {
                 }
         );
         project.getTasks().named("publishModrinth").configure(task -> task.finalizedBy(submit));
+    }
+
+    // The release workflow exports an empty value when an input is off, and an empty variable must not hide the
+    // matching Gradle property or fail strictBoolean.
+    private static Provider<String> nonBlankEnvironmentVariable(Project project, String name) {
+        return project.getProviders().environmentVariable(name).filter(value -> !value.isBlank());
     }
 
     private static void configurePublicationTask(

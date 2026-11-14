@@ -111,6 +111,7 @@ jobs:
                 ;;
             esac
           done
+          echo "required=${required}" >> "$GITHUB_OUTPUT"
           if [ -n "${MODRINTH_TOKEN}" ]; then
             echo "enabled=true" >> "$GITHUB_OUTPUT"
             exit 0
@@ -300,7 +301,8 @@ jobs:
           GRADLE_TASK: ${{ inputs.gradle_task }}
           MOD_PUBLISHING_RELEASE_JAR: release-artifacts/${{ inputs.artifact_file }}
           MODRINTH_TOKEN: ${{ secrets.modrinth_token }}
-          MODRINTH_SUBMIT_FOR_REVIEW: ${{ inputs.submit_for_review }}
+          MODRINTH_REVIEW_REQUIRED: ${{ steps.config.outputs.required }}
+          MODRINTH_SUBMIT_FOR_REVIEW: ${{ inputs.submit_for_review && 'true' || '' }}
           RELEASE_BODY: ${{ inputs.release_body }}
           RELEASE_PRERELEASE: ${{ contains(github.ref_name, '-') }}
           RELEASE_TAG: ${{ github.ref_name }}

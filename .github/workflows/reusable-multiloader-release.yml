@@ -143,6 +143,7 @@ jobs:
       git_ssh_repositories: ${{ inputs.git_ssh_repositories }}
       additional_artifact_pattern: ${{ inputs.additional_artifact_pattern }}
       resolve_release_notes_with_gradle: false
+      check_curseforge_dependencies: ${{ inputs.publish_curseforge && inputs.curseforge_project_id != '' }}
     secrets:
       release_token: ${{ secrets.release_token }}
       git_ssh_key: ${{ secrets.git_ssh_key }}
@@ -182,7 +183,8 @@ jobs:
       gradle_task: ${{ inputs.fabric_modrinth_task }}
       sync_gradle_task: ${{ inputs.fabric_modrinth_sync_task }}
       sync_state_file: ${{ inputs.fabric_modrinth_state_file }}
-      submit_for_review: ${{ inputs.modrinth_submit_for_review }}
+      # With a NeoForge artifact the NeoForge job uploads last, so it submits once both versions exist.
+      submit_for_review: ${{ inputs.modrinth_submit_for_review && inputs.additional_artifact_pattern == '' }}
       require_stores: ${{ inputs.require_stores }}
     secrets:
       modrinth_token: ${{ secrets.modrinth_token }}
