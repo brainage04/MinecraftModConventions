@@ -61,6 +61,16 @@ on:
         required: false
         default: ''
         type: string
+      submit_for_review:
+        description: Submit the Modrinth project for review after this version is uploaded while the project is still a draft; a draft project and its versions are not public
+        required: false
+        default: false
+        type: boolean
+      require_stores:
+        description: Space-separated stores (modrinth, curseforge) that must publish; when one listed here is skipped for missing configuration the job fails instead of noting the skip in the step summary
+        required: false
+        default: ''
+        type: string
     secrets:
       modrinth_token:
         description: Modrinth personal access token
@@ -82,17 +92,37 @@ jobs:
     outputs:
       project_id: ${{ steps.project.outputs.id }}
     steps:
-      - name: check Modrinth token
+      - name: check Modrinth configuration
         id: config
         env:
+          ARTIFACT_FILE: ${{ inputs.artifact_file }}
           MODRINTH_TOKEN: ${{ secrets.modrinth_token }}
+          REQUIRE_STORES: ${{ inputs.require_stores }}
         run: |
-          if [ -z "${MODRINTH_TOKEN}" ]; then
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::Skipping Modrinth publication because its token is not configured."
-          else
+          required=false
+          read -ra stores <<< "${REQUIRE_STORES}"
+          for store in "${stores[@]}"; do
+            case "${store}" in
+              modrinth) required=true ;;
+              curseforge) ;;
+              *)
+                echo "::error::Unknown store '${store}' in require_stores; expected modrinth or curseforge."
+                exit 1
+                ;;
+            esac
+          done
+          if [ -n "${MODRINTH_TOKEN}" ]; then
             echo "enabled=true" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+          message="Modrinth: ${ARTIFACT_FILE} not published, missing secret MODRINTH_TOKEN (the modrinth_token secret)."
+          echo "- ${message}" >> "$GITHUB_STEP_SUMMARY"
+          if [ "${required}" = true ]; then
+            echo "::error::${message} require_stores lists modrinth."
+            exit 1
+          fi
+          echo "enabled=false" >> "$GITHUB_OUTPUT"
+          echo "::notice::${message}"
 
       - name: checkout repository
         if: steps.config.outputs.enabled == 'true'
@@ -270,6 +300,7 @@ jobs:
           GRADLE_TASK: ${{ inputs.gradle_task }}
           MOD_PUBLISHING_RELEASE_JAR: release-artifacts/${{ inputs.artifact_file }}
           MODRINTH_TOKEN: ${{ secrets.modrinth_token }}
+          MODRINTH_SUBMIT_FOR_REVIEW: ${{ inputs.submit_for_review }}
           RELEASE_BODY: ${{ inputs.release_body }}
           RELEASE_PRERELEASE: ${{ contains(github.ref_name, '-') }}
           RELEASE_TAG: ${{ github.ref_name }}

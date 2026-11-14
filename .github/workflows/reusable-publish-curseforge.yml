@@ -50,6 +50,11 @@ on:
         required: false
         default: ''
         type: string
+      require_stores:
+        description: Space-separated stores (modrinth, curseforge) that must publish; when one listed here is skipped for missing configuration the job fails instead of noting the skip in the step summary
+        required: false
+        default: ''
+        type: string
     secrets:
       curseforge_token:
         description: CurseForge API token
@@ -68,18 +73,53 @@ jobs:
       - name: check CurseForge configuration
         id: config
         env:
+          ARTIFACT_FILE: ${{ inputs.artifact_file }}
           CURSEFORGE_PROJECT_ID: ${{ inputs.project_id }}
           CURSEFORGE_TOKEN: ${{ secrets.curseforge_token }}
+          REQUIRE_STORES: ${{ inputs.require_stores }}
         run: |
-          if [ -z "${CURSEFORGE_TOKEN}" ]; then
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::Skipping CurseForge publication because its token is not configured."
-          elif [ -z "${CURSEFORGE_PROJECT_ID}" ]; then
-            echo "Missing CurseForge project id."
-            exit 1
-          else
+          required=false
+          read -ra stores <<< "${REQUIRE_STORES}"
+          for store in "${stores[@]}"; do
+            case "${store}" in
+              curseforge) required=true ;;
+              modrinth) ;;
+              *)
+                echo "::error::Unknown store '${store}' in require_stores; expected modrinth or curseforge."
+                exit 1
+                ;;
+            esac
+          done
+          if [ -n "${CURSEFORGE_TOKEN}" ] && [ -n "${CURSEFORGE_PROJECT_ID}" ]; then
             echo "enabled=true" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+          missing=()
+          if [ -z "${CURSEFORGE_PROJECT_ID}" ]; then
+            missing+=("repository variable CURSEFORGE_PROJECT_ID (the project_id input)")
+          fi
+          if [ -z "${CURSEFORGE_TOKEN}" ]; then
+            missing+=("secret CURSEFORGE_TOKEN (the curseforge_token secret)")
+          fi
+          message="CurseForge: ${ARTIFACT_FILE} not published, missing ${missing[0]}${missing[1]:+ and ${missing[1]}}."
+          if [ -z "${CURSEFORGE_PROJECT_ID}" ]; then
+            message+=" CurseForge has no API to create a project: create it by hand in the author console (https://authors.curseforge.com/) and set its numeric id."
+          fi
+          if [ -z "${CURSEFORGE_TOKEN}" ]; then
+            message+=" The token is an upload API token from https://authors.curseforge.com/#/settings/api-tokens; a secret named CURSEFORGE_API_KEY is not read."
+          fi
+          echo "- ${message}" >> "$GITHUB_STEP_SUMMARY"
+          if [ "${required}" = true ]; then
+            echo "::error::${message} require_stores lists curseforge."
+            exit 1
+          fi
+          # A token without a project id is a half-configured store, not an opted-out one, so it fails even when not required.
+          if [ -n "${CURSEFORGE_TOKEN}" ]; then
+            echo "::error::${message}"
+            exit 1
+          fi
+          echo "enabled=false" >> "$GITHUB_OUTPUT"
+          echo "::notice::${message}"
 
       - name: checkout repository
         if: steps.config.outputs.enabled == 'true'

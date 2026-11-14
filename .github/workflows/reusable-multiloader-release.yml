@@ -43,6 +43,16 @@ on:
         required: false
         default: ''
         type: string
+      modrinth_submit_for_review:
+        description: Submit the Modrinth project for review after the upload while it is still a draft; a draft project and its versions are not public
+        required: false
+        default: false
+        type: boolean
+      require_stores:
+        description: Space-separated stores (modrinth, curseforge) that must publish; when one listed here is skipped for missing configuration its job fails instead of noting the skip in the step summary
+        required: false
+        default: ''
+        type: string
       curseforge_project_slug:
         description: CurseForge project slug
         required: false
@@ -172,6 +182,8 @@ jobs:
       gradle_task: ${{ inputs.fabric_modrinth_task }}
       sync_gradle_task: ${{ inputs.fabric_modrinth_sync_task }}
       sync_state_file: ${{ inputs.fabric_modrinth_state_file }}
+      submit_for_review: ${{ inputs.modrinth_submit_for_review }}
+      require_stores: ${{ inputs.require_stores }}
     secrets:
       modrinth_token: ${{ secrets.modrinth_token }}
       git_ssh_key: ${{ secrets.git_ssh_key }}
@@ -195,6 +207,8 @@ jobs:
       project_id: ${{ needs.modrinth-fabric.outputs.project_id }}
       gradle_task: ${{ inputs.neoforge_modrinth_task }}
       sync_project: false
+      submit_for_review: ${{ inputs.modrinth_submit_for_review }}
+      require_stores: ${{ inputs.require_stores }}
     secrets:
       modrinth_token: ${{ secrets.modrinth_token }}
       git_ssh_key: ${{ secrets.git_ssh_key }}
@@ -216,6 +230,7 @@ jobs:
       project_id: ${{ inputs.curseforge_project_id }}
       project_slug: ${{ inputs.curseforge_project_slug }}
       gradle_task: ${{ inputs.fabric_curseforge_task }}
+      require_stores: ${{ inputs.require_stores }}
     secrets:
       curseforge_token: ${{ secrets.curseforge_token }}
       git_ssh_key: ${{ secrets.git_ssh_key }}
@@ -239,6 +254,7 @@ jobs:
       project_id: ${{ inputs.curseforge_project_id }}
       project_slug: ${{ inputs.curseforge_project_slug }}
       gradle_task: ${{ inputs.neoforge_curseforge_task }}
+      require_stores: ${{ inputs.require_stores }}
     secrets:
       curseforge_token: ${{ secrets.curseforge_token }}
       git_ssh_key: ${{ secrets.git_ssh_key }}
