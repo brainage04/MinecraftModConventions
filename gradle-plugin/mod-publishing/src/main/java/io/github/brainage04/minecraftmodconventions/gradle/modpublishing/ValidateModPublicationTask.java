@@ -98,6 +98,9 @@ public abstract class ValidateModPublicationTask extends DefaultTask {
     @Internal
     public abstract Property<String> getCurseforgeToken();
 
+    @Input
+    public abstract ListProperty<String> getCurseforgeDependenciesWithoutSlug();
+
     @TaskAction
     void validatePublication() {
         boolean github = getGithubEnabled().get();
@@ -152,6 +155,14 @@ public abstract class ValidateModPublicationTask extends DefaultTask {
             required(getCurseforgeProjectId(), "modPublishing.curseforge.projectId");
             if (requireTokens) {
                 required(getCurseforgeToken(), "modPublishing.curseforge.token or CURSEFORGE_TOKEN");
+            }
+            List<String> withoutSlug = getCurseforgeDependenciesWithoutSlug().get();
+            if (!withoutSlug.isEmpty()) {
+                throw new GradleException(
+                        "No CurseForge slug for the fabric.mod.json dependencies " + String.join(", ", withoutSlug)
+                                + "; set dependency_overrides.<mod id>.curseforge_slug in .modrinth/project.json,"
+                                + " or curseforge_skip: true to leave a dependency off CurseForge."
+                );
             }
         }
     }

@@ -589,7 +589,14 @@ Before a mod's first store release:
 
 1. **Modrinth:** add the secret `MODRINTH_TOKEN`, a personal access token with the `PROJECT_CREATE`, `PROJECT_WRITE` and `VERSION_CREATE` scopes. The first release creates the project as a draft from `.modrinth/project.json`, `README.md` and the icon. Pass `submit_for_review: true` (`modrinth_submit_for_review: true` to `reusable-multiloader-release.yml`) to submit it for review after the upload; otherwise submit it on modrinth.com. Either way it becomes public only once a moderator approves it.
 2. **CurseForge:** the [upload API](https://support.curseforge.com/en/support/solutions/articles/9000197321-curseforge-upload-api) uploads files to an existing project and cannot create one, so create the project by hand in the [author console](https://authors.curseforge.com/). Then set the repository variable `CURSEFORGE_PROJECT_ID` to its numeric id (shown on its overview page) and the secret `CURSEFORGE_TOKEN` to a token from the console's [API tokens](https://authors.curseforge.com/#/settings/api-tokens) page. The mods' release workflows pass `secrets.CURSEFORGE_TOKEN` as the `curseforge_token` secret, so a repository that holds its key only as `CURSEFORGE_API_KEY` must add a `CURSEFORGE_TOKEN` secret holding a token from that page.
-3. **Dependencies:** release BrainageLib, or any other library the mod depends on, to each store first. The Modrinth version names its dependencies by slug from `fabric.mod.json`'s `depends`, so `brainagelib` has to exist on Modrinth, and be approved before players can install it. The CurseForge upload declares no dependencies, so players find BrainageLib only if it is on CurseForge.
+3. **Dependencies:** release BrainageLib, or any other library the mod depends on, to each store first. Both uploads declare the dependencies in `fabric.mod.json`'s `depends` (required), `recommends` and `suggests` (optional), and `conflicts` and `breaks` (incompatible), except `minecraft`, `java`, `fabricloader` and those whose `dependency_overrides` entry in `.modrinth/project.json` sets `skip: true`. Modrinth names them by slug and the upload fails when Modrinth knows no project with that slug, so `brainagelib` has to exist on Modrinth, and be approved before players can install it. CurseForge names them by the entry's `curseforge_slug`, sent as the upload's `relations.projects`; validation of a CurseForge release fails for a dependency without one (`fabric-api` needs one too), and `curseforge_skip: true` leaves a dependency off CurseForge only:
+
+   ```json
+   "dependency_overrides": {
+     "brainagelib": { "curseforge_slug": "brainagelib" },
+     "modmenu": { "curseforge_skip": true }
+   }
+   ```
 
 ## Fleet audit
 

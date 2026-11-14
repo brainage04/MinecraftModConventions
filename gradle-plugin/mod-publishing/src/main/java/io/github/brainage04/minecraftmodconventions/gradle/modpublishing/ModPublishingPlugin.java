@@ -71,11 +71,14 @@ public final class ModPublishingPlugin implements Plugin<Project> {
                 "Publishes the validated release artifact to every enabled distribution destination."
         ));
 
-        project.afterEvaluate(ignored -> UpstreamModPublishingAdapter.configureProjectMetadata(
-                project,
-                extension,
-                destinations.modrinth()
-        ));
+        project.afterEvaluate(ignored -> {
+            List<String> withoutCurseforgeSlug = UpstreamModPublishingAdapter.configureProjectMetadata(
+                    project,
+                    extension,
+                    destinations
+            );
+            validate.configure(task -> task.getCurseforgeDependenciesWithoutSlug().set(withoutCurseforgeSlug));
+        });
     }
 
     private static void configureDefaults(Project project, ModPublishingExtension extension) {
