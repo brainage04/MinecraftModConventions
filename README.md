@@ -56,6 +56,8 @@ modPublishing {
 
 `publishGithub`, `publishModrinth` and `publishCurseforge` can be retried independently; `publishMods` runs all enabled ones. The Modrinth description is synced from `README.md` and the icon from `assets/<mod_id>/icon.png`. `build` and `check` never contact these services.
 
+A Modrinth project that the sync creates stays a draft, and neither it nor its versions are public until a moderator approves it. `modrinth { submitForReview.set(true) }` (or `MODRINTH_SUBMIT_FOR_REVIEW=true`, or `-PmodrinthSubmitForReview=true`; a non-empty environment variable wins over the property) makes `publishModrinth` finish with `submitModrinthProjectForReview`, which submits a draft project for review by setting its status to `processing` ([Modrinth API](https://docs.modrinth.com/api/operations/modifyproject/)). A project in any other status is left alone. When Modrinth refuses the submission, for example while the project still has a required check open on modrinth.com, the task logs Modrinth's reason as a warning and writes it to `$GITHUB_STEP_SUMMARY`, and the release carries on; with `MODRINTH_REVIEW_REQUIRED=true` (the workflows set it when `require_stores` lists `modrinth`) it fails instead. The fleet's `publishing = false` skips the submission too.
+
 `maven-central-publishing` is for libraries. See [docs/PUBLISHING.md](docs/PUBLISHING.md) for credentials and the release command.
 
 ### Workflows
@@ -99,6 +101,6 @@ No in-game commands. The Gradle tasks are in [docs/GRADLE_RUN_TASKS.md](docs/GRA
 - [docs/QUALITY_CHECKS.md](docs/QUALITY_CHECKS.md) - the vanilla identity, tag identity, world height and deprecated GameTest API checks, and the strict switches.
 - [docs/CLIENT_GAMETESTS.md](docs/CLIENT_GAMETESTS.md) - the client GameTest rules, the recording rules and standard, and the test helpers.
 - [docs/RECORDING.md](docs/RECORDING.md) - the client GameTest recorder.
-- [docs/WORKFLOWS.md](docs/WORKFLOWS.md) - the reusable GitHub workflows.
+- [docs/WORKFLOWS.md](docs/WORKFLOWS.md) - the reusable GitHub workflows, and what a mod needs before its first store release.
 - [docs/PUBLISHING.md](docs/PUBLISHING.md) - releasing MinecraftModConventions to Maven Central.
 - [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) - the fleet audit script.

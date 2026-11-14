@@ -83,9 +83,13 @@ class ModPublishingPluginTest {
                           "slug": "publisher-fixture",
                           "categories": ["library"],
                           "dependency_overrides": {
-                            "fzzy_config": { "project_slug": "fzzy-config" },
+                            "fzzy_config": { "project_slug": "fzzy-config", "curseforge_slug": "fzzy-config" },
                             "modmenu": { "skip": true },
-                            "bad_mod": { "project_id": "AbCdEf12", "dependency_type": "incompatible" }
+                            "bad_mod": {
+                              "project_id": "AbCdEf12",
+                              "dependency_type": "incompatible",
+                              "curseforge_slug": "bad-mod"
+                            }
                           },
                           "version": {
                             "game_versions": ["26.1.2"],
@@ -311,6 +315,110 @@ class ModPublishingPluginTest {
     }
 
     @Test
+    void declaresCurseForgeRelationsFromFabricDependencies() throws Exception {
+        Files.writeString(
+                projectDirectory.resolve(".modrinth/project.json"),
+                """
+                        {
+                          "slug": "publisher-fixture",
+                          "dependency_overrides": {
+                            "fzzy_config": { "curseforge_slug": "fzzy-config" },
+                            "modmenu": { "curseforge_slug": "modmenu" },
+                            "bad_mod": { "dependency_type": "incompatible", "curseforge_slug": "bad-mod" }
+                          }
+                        }
+                        """
+        );
+        try (var server = FakeModrinthServer.start(true)) {
+            writeBuildFile("""
+                    dryRun = false
+                    curseforge {
+                        enabled = true
+                        projectId = '12345'
+                        token = 'fixture-token'
+                        apiEndpoint = '%s'
+                    }
+                    """.formatted(server.apiEndpoint()), "");
+
+            BuildResult result = runGradle("publishCurseforge");
+
+            assertEquals(TaskOutcome.SUCCESS, result.task(":publishCurseforge").getOutcome());
+            String upload = server.singleRequest("POST", "/api/projects/12345/upload-file").utf8Body();
+            assertTrue(upload.contains("\"relations\":{\"projects\":["), upload);
+            assertTrue(upload.contains("{\"slug\":\"fzzy-config\",\"type\":\"requiredDependency\"}"), upload);
+            assertTrue(upload.contains("{\"slug\":\"modmenu\",\"type\":\"optionalDependency\"}"), upload);
+            assertTrue(upload.contains("{\"slug\":\"bad-mod\",\"type\":\"incompatible\"}"), upload);
+        }
+    }
+
+    @Test
+    void rejectsCurseForgePublicationWithADependencyThatHasNoCurseForgeSlug() throws IOException {
+        Files.writeString(
+                projectDirectory.resolve(".modrinth/project.json"),
+                """
+                        {
+                          "slug": "publisher-fixture",
+                          "dependency_overrides": {
+                            "modmenu": { "curseforge_skip": true },
+                            "bad_mod": { "dependency_type": "incompatible", "curseforge_slug": "bad-mod" }
+                          }
+                        }
+                        """
+        );
+        writeBuildFile("""
+                dryRun = true
+                curseforge {
+                    enabled = true
+                    projectId = '12345'
+                }
+                """, "");
+
+        BuildResult result = runGradleAndFail("publishCurseforge");
+
+        assertEquals(TaskOutcome.FAILED, result.task(":validateModPublication").getOutcome());
+        assertTrue(
+                result.getOutput().contains("No CurseForge slug for the fabric.mod.json dependencies fzzy_config;"),
+                result.getOutput()
+        );
+    }
+
+    @Test
+    void checksCurseForgeSlugsBeforeAnyPublicationAndIgnoresThemWithoutCurseForge() throws IOException {
+        Files.writeString(
+                projectDirectory.resolve(".modrinth/project.json"),
+                """
+                        {
+                          "slug": "publisher-fixture",
+                          "dependency_overrides": {
+                            "modmenu": { "curseforge_skip": true },
+                            "bad_mod": { "dependency_type": "incompatible", "curseforge_slug": "bad-mod" }
+                          }
+                        }
+                        """
+        );
+        writeBuildFile("""
+                dryRun = true
+                modrinth {
+                    enabled = true
+                    projectId = 'AbCdEf12'
+                }
+                """, "");
+
+        assertEquals(
+                TaskOutcome.SUCCESS,
+                runGradle("validateModPublication").task(":validateModPublication").getOutcome()
+        );
+
+        BuildResult result = runGradleAndFail("checkCurseforgeDependencies");
+
+        assertEquals(TaskOutcome.FAILED, result.task(":checkCurseforgeDependencies").getOutcome());
+        assertTrue(
+                result.getOutput().contains("No CurseForge slug for the fabric.mod.json dependencies fzzy_config;"),
+                result.getOutput()
+        );
+    }
+
+    @Test
     void createsAndUpdatesMissingModrinthProject() throws Exception {
         try (var server = FakeModrinthServer.start(false)) {
             writeBuildFile(modrinthSyncConfiguration(server.apiEndpoint()), "");
@@ -427,6 +535,136 @@ class ModPublishingPluginTest {
 
             assertEquals(TaskOutcome.SUCCESS, published.task(":publishModrinth").getOutcome());
             assertEquals(1, server.requests("POST", "/version").size());
+        }
+    }
+
+    @Test
+    void submitsDraftModrinthProjectForReviewOnlyWhenOptedIn() throws Exception {
+        try (var server = FakeModrinthServer.start(true, false)) {
+            writeBuildFile("""
+                    dryRun = false
+                    modrinth {
+                        enabled = true
+                        projectId = 'AbCdEf12'
+                        token = 'fixture-token'
+                        apiEndpoint = '%s'
+                    }
+                    """.formatted(server.apiEndpoint()), "");
+
+            runGradleWithEnvironment(Map.of("MODRINTH_SUBMIT_FOR_REVIEW", ""), "publishModrinth");
+
+            assertEquals(1, server.requests("POST", "/version").size());
+            assertEquals(0, server.requests("PATCH", "/project/AbCdEf12").size());
+            assertEquals("draft", server.projectStatus());
+
+            BuildResult submitted = runGradleWithEnvironment(
+                    Map.of("MODRINTH_SUBMIT_FOR_REVIEW", "true"),
+                    "publishModrinth"
+            );
+
+            assertEquals(TaskOutcome.SKIPPED, submitted.task(":publishModrinth").getOutcome());
+            assertEquals(
+                    TaskOutcome.SUCCESS,
+                    submitted.task(":submitModrinthProjectForReview").getOutcome()
+            );
+            RecordedRequest submission = server.singleRequest("PATCH", "/project/AbCdEf12");
+            assertEquals("fixture-token", submission.authorization());
+            assertEquals(
+                    "processing",
+                    JsonParser.parseString(submission.utf8Body()).getAsJsonObject().get("status").getAsString()
+            );
+            assertEquals("processing", server.projectStatus());
+
+            runGradleWithEnvironment(Map.of("MODRINTH_SUBMIT_FOR_REVIEW", "true"), "publishModrinth");
+
+            assertEquals(1, server.requests("PATCH", "/project/AbCdEf12").size());
+        }
+    }
+
+    @Test
+    void submitsDraftModrinthProjectForReviewAfterTheFirstUpload() throws Exception {
+        try (var server = FakeModrinthServer.start(true, false)) {
+            writeBuildFile("""
+                    dryRun = false
+                    modrinth {
+                        enabled = true
+                        projectId = 'AbCdEf12'
+                        token = 'fixture-token'
+                        apiEndpoint = '%s'
+                        submitForReview = true
+                    }
+                    """.formatted(server.apiEndpoint()), "");
+
+            runGradle("publishModrinth");
+
+            List<RecordedRequest> requests = server.requests();
+            int upload = requests.indexOf(server.singleRequest("POST", "/version"));
+            int submission = requests.indexOf(server.singleRequest("PATCH", "/project/AbCdEf12"));
+            assertTrue(upload < submission, () -> "requests: " + requests);
+            assertEquals("processing", server.projectStatus());
+        }
+    }
+
+    @Test
+    void dryRunNeverSubmitsModrinthProjectForReview() throws Exception {
+        try (var server = FakeModrinthServer.start(true, false)) {
+            writeBuildFile("""
+                    dryRun = true
+                    modrinth {
+                        enabled = true
+                        projectId = 'AbCdEf12'
+                        apiEndpoint = '%s'
+                        submitForReview = true
+                    }
+                    """.formatted(server.apiEndpoint()), "");
+
+            BuildResult result = runGradle("publishModrinth");
+
+            assertEquals(TaskOutcome.SUCCESS, result.task(":submitModrinthProjectForReview").getOutcome());
+            assertEquals(0, server.requests("PATCH", "/project/AbCdEf12").size());
+        }
+    }
+
+    @Test
+    void warnsAboutARefusedModrinthReviewUnlessModrinthIsRequired() throws Exception {
+        try (var server = FakeModrinthServer.start(true, false)) {
+            server.setReviewRejection("project must have no required validation nags before or during review or approval");
+            writeBuildFile("""
+                    dryRun = false
+                    modrinth {
+                        enabled = true
+                        projectId = 'AbCdEf12'
+                        token = 'fixture-token'
+                        apiEndpoint = '%s'
+                        submitForReview = true
+                    }
+                    """.formatted(server.apiEndpoint()), "");
+            Path summary = projectDirectory.resolve("step-summary.md");
+
+            BuildResult warned = runGradleWithEnvironment(
+                    Map.of("GITHUB_STEP_SUMMARY", summary.toString()),
+                    "publishModrinth"
+            );
+
+            assertEquals(TaskOutcome.SUCCESS, warned.task(":publishModrinth").getOutcome());
+            assertEquals(TaskOutcome.SUCCESS, warned.task(":submitModrinthProjectForReview").getOutcome());
+            assertTrue(warned.getOutput().contains("required validation nags"), warned.getOutput());
+            String summaryText = Files.readString(summary);
+            assertTrue(summaryText.startsWith("- Modrinth: project AbCdEf12 was not submitted for review"), summaryText);
+            assertTrue(summaryText.contains("required validation nags"), summaryText);
+            assertEquals("draft", server.projectStatus());
+
+            Map<String, String> requiredEnvironment = new LinkedHashMap<>(System.getenv());
+            requiredEnvironment.put("MODRINTH_REVIEW_REQUIRED", "true");
+            BuildResult failed = GradleRunner.create()
+                    .withProjectDir(projectDirectory.toFile())
+                    .withPluginClasspath()
+                    .withEnvironment(requiredEnvironment)
+                    .withArguments("publishModrinth")
+                    .buildAndFail();
+
+            assertEquals(TaskOutcome.FAILED, failed.task(":submitModrinthProjectForReview").getOutcome());
+            assertTrue(failed.getOutput().contains("required validation nags"), failed.getOutput());
         }
     }
 
@@ -713,6 +951,8 @@ class ModPublishingPluginTest {
         private volatile boolean githubAssetExists;
         private volatile String iconUrl = "https://cdn.modrinth.com/data/AbCdEf12/old_icon.png";
         private volatile int githubFailuresRemaining;
+        private volatile String projectStatus = "draft";
+        private volatile String reviewRejection;
 
         private FakeModrinthServer(
                 HttpServer server,
@@ -757,6 +997,18 @@ class ModPublishingPluginTest {
 
         synchronized int requestCount() {
             return requests.size();
+        }
+
+        synchronized List<RecordedRequest> requests() {
+            return List.copyOf(requests);
+        }
+
+        String projectStatus() {
+            return projectStatus;
+        }
+
+        void setReviewRejection(String reviewRejection) {
+            this.reviewRejection = reviewRejection;
         }
 
         void setPublishedVersionExists(boolean publishedVersionExists) {
@@ -851,6 +1103,25 @@ class ModPublishingPluginTest {
                 );
                 return;
             }
+            if ("GET".equals(exchange.getRequestMethod()) && "/project/AbCdEf12".equals(path)) {
+                respond(exchange, 200, """
+                        {"id":"AbCdEf12","status":"%s"}
+                        """.formatted(projectStatus));
+                return;
+            }
+            if ("PATCH".equals(exchange.getRequestMethod()) && "/project/AbCdEf12".equals(path)) {
+                if (reviewRejection != null) {
+                    respond(exchange, 400, "{\"error\":\"invalid_input\",\"description\":\"" + reviewRejection + "\"}");
+                    return;
+                }
+                JsonObject edit = JsonParser.parseString(new String(requestBody, StandardCharsets.UTF_8))
+                        .getAsJsonObject();
+                if (edit.has("status")) {
+                    projectStatus = edit.get("status").getAsString();
+                }
+                respond(exchange, 204, "");
+                return;
+            }
             if ("POST".equals(exchange.getRequestMethod()) && "/version".equals(path)) {
                 publishedVersionExists = true;
                 respond(
@@ -881,6 +1152,29 @@ class ModPublishingPluginTest {
             if ("POST".equals(exchange.getRequestMethod())
                     && "/repos/brainage04/publisher-fixture/releases/generate-notes".equals(path)) {
                 respond(exchange, 200, "{\"body\":\"Generated release notes\"}");
+                return;
+            }
+            if ("GET".equals(exchange.getRequestMethod()) && "/api/game/version-types".equals(path)) {
+                respond(exchange, 200, """
+                        [{"id":1,"name":"Minecraft","slug":"minecraft-release"},
+                         {"id":2,"name":"Modloader","slug":"modloader"},
+                         {"id":3,"name":"Environment","slug":"environment"},
+                         {"id":4,"name":"Java","slug":"java"}]
+                        """);
+                return;
+            }
+            if ("GET".equals(exchange.getRequestMethod()) && "/api/game/versions".equals(path)) {
+                respond(exchange, 200, """
+                        [{"id":101,"gameVersionTypeID":1,"name":"26.1.2","slug":"26-1-2"},
+                         {"id":102,"gameVersionTypeID":2,"name":"Fabric","slug":"fabric"},
+                         {"id":103,"gameVersionTypeID":3,"name":"Client","slug":"client"},
+                         {"id":104,"gameVersionTypeID":3,"name":"Server","slug":"server"},
+                         {"id":105,"gameVersionTypeID":4,"name":"Java 25","slug":"java-25"}]
+                        """);
+                return;
+            }
+            if ("POST".equals(exchange.getRequestMethod()) && "/api/projects/12345/upload-file".equals(path)) {
+                respond(exchange, 200, "{\"id\":555}");
                 return;
             }
             respond(exchange, 404, "{}");

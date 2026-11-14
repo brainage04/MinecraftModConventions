@@ -190,6 +190,38 @@ class MultiLoaderModConventionsTest {
     }
 
     @Test
+    void neoForgeDependencyListAppliesOnlyToNeoForgeAndFleetPublishingGatesReviewSubmission() throws IOException {
+        writeFixture("both", """
+                multiLoaderModConventions {
+                    publishing = false
+                }
+
+                tasks.register('verifyDependencySources') {
+                    doLast {
+                        def fabricSource = project(':fabric').modPublishing.sourceFabricModJson.get().asFile
+                        def neoForgeSource = project(':neoforge').modPublishing.sourceFabricModJson.get().asFile
+                        assert fabricSource == project(':fabric').file('src/main/resources/fabric.mod.json')
+                        assert neoForgeSource == file('.modrinth/neoforge-dependencies.json')
+                    }
+                }
+                """);
+        write(".modrinth/neoforge-dependencies.json", "{ \"depends\": { \"brainagelib\": \"*\" } }\n");
+
+        BuildResult result = runGradle(
+                "verifyDependencySources",
+                ":fabric:submitModrinthProjectForReview",
+                ":neoforge:submitModrinthProjectForReview",
+                "-PpublishModrinth=true",
+                "-PmodrinthSubmitForReview=true",
+                "-PmodPublishingDryRun=true"
+        );
+
+        assertEquals(TaskOutcome.SUCCESS, result.task(":verifyDependencySources").getOutcome());
+        assertEquals(TaskOutcome.SKIPPED, result.task(":fabric:submitModrinthProjectForReview").getOutcome());
+        assertEquals(TaskOutcome.SKIPPED, result.task(":neoforge:submitModrinthProjectForReview").getOutcome());
+    }
+
+    @Test
     void fabricServerGameTestsDeleteOnlyTheirConfiguredWorldBeforeLaunch() throws IOException {
         writeFixture("server", """
                 gradle.projectsEvaluated {

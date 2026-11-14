@@ -1,5 +1,6 @@
 package io.github.brainage04.minecraftmodconventions.gradle.modpublishing;
 
+import io.github.brainage04.minecraftmodconventions.gradle.modpublishing.curseforge.CheckCurseforgeDependenciesTask;
 import me.modmuss50.mpp.ReleaseType;
 import org.gradle.api.DefaultTask;
 import org.gradle.api.GradleException;
@@ -98,6 +99,9 @@ public abstract class ValidateModPublicationTask extends DefaultTask {
     @Internal
     public abstract Property<String> getCurseforgeToken();
 
+    @Input
+    public abstract ListProperty<String> getCurseforgeDependenciesWithoutSlug();
+
     @TaskAction
     void validatePublication() {
         boolean github = getGithubEnabled().get();
@@ -153,6 +157,7 @@ public abstract class ValidateModPublicationTask extends DefaultTask {
             if (requireTokens) {
                 required(getCurseforgeToken(), "modPublishing.curseforge.token or CURSEFORGE_TOKEN");
             }
+            CheckCurseforgeDependenciesTask.requireSlugs(getCurseforgeDependenciesWithoutSlug().get());
         }
     }
 

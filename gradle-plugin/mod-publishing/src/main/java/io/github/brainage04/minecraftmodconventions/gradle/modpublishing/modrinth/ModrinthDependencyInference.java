@@ -34,6 +34,8 @@ public final class ModrinthDependencyInference {
                 : parseObject(projectConfigJson, ".modrinth/project.json");
         JsonObject overrides = object(config, "dependency_overrides");
         LinkedHashMap<String, Dependency> dependencies = new LinkedHashMap<>();
+        LinkedHashMap<String, CurseforgeDependency> curseforgeDependencies = new LinkedHashMap<>();
+        List<String> withoutCurseforgeSlug = new ArrayList<>();
 
         for (DependencyField field : FIELDS) {
             JsonObject declarations = object(mod, field.name());
@@ -56,6 +58,15 @@ public final class ModrinthDependencyInference {
                 }
                 Dependency dependency = new Dependency(type, projectId, projectSlug, "");
                 dependencies.put(dependency.key(), dependency);
+                if (booleanValue(override, "curseforge_skip", false)) {
+                    continue;
+                }
+                String curseforgeSlug = JsonValues.string(override, "curseforge_slug");
+                if (curseforgeSlug.isBlank()) {
+                    withoutCurseforgeSlug.add(modId);
+                } else {
+                    curseforgeDependencies.put(curseforgeSlug, new CurseforgeDependency(curseforgeSlug, type));
+                }
             }
         }
 
@@ -95,7 +106,9 @@ public final class ModrinthDependencyInference {
                 strings(version, "game_versions"),
                 strings(version, "loaders"),
                 booleanValue(version, "featured", true),
-                List.copyOf(dependencies.values())
+                List.copyOf(dependencies.values()),
+                List.copyOf(curseforgeDependencies.values()),
+                List.copyOf(withoutCurseforgeSlug)
         );
     }
 
@@ -170,7 +183,9 @@ public final class ModrinthDependencyInference {
             List<String> gameVersions,
             List<String> loaders,
             boolean featured,
-            List<Dependency> dependencies
+            List<Dependency> dependencies,
+            List<CurseforgeDependency> curseforgeDependencies,
+            List<String> withoutCurseforgeSlug
     ) {
     }
 
@@ -183,5 +198,8 @@ public final class ModrinthDependencyInference {
         String key() {
             return type + "\u0000" + projectId + "\u0000" + projectSlug + "\u0000" + version;
         }
+    }
+
+    public record CurseforgeDependency(String slug, PlatformDependency.DependencyType type) {
     }
 }

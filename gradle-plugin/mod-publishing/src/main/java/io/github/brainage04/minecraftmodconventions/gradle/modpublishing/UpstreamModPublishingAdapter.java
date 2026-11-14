@@ -4,6 +4,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import me.modmuss50.mpp.ModPublishExtension;
 import me.modmuss50.mpp.platforms.curseforge.Curseforge;
+import me.modmuss50.mpp.platforms.curseforge.CurseforgeDependency;
 import me.modmuss50.mpp.platforms.github.Github;
 import me.modmuss50.mpp.platforms.modrinth.Modrinth;
 import me.modmuss50.mpp.platforms.modrinth.ModrinthDependency;
@@ -12,6 +13,8 @@ import org.gradle.api.JavaVersion;
 import org.gradle.api.NamedDomainObjectProvider;
 import org.gradle.api.Project;
 import org.gradle.api.file.RegularFile;
+
+import java.util.List;
 
 final class UpstreamModPublishingAdapter {
     private UpstreamModPublishingAdapter() {
@@ -37,14 +40,15 @@ final class UpstreamModPublishingAdapter {
         );
     }
 
-    static void configureProjectMetadata(
+    /** Returns the fabric.mod.json dependencies that have no CurseForge slug configured. */
+    static List<String> configureProjectMetadata(
             Project project,
             ModPublishingExtension extension,
-            NamedDomainObjectProvider<Modrinth> modrinth
+            Destinations destinations
     ) {
         if (!extension.getSourceFabricModJson().isPresent()
                 || !extension.getSourceFabricModJson().get().getAsFile().isFile()) {
-            return;
+            return List.of();
         }
         String sourceJson = project.getProviders()
                 .fileContents(extension.getSourceFabricModJson())
@@ -63,7 +67,7 @@ final class UpstreamModPublishingAdapter {
         if (!configuration.projectId().isBlank()) {
             extension.getModrinth().getProjectId().convention(configuration.projectId());
         }
-        modrinth.configure(destination -> {
+        destinations.modrinth().configure(destination -> {
             if (!configuration.gameVersions().isEmpty()) {
                 destination.getMinecraftVersions().convention(configuration.gameVersions());
             }
@@ -85,6 +89,14 @@ final class UpstreamModPublishingAdapter {
                 destination.getDependencies().add(dependency);
             }
         });
+        destinations.curseforge().configure(destination -> {
+            for (ModrinthDependencyInference.CurseforgeDependency inferred : configuration.curseforgeDependencies()) {
+                CurseforgeDependency dependency = project.getObjects().newInstance(CurseforgeDependency.class);
+                dependency.getType().set(inferred.type());
+                dependency.getSlug().set(inferred.slug());
+                destination.getDependencies().add(dependency);
+            }
+        });
 
         if (!extension.getModrinth().getIconFile().isPresent()) {
             JsonObject mod = JsonParser.parseString(sourceJson).getAsJsonObject();
@@ -94,6 +106,7 @@ final class UpstreamModPublishingAdapter {
                 extension.getModrinth().getIconFile().convention(iconFile);
             }
         }
+        return configuration.withoutCurseforgeSlug();
     }
 
     private static void configureGithub(ModPublishingExtension extension, Github destination) {
