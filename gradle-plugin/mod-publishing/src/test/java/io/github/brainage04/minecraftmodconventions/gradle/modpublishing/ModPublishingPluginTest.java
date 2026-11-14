@@ -653,6 +653,14 @@ class ModPublishingPluginTest {
             );
             assertEquals("draft", server.projectStatus());
 
+            BuildResult standalone = runGradle("submitModrinthProjectForReview", "--configuration-cache");
+
+            assertTrue(
+                    standalone.getOutput().contains("the last Modrinth upload did not finish"),
+                    standalone::getOutput
+            );
+            assertEquals(0, server.requests("PATCH", "/project/AbCdEf12").size());
+
             // The rejected upload still created the version, so the retry skips the upload and submits.
             server.setVersionUploadRejection(null);
             server.setPublishedVersionExists(true);
