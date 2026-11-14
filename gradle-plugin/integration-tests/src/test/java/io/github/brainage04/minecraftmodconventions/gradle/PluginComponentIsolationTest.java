@@ -396,7 +396,36 @@ class PluginComponentIsolationTest {
                 .withArguments("prepareClientGameTestRun", "prepareProductionGameTestRuns", "verifyRecorderLaunch")
                 .build();
 
-        String expected = testOptions(true)
+        String expected = showcaseOptions("gametest_recorder_fixture");
+        assertEquals(expected, Files.readString(projectDir.resolve("build/run/clientGameTest/options.txt")));
+        assertEquals(expected, Files.readString(projectDir.resolve("build/run/productionClientGameTest/options.txt")));
+    }
+
+    @Test
+    void aGameTakeGetsTheShowcaseProfileFromTheRecordingMarkAlone() throws IOException {
+        writeLoomFixture(BASE_PLUGIN_ID + "'\n    id '" + RECORDER_PLUGIN_ID + "'\n    id '" + PRODUCTION_PLUGIN_ID,
+                "productionGameTests { includeFabricApiDependency = false }\n");
+
+        // A game take renders its sound through the client's loopback device and names no sink: the recorder's mark
+        // on the child build is the only thing that selects the showcase options.
+        GradleRunner.create()
+                .withProjectDir(projectDir.toFile())
+                .withPluginClasspath()
+                .withEnvironment(java.util.Map.of(
+                        "GTR_RECORDING_MANAGED_XVFB", "true",
+                        "CLIENT_GAMETEST_RECORDING_START_SIGNAL", projectDir.resolve("build/take.start").toString()
+                ))
+                .withArguments("prepareClientGameTestRun", "prepareProductionGameTestRuns")
+                .build();
+
+        String expected = showcaseOptions("");
+        assertEquals(expected, Files.readString(projectDir.resolve("build/run/clientGameTest/options.txt")));
+        assertEquals(expected, Files.readString(projectDir.resolve("build/run/productionClientGameTest/options.txt")));
+    }
+
+    /** The showcase profile's options on {@code soundDevice} (blank for the game's default device). */
+    private static String showcaseOptions(String soundDevice) {
+        return testOptions(true)
                 .replace("overrideWidth:854", "overrideWidth:1920")
                 .replace("overrideHeight:480", "overrideHeight:1080")
                 // Every recording uses the overlay standard: 1920x1080 at GUI scale 3.
@@ -407,11 +436,9 @@ class PluginComponentIsolationTest {
                 .replace("cutoutLeaves:false", "cutoutLeaves:true")
                 .replace("entityShadows:false", "entityShadows:true")
                 .replace("particles:2", "particles:0")
-                .replace("soundDevice:\"\"", "soundDevice:\"gametest_recorder_fixture\"")
+                .replace("soundDevice:\"\"", "soundDevice:\"" + soundDevice + "\"")
                 .replace("soundCategory_master:0.0", "soundCategory_master:0.7")
                 .replaceAll("(soundCategory_(?!master|music)[a-z]+):0\\.0", "$1:1.0");
-        assertEquals(expected, Files.readString(projectDir.resolve("build/run/clientGameTest/options.txt")));
-        assertEquals(expected, Files.readString(projectDir.resolve("build/run/productionClientGameTest/options.txt")));
     }
 
     @Test
