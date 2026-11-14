@@ -150,7 +150,7 @@ public final class GameCaptureAudio {
     /** Renders a device's mix into {@code buffer}, {@code frames} sample frames at a time. */
     @FunctionalInterface
     interface SampleSource {
-        void render(ByteBuffer buffer, int frames) throws InterruptedException;
+        void render(ByteBuffer buffer, int frames);
     }
 
     /**
@@ -177,35 +177,30 @@ public final class GameCaptureAudio {
             // The recording's sample index of this device's rendered sample 0, once the capture has started.
             long offset = Long.MIN_VALUE;
             boolean writing = true;
-            try {
-                while (running) {
-                    long due = (System.nanoTime() - renderStartNanos) * SAMPLE_RATE / 1_000_000_000L;
-                    while (running && rendered < due) {
-                        int count = (int) Math.min(due - rendered, SAMPLE_RATE);
-                        buffer.clear();
-                        source.render(buffer, count);
-                        long first = rendered;
-                        rendered += count;
-                        long captureStart = startUs;
-                        if (!writing || captureStart == Long.MIN_VALUE || AUDIO == null) {
-                            continue;
-                        }
-                        if (offset == Long.MIN_VALUE) {
-                            offset = SoundClock.frameIndex(renderStartUs, captureStart);
-                        }
-                        try {
-                            write(buffer, bytes, count, offset + first);
-                        } catch (IOException exception) {
-                            // The recorder stops ffmpeg once it has the sound it needs, which closes the pipe.
-                            System.out.println("[CLIENT_GAMETEST_RECORDING] The sound pipe closed: "
-                                    + exception.getMessage());
-                            writing = false;
-                        }
+            while (running) {
+                long due = (System.nanoTime() - renderStartNanos) * SAMPLE_RATE / 1_000_000_000L;
+                while (running && rendered < due) {
+                    int count = (int) Math.min(due - rendered, SAMPLE_RATE);
+                    buffer.clear();
+                    source.render(buffer, count);
+                    long first = rendered;
+                    rendered += count;
+                    long captureStart = startUs;
+                    if (!writing || captureStart == Long.MIN_VALUE || AUDIO == null) {
+                        continue;
                     }
-                    LockSupport.parkNanos(INTERVAL_NANOS);
+                    if (offset == Long.MIN_VALUE) {
+                        offset = SoundClock.frameIndex(renderStartUs, captureStart);
+                    }
+                    try {
+                        write(buffer, bytes, count, offset + first);
+                    } catch (IOException exception) {
+                        // The recorder stops ffmpeg once it has the sound it needs, which closes the pipe.
+                        System.out.println("[CLIENT_GAMETEST_RECORDING] The sound pipe closed: " + exception.getMessage());
+                        writing = false;
+                    }
                 }
-            } catch (InterruptedException exception) {
-                Thread.currentThread().interrupt();
+                LockSupport.parkNanos(INTERVAL_NANOS);
             }
         }
     }

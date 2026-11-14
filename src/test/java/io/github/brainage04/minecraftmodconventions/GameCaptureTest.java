@@ -8,6 +8,7 @@ import java.nio.IntBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -158,14 +159,14 @@ class GameCaptureTest {
     @Test
     void aSoundWriterThatDoesNotStopInTimeDoesNotSilenceTheNextDevice() throws InterruptedException {
         CountDownLatch stalled = new CountDownLatch(1);
-        CountDownLatch release = new CountDownLatch(1);
+        Semaphore release = new Semaphore(0);
         AtomicInteger stalledRenders = new AtomicInteger();
         AtomicReference<Thread> stalledThread = new AtomicReference<>();
         GameCaptureAudio.startRendering((buffer, frames) -> {
             stalledRenders.incrementAndGet();
             stalledThread.set(Thread.currentThread());
             stalled.countDown();
-            release.await();
+            release.acquireUninterruptibly();
         });
         try {
             assertTrue(stalled.await(5, TimeUnit.SECONDS));
@@ -177,7 +178,7 @@ class GameCaptureTest {
             GameCaptureAudio.startRendering((buffer, frames) -> nextRenders.countDown());
             assertTrue(nextRenders.await(5, TimeUnit.SECONDS), "the next device's mix is rendered");
         } finally {
-            release.countDown();
+            release.release();
         }
         stalledThread.get().join(5_000L);
         GameCaptureAudio.deviceClosing();
