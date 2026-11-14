@@ -7,6 +7,7 @@ import io.github.brainage04.minecraftmodconventions.gradle.modpublishing.JsonVal
 import io.github.brainage04.minecraftmodconventions.gradle.modpublishing.http.PublishingHttpClient;
 import org.gradle.api.DefaultTask;
 import org.gradle.api.GradleException;
+import org.gradle.api.file.RegularFileProperty;
 import org.gradle.api.provider.Property;
 import org.gradle.api.tasks.Input;
 import org.gradle.api.tasks.Internal;
@@ -52,9 +53,23 @@ public abstract class SubmitModrinthProjectForReviewTask extends DefaultTask {
     @Internal
     public abstract Property<String> getStepSummaryFile();
 
+    /** Exists while a publishModrinth upload has started and not succeeded. */
+    @Internal
+    public abstract RegularFileProperty getUploadIncompleteMarker();
+
     @TaskAction
     void submit() throws IOException {
         String projectId = getProjectId().getOrElse("").trim();
+        // publishModrinth runs this task as a finalizer even when its upload fails (Gradle user guide, "Finalizer
+        // tasks"); submitting then would put the project up for review without the version that failed.
+        if (getUploadIncompleteMarker().get().getAsFile().exists()) {
+            getLogger().warn(
+                    "Not submitting Modrinth project {} for review: the last Modrinth upload did not finish. "
+                            + "Run publishModrinth again.",
+                    projectId
+            );
+            return;
+        }
         if (getDryRun().get()) {
             getLogger().lifecycle("Would submit Modrinth project {} for review if it is a draft", projectId);
             return;

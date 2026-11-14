@@ -504,20 +504,15 @@ public final class ModPublishingPlugin implements Plugin<Project> {
                     task.getStepSummaryFile().convention(
                             project.getProviders().environmentVariable("GITHUB_STEP_SUMMARY")
                     );
+                    task.getUploadIncompleteMarker().convention(uploadIncomplete);
                     task.mustRunAfter("publishModrinth");
                     task.onlyIf("Modrinth publication is enabled", ignored -> enabled.get());
                     task.onlyIf("Modrinth review submission is enabled", ignored -> submitForReview.get());
-                    // A finalizer runs even when publishModrinth fails (Gradle user guide, "Finalizer tasks"), which
-                    // would submit the project without the version that just failed to upload. The configuration
-                    // cache cannot hold a reference to publishModrinth to read its state, so it leaves a marker
-                    // file until its upload succeeds.
-                    task.onlyIf(
-                            "The Modrinth upload did not fail",
-                            ignored -> !uploadIncomplete.get().getAsFile().exists()
-                    );
                     task.getOutputs().upToDateWhen(ignored -> false);
                 }
         );
+        // The configuration cache cannot hold a reference to publishModrinth to read its state at execution, so the
+        // upload leaves a marker file from its start until it succeeds; a new version check starts clean.
         project.getTasks().named(CHECK_MODRINTH_VERSION_TASK_NAME).configure(task ->
                 task.doFirst(ignored -> deleteMarker(uploadIncomplete.get().getAsFile())));
         project.getTasks().named("publishModrinth").configure(task -> {
