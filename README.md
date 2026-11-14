@@ -528,6 +528,8 @@ modPublishing {
 
 `publishGithub`, `publishModrinth` and `publishCurseforge` can be retried independently; `publishMods` runs all enabled ones. The Modrinth description is synced from `README.md` and the icon from `assets/<mod_id>/icon.png`. `build` and `check` never contact these services.
 
+A Modrinth project that the sync creates stays a draft, and neither it nor its versions are public until a moderator approves it. `modrinth { submitForReview.set(true) }` (or `MODRINTH_SUBMIT_FOR_REVIEW=true`, or `-PmodrinthSubmitForReview=true`) makes `publishModrinth` finish with `submitModrinthProjectForReview`, which submits a draft project for review by setting its status to `processing` ([Modrinth API](https://docs.modrinth.com/api/operations/modifyproject/)). A project in any other status is left alone. When Modrinth refuses the submission the task fails with Modrinth's reason; the version is already uploaded by then, so a rerun skips the upload and only retries the submission.
+
 `maven-central-publishing` is for libraries. See [docs/PUBLISHING.md](docs/PUBLISHING.md) for credentials and the release command.
 
 ## Workflows
@@ -578,6 +580,16 @@ A build that clones a private brainage04 repository (SparringBots' `gitMod` of t
 ```
 
 Self-hosted runners keep their work tree between jobs, so every reusable workflow job deletes everything beside its checkout (`..`) right after checking out, before any `prepare_*` step; a stale `../MinecraftModConventions` would otherwise be picked up by `settings.gradle`'s `includeBuild` in place of the released plugin.
+
+### First release on the stores
+
+A store job that is skipped for missing configuration writes a line to its step summary as well as a notice: `reusable-publish-modrinth.yml` without the `modrinth_token` secret, `reusable-publish-curseforge.yml` without the `curseforge_token` secret. The CurseForge line names what is missing, the `CURSEFORGE_PROJECT_ID` variable, the `CURSEFORGE_TOKEN` secret or both. `require_stores`, a space-separated list of `modrinth` and `curseforge`, makes such a skip fail the job instead; both publish workflows and `reusable-multiloader-release.yml` take it. A CurseForge job with a token but no project id fails either way.
+
+Before a mod's first store release:
+
+1. **Modrinth:** add the secret `MODRINTH_TOKEN`, a personal access token with the `PROJECT_CREATE`, `PROJECT_WRITE` and `VERSION_CREATE` scopes. The first release creates the project as a draft from `.modrinth/project.json`, `README.md` and the icon. Pass `submit_for_review: true` (`modrinth_submit_for_review: true` to `reusable-multiloader-release.yml`) to submit it for review after the upload; otherwise submit it on modrinth.com. Either way it becomes public only once a moderator approves it.
+2. **CurseForge:** the [upload API](https://support.curseforge.com/en/support/solutions/articles/9000197321-curseforge-upload-api) uploads files to an existing project and cannot create one, so create the project by hand in the [author console](https://authors.curseforge.com/). Then set the repository variable `CURSEFORGE_PROJECT_ID` to its numeric id (shown on its overview page) and the secret `CURSEFORGE_TOKEN` to a token from the console's [API tokens](https://authors.curseforge.com/#/settings/api-tokens) page. The mods' release workflows pass `secrets.CURSEFORGE_TOKEN` as the `curseforge_token` secret, so a repository that holds its key only as `CURSEFORGE_API_KEY` must add a `CURSEFORGE_TOKEN` secret holding a token from that page.
+3. **Dependencies:** release BrainageLib, or any other library the mod depends on, to each store first. The Modrinth version names its dependencies by slug from `fabric.mod.json`'s `depends`, so `brainagelib` has to exist on Modrinth, and be approved before players can install it. The CurseForge upload declares no dependencies, so players find BrainageLib only if it is on CurseForge.
 
 ## Fleet audit
 
