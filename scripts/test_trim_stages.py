@@ -100,6 +100,15 @@ def cut(log: Path, video: Path, meta: Path, *extra: str) -> subprocess.Completed
                            str(meta), *extra], capture_output=True, text=True)
 
 
+def loudness(video: Path, start: float, end: float) -> float:
+    """The root mean square of the video's sound from `start` to `end` seconds, from -1 to 1."""
+    data = subprocess.run(["ffmpeg", "-v", "error", "-i", str(video), "-map", "0:a", "-ac", "1", "-ar", "48000",
+                           "-f", "s16le", "-"], check=True, capture_output=True).stdout
+    samples = [int.from_bytes(data[i:i + 2], "little", signed=True) / 32768
+               for i in range(2 * round(start * 48000), 2 * round(end * 48000), 2)]
+    return (sum(sample * sample for sample in samples) / len(samples)) ** 0.5
+
+
 class StageWindowsTest(unittest.TestCase):
     def test_a_repeated_stage_pairs_with_the_first_end_after_its_start(self) -> None:
         log = ("STAGE_START 100 a\nSTAGE_END 200 a\nSTAGE_START 300 a\nSTAGE_START 250 b\n"
@@ -129,6 +138,20 @@ class ClipsTest(unittest.TestCase):
         windows = [[1_000, 2_000, "a"], [2_050, 3_000, "b"], [5_000, 6_000, "c"]]
         self.assertEqual(trim_stages.clips(windows, times, 0, 30),
                          [[27, 94, 30, "a+b", 60], [147, 184, 150, "c", 180]])
+
+
+class AudioPiecesTest(unittest.TestCase):
+    def test_the_sound_skips_a_capture_gap_with_the_picture(self) -> None:
+        # Frames 10 and on were captured 0.5 s late: once every frame lasts 1/30 s, frame 10 plays at 0.33 s, so the
+        # sound under it must come from 0.83 s, where the frame was captured.
+        times = [n / 30 for n in range(10)] + [0.5 + n / 30 for n in range(10, 20)]
+        self.assertEqual(trim_stages.audio_pieces(2, 20, times, 30), [(2 / 30, 8 / 30), (0.5 + 10 / 30, 10 / 30)])
+
+    def test_frames_that_keep_their_clock_take_one_piece_of_sound(self) -> None:
+        # Frames 31 to 36 ms apart, as a screen grab delivers them, never drift half a frame from the 30 fps clock.
+        times = [n / 30 + (0.003 if n % 2 else -0.003) for n in range(60)]
+        times[0] = 0.0
+        self.assertEqual(trim_stages.audio_pieces(0, 60, times, 30), [(0.0, 2.0)])
 
 
 class CaptionStartTest(unittest.TestCase):
@@ -608,6 +631,31 @@ class CaptionCutTest(unittest.TestCase):
         self.assertEqual(by_clock.returncode, 0, by_clock.stdout + by_clock.stderr)
         stages = json.loads(video.with_name("cut.stages.json").read_text())
         self.assertEqual(stages, [{"stage": "a", "startFrame": 0, "endFrameExclusive": 52}])
+
+    def test_the_sound_stays_under_its_frame_across_a_capture_gap(self) -> None:
+        # A screen grab that missed 1 s of frames: frame 60 was captured at 3.0 s, when a tone starts. In the cut
+        # every frame lasts 1/30 s, so frame 60, the clip's 49th frame, plays at 1.6 s, and the tone must start there,
+        # not at 2.6 s, where the take's own clock would put it.
+        video = self.directory / "take.mp4"
+        subprocess.run([
+            "ffmpeg", "-v", "error", "-y",
+            "-f", "lavfi", "-i", f"testsrc2=size=320x240:rate={RATE}:duration=5",
+            "-f", "lavfi", "-i", "aevalsrc='if(gte(t,3),0.5*sin(2*PI*440*t),0)':d=6:s=48000",
+            "-vf", "setpts='(N+if(gte(N,60),30,0))/30/TB'", "-fps_mode", "passthrough",
+            "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-c:a", "aac", str(video),
+        ], check=True)
+        log = self.directory / "run.log"
+        log.write_text(f"STAGE_START {START_MS + 500} a\nSTAGE_END {START_MS + 4000} a\n")
+        meta = self.directory / "take.json"
+        meta.write_text(json.dumps({"fps": str(RATE), "boundaries": {"selectedStartEpochSeconds": START_MS / 1000.0}}))
+
+        result = cut(log, video, meta, "--clock")
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("clip 0: frames 12 - 94", result.stdout)
+        out = video.with_name("cut.mp4")
+        self.assertLess(loudness(out, 1.40, 1.55), 0.01, "the tone must not start before frame 60")
+        self.assertGreater(loudness(out, 1.65, 1.80), 0.2, "the tone must start under frame 60")
 
     def test_the_raw_capture_is_refused(self) -> None:
         log, video, meta = make_recording(

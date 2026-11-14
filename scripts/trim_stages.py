@@ -37,7 +37,9 @@ Where a clip starts depends on what the take records, and the run prints which s
 
 --clock cuts by the log's clock instead, 0.10 s before each STAGE_START, for a recording without captions.
 
-Beside OUT.mp4 it writes OUT.stages.json, the first and end (exclusive) frame of each clip in the trimmed video.
+Every kept frame lasts exactly 1/fps in OUT.mp4, and the sound under it is the sound recorded with it: where a screen
+grab missed frames, the sound skips the same stretch. Beside OUT.mp4 it writes OUT.stages.json, the first and end
+(exclusive) frame of each clip in the trimmed video.
 """
 import argparse
 import bisect
@@ -359,19 +361,33 @@ def frame_count(video):
     ], check=True, capture_output=True, text=True).stdout.strip())
 
 
+def audio_pieces(begin, finish, times, rate):
+    """The stretches of source sound, as (start s, seconds), that play under frames begin to finish - 1 once every
+    frame lasts 1/rate: a stretch ends wherever the frames' own times have drifted half a frame from that clock, as a
+    screen grab's capture gap makes them, so the sound skips what the picture skips."""
+    pieces = []
+    first = begin
+    for k in range(begin + 1, finish):
+        if abs(times[k] - times[first] - (k - first) / rate) >= 0.5 / rate:
+            pieces.append((times[first], (k - first) / rate))
+            first = k
+    pieces.append((times[first], (finish - first) / rate))
+    return pieces
+
+
 def encode(video, out_path, merged, times, rate, sound):
-    """Joins the clips by frame index and gives every kept frame exactly 1/rate, the audio cut to match."""
+    """Joins the clips by frame index and gives every kept frame exactly 1/rate, each frame's sound under it."""
     select = "+".join(f"between(n,{begin},{finish - 1})" for begin, finish, *_ in merged)
     graph = [f"[0:v]select='{select}',settb=1/{rate:g},setpts=N[vout]"]
     maps = ["-map", "[vout]"]
     if sound:
         pieces = []
-        for index, (begin, finish, *_) in enumerate(merged):
-            start = times[begin]
-            graph.append(f"[0:a]atrim=start={start:.6f}:end={start + (finish - begin) / rate:.6f},"
-                         f"asetpts=PTS-STARTPTS[a{index}]")
-            pieces.append(f"[a{index}]")
-        graph.append("".join(pieces) + f"concat=n={len(merged)}:v=0:a=1[aout]")
+        for begin, finish, *_ in merged:
+            for start, seconds in audio_pieces(begin, finish, times, rate):
+                graph.append(f"[0:a]atrim=start={start:.6f}:end={start + seconds:.6f},"
+                             f"asetpts=PTS-STARTPTS[a{len(pieces)}]")
+                pieces.append(f"[a{len(pieces)}]")
+        graph.append("".join(pieces) + f"concat=n={len(pieces)}:v=0:a=1[aout]")
         maps += ["-map", "[aout]", "-c:a", "aac", "-b:a", "128k"]
     subprocess.run([
         "ffmpeg", "-v", "error", "-y", "-i", str(video), "-filter_complex", ";".join(graph), *maps,
