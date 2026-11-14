@@ -18,9 +18,17 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  */
 @Mixin(SoundEngine.class)
 public abstract class RecordingSoundEngineMixin {
-    @Inject(method = "play", at = @At("HEAD"))
+    // At RETURN, not HEAD: a sound is noted only when the engine started it. NeoForge's PlaySoundEvent may cancel or
+    // replace it inside play (its patch assigns the parameter, instance = ClientHooks.playSound(this, instance);
+    // neoforge-26.3.0.99-userdev, patches/net/minecraft/client/sounds/SoundEngine.java.patch), and a callback is
+    // handed the parameter's value at its injection point (CallbackInjector.invokeCallback loads it from its local
+    // slot through Bytecode.loadArgs: sponge-mixin 0.17.3 sources :767, and the same call in 0.17.4, NeoForge's), so
+    // here it names the sound that played.
+    @Inject(method = "play", at = @At("RETURN"))
     private void recordingNotePlayedSound(SoundInstance instance, CallbackInfoReturnable<SoundEngine.PlayResult> cir) {
-        ClientGameTestRecordingSession.notePlayedSound(instance.getIdentifier().toString());
+        if (cir.getReturnValue() != SoundEngine.PlayResult.NOT_STARTED) {
+            ClientGameTestRecordingSession.notePlayedSound(instance.getIdentifier().toString());
+        }
     }
 
     @Inject(method = "shouldChangeDevice", at = @At("HEAD"), cancellable = true)
