@@ -383,6 +383,42 @@ class ModPublishingPluginTest {
     }
 
     @Test
+    void checksCurseForgeSlugsBeforeAnyPublicationAndIgnoresThemWithoutCurseForge() throws IOException {
+        Files.writeString(
+                projectDirectory.resolve(".modrinth/project.json"),
+                """
+                        {
+                          "slug": "publisher-fixture",
+                          "dependency_overrides": {
+                            "modmenu": { "curseforge_skip": true },
+                            "bad_mod": { "dependency_type": "incompatible", "curseforge_slug": "bad-mod" }
+                          }
+                        }
+                        """
+        );
+        writeBuildFile("""
+                dryRun = true
+                modrinth {
+                    enabled = true
+                    projectId = 'AbCdEf12'
+                }
+                """, "");
+
+        assertEquals(
+                TaskOutcome.SUCCESS,
+                runGradle("validateModPublication").task(":validateModPublication").getOutcome()
+        );
+
+        BuildResult result = runGradleAndFail("checkCurseforgeDependencies");
+
+        assertEquals(TaskOutcome.FAILED, result.task(":checkCurseforgeDependencies").getOutcome());
+        assertTrue(
+                result.getOutput().contains("No CurseForge slug for the fabric.mod.json dependencies fzzy_config;"),
+                result.getOutput()
+        );
+    }
+
+    @Test
     void createsAndUpdatesMissingModrinthProject() throws Exception {
         try (var server = FakeModrinthServer.start(false)) {
             writeBuildFile(modrinthSyncConfiguration(server.apiEndpoint()), "");
@@ -515,7 +551,7 @@ class ModPublishingPluginTest {
                     }
                     """.formatted(server.apiEndpoint()), "");
 
-            runGradle("publishModrinth");
+            runGradleWithEnvironment(Map.of("MODRINTH_SUBMIT_FOR_REVIEW", ""), "publishModrinth");
 
             assertEquals(1, server.requests("POST", "/version").size());
             assertEquals(0, server.requests("PATCH", "/project/AbCdEf12").size());
@@ -570,7 +606,27 @@ class ModPublishingPluginTest {
     }
 
     @Test
-    void reportsModrinthReviewRejectionWithItsReason() throws Exception {
+    void dryRunNeverSubmitsModrinthProjectForReview() throws Exception {
+        try (var server = FakeModrinthServer.start(true, false)) {
+            writeBuildFile("""
+                    dryRun = true
+                    modrinth {
+                        enabled = true
+                        projectId = 'AbCdEf12'
+                        apiEndpoint = '%s'
+                        submitForReview = true
+                    }
+                    """.formatted(server.apiEndpoint()), "");
+
+            BuildResult result = runGradle("publishModrinth");
+
+            assertEquals(TaskOutcome.SUCCESS, result.task(":submitModrinthProjectForReview").getOutcome());
+            assertEquals(0, server.requests("PATCH", "/project/AbCdEf12").size());
+        }
+    }
+
+    @Test
+    void warnsAboutARefusedModrinthReviewUnlessModrinthIsRequired() throws Exception {
         try (var server = FakeModrinthServer.start(true, false)) {
             server.setReviewRejection("project must have no required validation nags before or during review or approval");
             writeBuildFile("""
@@ -583,13 +639,32 @@ class ModPublishingPluginTest {
                         submitForReview = true
                     }
                     """.formatted(server.apiEndpoint()), "");
+            Path summary = projectDirectory.resolve("step-summary.md");
 
-            BuildResult result = runGradleAndFail("publishModrinth");
+            BuildResult warned = runGradleWithEnvironment(
+                    Map.of("GITHUB_STEP_SUMMARY", summary.toString()),
+                    "publishModrinth"
+            );
 
-            assertEquals(TaskOutcome.SUCCESS, result.task(":publishModrinth").getOutcome());
-            assertEquals(TaskOutcome.FAILED, result.task(":submitModrinthProjectForReview").getOutcome());
-            assertTrue(result.getOutput().contains("required validation nags"), result.getOutput());
+            assertEquals(TaskOutcome.SUCCESS, warned.task(":publishModrinth").getOutcome());
+            assertEquals(TaskOutcome.SUCCESS, warned.task(":submitModrinthProjectForReview").getOutcome());
+            assertTrue(warned.getOutput().contains("required validation nags"), warned.getOutput());
+            String summaryText = Files.readString(summary);
+            assertTrue(summaryText.startsWith("- Modrinth: project AbCdEf12 was not submitted for review"), summaryText);
+            assertTrue(summaryText.contains("required validation nags"), summaryText);
             assertEquals("draft", server.projectStatus());
+
+            Map<String, String> requiredEnvironment = new LinkedHashMap<>(System.getenv());
+            requiredEnvironment.put("MODRINTH_REVIEW_REQUIRED", "true");
+            BuildResult failed = GradleRunner.create()
+                    .withProjectDir(projectDirectory.toFile())
+                    .withPluginClasspath()
+                    .withEnvironment(requiredEnvironment)
+                    .withArguments("publishModrinth")
+                    .buildAndFail();
+
+            assertEquals(TaskOutcome.FAILED, failed.task(":submitModrinthProjectForReview").getOutcome());
+            assertTrue(failed.getOutput().contains("required validation nags"), failed.getOutput());
         }
     }
 
