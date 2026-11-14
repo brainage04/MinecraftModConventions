@@ -5,6 +5,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import tracemalloc
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -100,6 +101,13 @@ def cut(log: Path, video: Path, meta: Path, *extra: str) -> subprocess.Completed
                            str(meta), *extra], capture_output=True, text=True)
 
 
+def start(panels: dict[int, bytes], *arguments) -> tuple[int, bytes]:
+    """`caption_start` on panels of every frame, with each frame's change from the frame before, as `caption_cuts`
+    reads them."""
+    change = {k: trim_stages.mean_diff(panels[k - 1], panels[k]) for k in panels if k - 1 in panels}
+    return trim_stages.caption_start(panels, change, *arguments)
+
+
 class StageWindowsTest(unittest.TestCase):
     def test_a_repeated_stage_pairs_with_the_first_end_after_its_start(self) -> None:
         log = ("STAGE_START 100 a\nSTAGE_END 200 a\nSTAGE_START 300 a\nSTAGE_START 250 b\n"
@@ -136,14 +144,14 @@ class CaptionStartTest(unittest.TestCase):
         old, half, new = bytes([10] * 100), bytes([60] * 100), bytes([200] * 100)
         # The caption is drawn in two steps, at frames 40 and 41; the marker says 35, so the clock starts at 32.
         panels = {k: old if k < 40 else half if k == 40 else new for k in range(0, 80)}
-        begin, reference = trim_stages.caption_start(panels, 35, 1, 80, 30, "b", 32, True, 80)
+        begin, reference = start(panels, 35, 1, 80, 30, "b", 32, True, 80)
         self.assertEqual(begin, 41)
         self.assertEqual(reference, new)
 
     def test_a_caption_that_never_changes_near_the_marker_fails(self) -> None:
         panels = {k: bytes([10] * 100) for k in range(0, 80)}
         with self.assertRaises(SystemExit) as failure:
-            trim_stages.caption_start(panels, 35, 1, 80, 30, "b", 32, True, 80)
+            start(panels, 35, 1, 80, 30, "b", 32, True, 80)
         self.assertIn("b: the caption never changes near frame 35", str(failure.exception))
         self.assertIn("--clock", str(failure.exception))
 
@@ -153,7 +161,7 @@ class CaptionStartTest(unittest.TestCase):
         old, new = bytes([10] * 100), bytes([110] * 100)
         noisy = bytes([125] * 40 + [110] * 60)
         panels = {k: old if k < 40 else noisy if k < 47 else new for k in range(0, 80)}
-        begin, reference = trim_stages.caption_start(panels, 41, 1, 80, 30, "b", 38, True, 80)
+        begin, reference = start(panels, 41, 1, 80, 30, "b", 38, True, 80)
         self.assertEqual(begin, 40)
         self.assertEqual(reference, new)
 
@@ -166,7 +174,7 @@ class CaptionStartTest(unittest.TestCase):
         panels = {k: previous for k in range(0, 40)}
         panels.update({k: own for k in range(40, 80)})
         panels[30] = bytes([255] * 100)
-        begin, reference = trim_stages.caption_start(panels, 35, 1, 80, 30, "b", 32, False, 80)
+        begin, reference = start(panels, 35, 1, 80, 30, "b", 32, False, 80)
         self.assertEqual(begin, 40)
         self.assertEqual(reference, own)
 
@@ -175,7 +183,7 @@ class CaptionStartTest(unittest.TestCase):
         # Caption B is drawn in two steps at frames 40 and 42; its first step is within the caption change of the
         # settled caption, so only the panel still moving gives it away.
         panels = {k: old if k < 40 else drawn if k < 42 else new for k in range(0, 80)}
-        begin, reference = trim_stages.caption_start(panels, 35, 1, 80, 30, "b", 32, True, 80)
+        begin, reference = start(panels, 35, 1, 80, 30, "b", 32, True, 80)
         self.assertEqual(begin, 42)
         self.assertEqual(reference, new)
 
@@ -184,7 +192,7 @@ class CaptionStartTest(unittest.TestCase):
         # caption is not something the picture can tell, so the cut stops instead of guessing.
         panels = {k: bytes([10 if k < 40 else 60 if k < 50 else 110] * 100) for k in range(0, 80)}
         with self.assertRaises(SystemExit) as failure:
-            trim_stages.caption_start(panels, 35, 1, 80, 30, "b", 32, False, 80)
+            start(panels, 35, 1, 80, 30, "b", 32, False, 80)
         self.assertIn("b: the caption panel changes at frames 40 and 50", str(failure.exception))
         self.assertIn("--clock", str(failure.exception))
 
@@ -194,7 +202,7 @@ class CaptionStartTest(unittest.TestCase):
         panels = {k: bytes([10 if k < 53 else 110] * 100) for k in range(0, 80)}
         panels[20] = bytes([60] * 100)
         with self.assertRaises(SystemExit) as failure:
-            trim_stages.caption_start(panels, 35, 1, 80, 30, "b", 32, False, 80)
+            start(panels, 35, 1, 80, 30, "b", 32, False, 80)
         self.assertIn("b: the caption panel changes at frame 53, 0.5 to 0.9 s after the marker", str(failure.exception))
         self.assertIn("--clock", str(failure.exception))
 
@@ -203,7 +211,7 @@ class CaptionStartTest(unittest.TestCase):
         # differ by less than that: the cut cannot tell whether the clock start shows the stage's caption.
         panels = {k: bytes([(3 * k) % 256] * 100) for k in range(0, 80)}
         with self.assertRaises(SystemExit) as failure:
-            trim_stages.caption_start(panels, 35, 1, 80, 30, "b", 32, True, 80)
+            start(panels, 35, 1, 80, 30, "b", 32, True, 80)
         self.assertIn("b: the world behind the caption panel moves 3.0 a frame", str(failure.exception))
         self.assertIn("--clock", str(failure.exception))
 
@@ -212,14 +220,14 @@ class CaptionStartTest(unittest.TestCase):
         # but no step stands out from the drift: the clock start may still show the previous clip's caption.
         panels = {k: bytes([(16 * k // 10) % 256] * 100) for k in range(0, 80)}
         with self.assertRaises(SystemExit) as failure:
-            trim_stages.caption_start(panels, 35, 20, 80, 30, "b", 32, False, 80)
+            start(panels, 35, 20, 80, 30, "b", 32, False, 80)
         self.assertIn("b: the caption panel does not change between the previous clip and frame 50", str(failure.exception))
         self.assertIn("--clock", str(failure.exception))
 
     def test_a_later_clip_whose_caption_came_before_the_clock_opens_at_the_clock(self) -> None:
         # The caption changed off film, after the previous clip ended at frame 20 and before the clock at 32.
         panels = {k: bytes([10 if k < 25 else 110] * 100) for k in range(0, 80)}
-        begin, reference = trim_stages.caption_start(panels, 35, 20, 80, 30, "b", 32, False, 80)
+        begin, reference = start(panels, 35, 20, 80, 30, "b", 32, False, 80)
         self.assertEqual(begin, 32)
         self.assertEqual(reference, bytes([110] * 100))
 
@@ -228,7 +236,7 @@ class CaptionStartTest(unittest.TestCase):
         # 1.2 s after the marker: the clock start shows the previous caption, and so does the reading window.
         panels = {k: bytes([10 if k < 25 else 110 if k < 70 else 210] * 100) for k in range(0, 80)}
         with self.assertRaises(SystemExit) as failure:
-            trim_stages.caption_start(panels, 35, 20, 80, 30, "b", 32, False, 80)
+            start(panels, 35, 20, 80, 30, "b", 32, False, 80)
         self.assertIn("b: the caption panel changes at frame 70, 1.2 s after the marker", str(failure.exception))
         self.assertIn("--clock", str(failure.exception))
 
@@ -236,11 +244,11 @@ class CaptionStartTest(unittest.TestCase):
         # Stage b is filmed again right after its own clip, its caption on screen all along: no change is right here,
         # because the caption the clock start shows is b's own. Any other later clip still needs a change.
         panels = {k: bytes([110] * 100) for k in range(0, 80)}
-        begin, reference = trim_stages.caption_start(panels, 35, 20, 80, 30, "b", 32, False, 80, True)
+        begin, reference = start(panels, 35, 20, 80, 30, "b", 32, False, 80, True)
         self.assertEqual(begin, 32)
         self.assertEqual(reference, bytes([110] * 100))
         with self.assertRaises(SystemExit) as failure:
-            trim_stages.caption_start(panels, 35, 20, 80, 30, "b", 32, False, 80)
+            start(panels, 35, 20, 80, 30, "b", 32, False, 80)
         self.assertIn("b: the caption never changes near frame 35", str(failure.exception))
 
     def test_a_repeated_stage_whose_caption_text_changes_late_fails_naming_the_clock(self) -> None:
@@ -248,7 +256,7 @@ class CaptionStartTest(unittest.TestCase):
         # the first take's text, and a repeated stage has no change near its start to tell that apart.
         panels = {k: bytes([110 if k < 110 else 210] * 100) for k in range(0, 130)}
         with self.assertRaises(SystemExit) as failure:
-            trim_stages.caption_start(panels, 35, 20, 130, 30, "b", 32, False, 120, True)
+            start(panels, 35, 20, 130, 30, "b", 32, False, 120, True)
         self.assertIn("b: the caption panel changes at frame 110, 2.5 s after the marker", str(failure.exception))
         self.assertIn("--clock", str(failure.exception))
 
@@ -256,16 +264,16 @@ class CaptionStartTest(unittest.TestCase):
         # The world drifts 1.6 a frame, so the panel changes near the marker but no step stands out from the drift.
         # A repeated stage opens at the clock on its own caption; any other clip may still show the previous one.
         panels = {k: bytes([(16 * k // 10) % 256] * 100) for k in range(0, 80)}
-        begin, _ = trim_stages.caption_start(panels, 35, 20, 80, 30, "b", 32, False, 80, True)
+        begin, _ = start(panels, 35, 20, 80, 30, "b", 32, False, 80, True)
         self.assertEqual(begin, 32)
         with self.assertRaises(SystemExit) as failure:
-            trim_stages.caption_start(panels, 35, 20, 80, 30, "b", 32, False, 80, False)
+            start(panels, 35, 20, 80, 30, "b", 32, False, 80, False)
         self.assertIn("b: the caption panel does not change between the previous clip", str(failure.exception))
 
     def test_a_change_after_the_first_stage_of_a_clip_ends_belongs_to_the_next_stage(self) -> None:
         # The same panels in a clip whose first stage ends at frame 70: the change there is the next stage's caption.
         panels = {k: bytes([10 if k < 25 else 110 if k < 70 else 210] * 100) for k in range(0, 80)}
-        begin, _ = trim_stages.caption_start(panels, 35, 20, 80, 30, "b", 32, False, 70)
+        begin, _ = start(panels, 35, 20, 80, 30, "b", 32, False, 70)
         self.assertEqual(begin, 32)
 
     def test_a_first_stage_shorter_than_its_caption_window_is_not_opened_on_the_next_stages_caption(self) -> None:
@@ -274,7 +282,7 @@ class CaptionStartTest(unittest.TestCase):
         # the clip opens at the clock start and a's caption is read before its stage ends.
         own, following = bytes([110] * 100), bytes([210] * 100)
         panels = {k: bytes([10] * 100) if k < 100 else own if k < 139 else following for k in range(80, 200)}
-        begin, reference = trim_stages.caption_start(panels, 120, 90, 200, 30, "a", 117, False, 138)
+        begin, reference = start(panels, 120, 90, 200, 30, "a", 117, False, 138)
         self.assertEqual(begin, 117)
         self.assertEqual(reference, own)
 
@@ -285,7 +293,7 @@ class CaptionStartTest(unittest.TestCase):
         panels = {k: bytes([10 if k < 100 else 60 if k < 132 else 110 if k < 141 else 210] * 100)
                   for k in range(80, 200)}
         with self.assertRaises(SystemExit) as failure:
-            trim_stages.caption_start(panels, 120, 90, 200, 30, "a", 117, False, 129)
+            start(panels, 120, 90, 200, 30, "a", 117, False, 129)
         self.assertIn("a: the stage lasts 0.30 s from its marker (frame 120)", str(failure.exception))
         self.assertIn("--clock", str(failure.exception))
 
@@ -699,6 +707,29 @@ class CaptionCutTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0, result.stdout)
         self.assertIn("a: the caption panel changes at frame 165, 2.5 s after the marker", result.stderr)
         self.assertIn("--clock", result.stderr)
+
+    def test_a_long_repeated_clip_is_read_without_holding_every_frame_it_watches(self) -> None:
+        # The second take of stage a lasts 20 s, and a repeated stage's panel is watched to its end: 600 frames. The
+        # cut needs whole panels only around each clip's start and end, so its memory must not grow with them.
+        log, video, meta = make_recording(
+            self.directory,
+            [(CAPTION_A, 12, 719)],
+            [("STAGE_START", "a", 0.5), ("STAGE_END", "a", 1.5), ("STAGE_START", "a", 3.0),
+             ("STAGE_END", "a", 23.0)], seconds=24.0)
+        times, _, _ = trim_stages.probe(video)
+        merged = trim_stages.clips(trim_stages.stage_windows(*trim_stages.markers(log.read_text())), times,
+                                   START_MS, RATE)
+        width, height, _, _ = trim_stages.CAPTION_CROP
+
+        tracemalloc.start()
+        try:
+            trim_stages.caption_cuts(video, merged, RATE)
+            peak = tracemalloc.get_traced_memory()[1]
+        finally:
+            tracemalloc.stop()
+
+        self.assertEqual([clip[0] for clip in merged], [12, 87])
+        self.assertLess(peak, 150 * width * height, f"{peak / (width * height):.0f} panels held at once")
 
     def test_a_take_without_captions_fails_unless_cut_by_the_clock(self) -> None:
         log, video, meta = make_recording(

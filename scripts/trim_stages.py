@@ -166,7 +166,28 @@ def median_panel(samples):
     return bytes(sorted(values)[len(values) // 2] for values in zip(*samples))
 
 
-def caption_start(panels, marker, lowest, finish, rate, stage, clock, first, until, continues=False):
+def too_short(marker, until, rate):
+    """Whether a stage ends before its caption may arrive, so that `caption_start` fails it without reading a panel."""
+    return until <= marker + at_rate(SEARCH_AFTER, rate)
+
+
+def caption_window(marker, finish, until, rate, continues):
+    """The frames `caption_start` reads for a clip whose first marker is at `marker`: the five frames its own caption
+    is read from, the last frame its caption may arrive in (`read`), the last frame a step may be taken from (`end`)
+    and the last frame watched for a late change (`late`). The arguments are as for `caption_start`."""
+    # A merged clip's next stage may draw its caption before this one's 0.9 s are up: the frames from its first
+    # stage's end on show that caption, not this one's.
+    own_last = min(finish, until) - 1
+    reference = [min(own_last, marker + at_rate(offset, rate)) for offset in REFERENCE_OFFSETS]
+    read = min(own_last, marker + at_rate(SEARCH_AFTER, rate))
+    end = min(own_last, marker + at_rate(REFERENCE_OFFSETS[-1], rate))
+    # Nothing shows a repeated stage's caption arriving, so a new text under its id must be seen wherever it comes in
+    # the stage, not only in the first 2 s.
+    late = own_last if continues else min(own_last, marker + at_rate(LATE, rate))
+    return reference, read, end, late
+
+
+def caption_start(panels, change, marker, lowest, finish, rate, stage, clock, first, until, continues=False):
     """The frame a clip opens on and the stage's own caption, from `panels` of the frames around it.
 
     `clock` is the frame the log's clock puts 0.10 s before the marker, `lowest` the frame after the previous clip,
@@ -177,23 +198,16 @@ def caption_start(panels, marker, lowest, finish, rate, stage, clock, first, unt
     world behind the panel drifts and can change off film, so neither the distance to a caption read at another moment
     nor a fixed limit decides where a caption appears.
 
-    `panels` maps a frame to its residual panel and must hold every frame from lowest - 1 to LATE after the marker,
-    or to the clip's end when it continues."""
-    if until <= marker + at_rate(SEARCH_AFTER, rate):
+    `panels` maps a frame to its residual panel and must hold the five reference frames and every frame from the
+    clock start to `read` (see `caption_window`). `change` maps a frame to how far its panel lies from the frame
+    before's, and must hold every frame from `lowest` to `late`, or to `end` if that is later."""
+    if too_short(marker, until, rate):
         raise SystemExit(f"{stage}: the stage lasts {(until - marker) / rate:.2f} s from its marker (frame {marker}), "
                          "less than the 0.5 s its caption may come after it, so the picture cannot show its caption "
                          "arriving; cut with --clock")
-    # A merged clip's next stage may draw its caption before this one's 0.9 s are up: the frames from its first
-    # stage's end on show that caption, not this one's.
-    own_last = min(finish, until) - 1
-    reference = median_panel([panels[min(own_last, marker + at_rate(offset, rate))] for offset in REFERENCE_OFFSETS])
+    frames, read, end, late = caption_window(marker, finish, until, rate, continues)
+    reference = median_panel([panels[frame] for frame in frames])
     lo = max(lowest, 1)
-    read = min(own_last, marker + at_rate(SEARCH_AFTER, rate))
-    end = min(own_last, marker + at_rate(REFERENCE_OFFSETS[-1], rate))
-    # Nothing shows a repeated stage's caption arriving, so a new text under its id must be seen wherever it comes in
-    # the stage, not only in the first 2 s.
-    late = own_last if continues else min(own_last, marker + at_rate(LATE, rate))
-    change = {k: mean_diff(panels[k - 1], panels[k]) for k in range(lo, max(end, late) + 1)}
     biggest = max((change[k] for k in range(lo, read + 1)), default=0.0)
     if biggest < CHANGED and not continues:
         raise SystemExit(f"{stage}: the caption never changes near frame {marker} (largest change {biggest:.1f}); "
@@ -249,26 +263,54 @@ def probe(video):
     return times, (int(stream["width"]), int(stream["height"])), bool(audio)
 
 
-def read_panels(video, wanted):
-    """The residual caption panel of each frame in `wanted`, read in one pass over the video."""
+def panel_frames(video, last):
+    """Each frame's caption panel up to frame `last`, as grey bytes, in one pass over the video."""
     width, height, x, y = CAPTION_CROP
     size = width * height
-    panels = {}
-    last = max(wanted)
     command = ["ffmpeg", "-v", "error", "-i", str(video), "-vf", f"crop={width}:{height}:{x}:{y},format=gray",
                "-fps_mode", "passthrough", "-frames:v", str(last + 1), "-f", "rawvideo", "-"]
     with subprocess.Popen(command, stdout=subprocess.PIPE) as ffmpeg:
         frame = 0
         while len(data := ffmpeg.stdout.read(size)) == size:
-            if frame in wanted:
-                panels[frame] = residual(data, width)
+            yield frame, data
             frame += 1
     if ffmpeg.returncode != 0:
         raise SystemExit(f"ffmpeg could not read {video}")
-    missing = sorted(set(wanted) - set(panels))
+
+
+def missing_frames(video, wanted, read):
+    missing = sorted(set(wanted) - set(read))
     if missing:
         raise SystemExit(f"could not read the caption panel of frames {missing[:5]} of {video}")
+
+
+def read_panels(video, wanted):
+    """The residual caption panel of each frame in `wanted`, read in one pass over the video."""
+    width = CAPTION_CROP[0]
+    panels = {frame: residual(data, width) for frame, data in panel_frames(video, max(wanted)) if frame in wanted}
+    missing_frames(video, wanted, panels)
     return panels
+
+
+def read_changes(video, kept, compared):
+    """The residual caption panel of each frame in `kept`, and for each frame in `compared` how far its panel lies
+    from the frame before's. One pass over the video that holds no other panel than the frame before's, so a long
+    take costs one number a frame, not one panel."""
+    width = CAPTION_CROP[0]
+    panels = {}
+    change = {}
+    previous = None
+    for frame, data in panel_frames(video, max(max(kept), max(compared, default=0))):
+        if frame in kept or frame in compared or frame + 1 in compared:
+            panel = residual(data, width)
+            if frame in compared:
+                change[frame] = mean_diff(previous, panel)
+            if frame in kept:
+                panels[frame] = panel
+            previous = panel
+    missing_frames(video, kept, panels)
+    missing_frames(video, compared, change)
+    return panels, change
 
 
 def repeats(previous_ids, ids):
@@ -281,26 +323,30 @@ def caption_cuts(video, merged, rate):
     """Moves each clip's start to where the caption panel shows its stage's caption; returns each clip's own caption,
     the caption it ends on and how far its first frame then sits from its own caption."""
     settle = at_rate(SETTLE, rate)
-    wanted = set()
+    kept = set()
+    compared = set()
     previous_end = 0
     previous_ids = None
-    for _, finish, marker, ids, _ in merged:
-        watched = finish - 1 if repeats(previous_ids, ids) else min(finish - 1, marker + at_rate(LATE, rate))
-        wanted.update(range(max(0, previous_end - 1), watched + 1))
+    for begin, finish, marker, ids, until in merged:
+        if not too_short(marker, until, rate):
+            frames, read, end, late = caption_window(marker, finish, until, rate, repeats(previous_ids, ids))
+            kept.update(frames)
+            kept.update(range(begin, read + 1))
+            compared.update(range(max(previous_end, 1), max(end, late) + 1))
         # The caption the clip ends on, which is the one the next clip must not open on: a merged clip shows the
         # caption of the last stage it holds there, not the one its first stage's marker introduced.
-        wanted.update(range(max(0, finish - 1 - settle), finish))
+        kept.update(range(max(0, finish - 1 - settle), finish))
         previous_end = finish
         previous_ids = ids
-    panels = read_panels(video, wanted)
+    panels, change = read_changes(video, kept, compared)
     captions = []
     previous_end = 0
     previous_ids = None
     for clip in merged:
         begin, finish, marker, ids, until = clip
         stage = ids.split("+")[0]
-        clip[0], reference = caption_start(panels, marker, previous_end, finish, rate, stage, begin, not captions,
-                                           until, repeats(previous_ids, ids))
+        clip[0], reference = caption_start(panels, change, marker, previous_end, finish, rate, stage, begin,
+                                           not captions, until, repeats(previous_ids, ids))
         print(f"{stage}: marker frame {marker}, caption from frame {clip[0]} ({(marker - clip[0]) / rate:+.2f} s)")
         captions.append({"own": reference,
                          "ending": median_panel([panels[j] for j in range(max(0, finish - 1 - settle), finish)]),
