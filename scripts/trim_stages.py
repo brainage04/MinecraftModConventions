@@ -26,6 +26,10 @@ Where a clip starts depends on what the take records, and the run prints which s
   clock start and 0.5 s after the STAGE_START (a caption drawn in two steps counts as one), the clip opens where it
   ends. With none up to 0.9 s, the caption is taken to be on screen already and the clip opens at the clock start; a
   later clip then needs a step since the previous clip ended, or the clock start may still show that clip's caption.
+  A clip whose first stage is the stage its previous clip ended on, a stage repeated with its caption, needs neither
+  that step nor any change near its start: the caption still on screen is its own, and after encoding its first frame
+  is held to the first clip's rule below. Its panel is watched to the stage's end instead of for 2 s, and a change
+  after 0.9 s, which may be a new text under its id, fails naming --clock.
   The panel is watched up to LATE (2 s) after the STAGE_START; a caption that comes later still is not seen. Every
   one of these windows stops at the stage's end, where the next stage of a merged clip may draw its own caption. The
   run fails, naming --clock, when the stage lasts no more than 0.5 s from its STAGE_START, so that its caption may
@@ -162,17 +166,19 @@ def median_panel(samples):
     return bytes(sorted(values)[len(values) // 2] for values in zip(*samples))
 
 
-def caption_start(panels, marker, lowest, finish, rate, stage, clock, first, until):
+def caption_start(panels, marker, lowest, finish, rate, stage, clock, first, until, continues=False):
     """The frame a clip opens on and the stage's own caption, from `panels` of the frames around it.
 
     `clock` is the frame the log's clock puts 0.10 s before the marker, `lowest` the frame after the previous clip,
-    `first` whether this is the first clip and `until` the frame the clip's first stage ends at. The stage's own
-    caption is the median of five panels 0.5 to 0.9 s after the marker, or the last ones before `until`; it is only
-    used to check the encode. The cut comes from the steps in the panel (see the module docstring): the world behind
-    the panel drifts and can change off film, so neither the distance to a caption read at another moment nor a fixed
-    limit decides where a caption appears.
+    `first` whether this is the first clip, `until` the frame the clip's first stage ends at and `continues` whether
+    the previous clip ended on this stage (see `repeats`), whose caption the clock start may then still show. The
+    stage's own caption is the median of five panels 0.5 to 0.9 s after the marker, or the last ones before `until`;
+    it is only used to check the encode. The cut comes from the steps in the panel (see the module docstring): the
+    world behind the panel drifts and can change off film, so neither the distance to a caption read at another moment
+    nor a fixed limit decides where a caption appears.
 
-    `panels` maps a frame to its residual panel and must hold every frame from lowest - 1 to LATE after the marker."""
+    `panels` maps a frame to its residual panel and must hold every frame from lowest - 1 to LATE after the marker,
+    or to the clip's end when it continues."""
     if until <= marker + at_rate(SEARCH_AFTER, rate):
         raise SystemExit(f"{stage}: the stage lasts {(until - marker) / rate:.2f} s from its marker (frame {marker}), "
                          "less than the 0.5 s its caption may come after it, so the picture cannot show its caption "
@@ -184,10 +190,12 @@ def caption_start(panels, marker, lowest, finish, rate, stage, clock, first, unt
     lo = max(lowest, 1)
     read = min(own_last, marker + at_rate(SEARCH_AFTER, rate))
     end = min(own_last, marker + at_rate(REFERENCE_OFFSETS[-1], rate))
-    late = min(own_last, marker + at_rate(LATE, rate))
+    # Nothing shows a repeated stage's caption arriving, so a new text under its id must be seen wherever it comes in
+    # the stage, not only in the first 2 s.
+    late = own_last if continues else min(own_last, marker + at_rate(LATE, rate))
     change = {k: mean_diff(panels[k - 1], panels[k]) for k in range(lo, max(end, late) + 1)}
     biggest = max((change[k] for k in range(lo, read + 1)), default=0.0)
-    if biggest < CHANGED:
+    if biggest < CHANGED and not continues:
         raise SystemExit(f"{stage}: the caption never changes near frame {marker} (largest change {biggest:.1f}); "
                          "a recording without captions is cut with --clock")
     after = sorted(change[k] for k in range(max(lo, clock + 1), end + 1)) or [0.0]
@@ -219,7 +227,7 @@ def caption_start(panels, marker, lowest, finish, rate, stage, clock, first, unt
             raise SystemExit(f"{stage}: the caption panel changes at frame {opens}, 0.5 to 0.9 s after the marker "
                              f"(frame {marker}), while its caption is read; cut with --clock")
         return opens, reference
-    if not first and not any(change[k] >= bar for k in range(lo, clock + 1)):
+    if not first and not continues and not any(change[k] >= bar for k in range(lo, clock + 1)):
         raise SystemExit(f"{stage}: the caption panel does not change between the previous clip and frame {read}, "
                          "so the clock start may still show the previous caption; cut with --clock")
     return clock, reference
@@ -263,31 +271,42 @@ def read_panels(video, wanted):
     return panels
 
 
+def repeats(previous_ids, ids):
+    """Whether a clip opens on the stage its previous clip ended on: the stage repeats, and the caption on screen
+    between the two clips is its own, so the picture cannot show it arriving or tell it from the previous clip's."""
+    return previous_ids is not None and previous_ids.split("+")[-1] == ids.split("+")[0]
+
+
 def caption_cuts(video, merged, rate):
     """Moves each clip's start to where the caption panel shows its stage's caption; returns each clip's own caption,
     the caption it ends on and how far its first frame then sits from its own caption."""
     settle = at_rate(SETTLE, rate)
     wanted = set()
     previous_end = 0
-    for _, finish, marker, _, _ in merged:
-        wanted.update(range(max(0, previous_end - 1), min(finish - 1, marker + at_rate(LATE, rate)) + 1))
+    previous_ids = None
+    for _, finish, marker, ids, _ in merged:
+        watched = finish - 1 if repeats(previous_ids, ids) else min(finish - 1, marker + at_rate(LATE, rate))
+        wanted.update(range(max(0, previous_end - 1), watched + 1))
         # The caption the clip ends on, which is the one the next clip must not open on: a merged clip shows the
         # caption of the last stage it holds there, not the one its first stage's marker introduced.
         wanted.update(range(max(0, finish - 1 - settle), finish))
         previous_end = finish
+        previous_ids = ids
     panels = read_panels(video, wanted)
     captions = []
     previous_end = 0
+    previous_ids = None
     for clip in merged:
         begin, finish, marker, ids, until = clip
         stage = ids.split("+")[0]
         clip[0], reference = caption_start(panels, marker, previous_end, finish, rate, stage, begin, not captions,
-                                           until)
+                                           until, repeats(previous_ids, ids))
         print(f"{stage}: marker frame {marker}, caption from frame {clip[0]} ({(marker - clip[0]) / rate:+.2f} s)")
         captions.append({"own": reference,
                          "ending": median_panel([panels[j] for j in range(max(0, finish - 1 - settle), finish)]),
                          "measured": mean_diff(panels[clip[0]], reference)})
         previous_end = finish
+        previous_ids = ids
     return captions
 
 
@@ -338,18 +357,20 @@ def check_first_frames(out_path, stages, captions):
     """Fails, naming --clock, unless every clip of the cut opens on its own caption rather than the previous clip's.
 
     The first clip has no previous caption to compare with, so the second encode may only leave its first frame
-    OWN_CAPTION worse than the source frame it was cut from: this checks the encode, not the cut. Every later clip
-    must be closer to its own caption than to the caption the previous clip ended on, because how far the encoded
-    first frame lands from its caption depends on the host's encoder: the same take measured 0.1 to 4.2 while the
-    caption change stayed near 27. Both captions are read at other moments than the first frame, so on a world that
-    drifts behind the panel two near-identical captions can fail a right cut here, and a world that changed between
-    the clips can pass a wrong one: the cut must not lean on this check."""
+    OWN_CAPTION worse than the source frame it was cut from: this checks the encode, not the cut. So may a clip that
+    repeats the stage its previous clip ended on (see `repeats`), whose own caption is the previous one. Every other
+    later clip must be closer to its own caption than to the caption the previous clip ended on, because how far the
+    encoded first frame lands from its caption depends on the host's encoder: the same take measured 0.1 to 4.2 while
+    the caption change stayed near 27. Both captions are read at other moments than the first frame, so on a world
+    that drifts behind the panel two near-identical captions can fail a right cut here, and a world that changed
+    between the clips can pass a wrong one: the cut must not lean on this check."""
     panels = read_panels(out_path, {stage["startFrame"] for stage in stages})
     previous = None
+    previous_ids = None
     for stage, caption in zip(stages, captions):
         first = panels[stage["startFrame"]]
         own = mean_diff(first, caption["own"])
-        if previous is None:
+        if previous is None or repeats(previous_ids, stage["stage"]):
             if own >= caption["measured"] + OWN_CAPTION:
                 raise SystemExit(f"{stage['stage']}: the clip's first frame does not show its own caption ({own:.1f}); "
                                  "cut with --clock")
@@ -358,6 +379,7 @@ def check_first_frames(out_path, stages, captions):
                              f"({own:.1f} to its own, {mean_diff(first, previous):.1f} to the previous); "
                              "cut with --clock")
         previous = caption["ending"]
+        previous_ids = stage["stage"]
 
 
 def frame_count(video):
