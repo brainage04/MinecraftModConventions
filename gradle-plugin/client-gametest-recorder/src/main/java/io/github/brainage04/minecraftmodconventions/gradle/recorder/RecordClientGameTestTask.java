@@ -260,12 +260,8 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
             processEnvironment.put("CLIENT_GAMETEST_RECORDING_NAME", recordingName);
             processEnvironment.put("CLIENT_GAMETEST_RECORDING_PROFILE", recordingProfile);
             processEnvironment.put("CLIENT_GAMETEST_RECORDING_TRACE", recordingTrace);
-            processEnvironment.put("CLIENT_GAMETEST_RECORDING_START_SIGNAL", startSignal.getAbsolutePath());
-            processEnvironment.put("CLIENT_GAMETEST_RECORDING_WINDOW", windowSignal.getAbsolutePath());
-            processEnvironment.put("CLIENT_GAMETEST_RECORDING_READY_SIGNAL", readySignal.getAbsolutePath());
-            processEnvironment.put("CLIENT_GAMETEST_RECORDING_STOP_SIGNAL", stopSignal.getAbsolutePath());
-            processEnvironment.put("CLIENT_GAMETEST_RECORDING_COMPLETE_SIGNAL", completeSignal.getAbsolutePath());
-            processEnvironment.put("CLIENT_GAMETEST_RECORDING_BOUNDARIES", boundaries.getAbsolutePath());
+            putHandoverFiles(processEnvironment, startSignal, windowSignal, readySignal, stopSignal, completeSignal,
+                    boundaries);
             if (gameCapture) {
                 processEnvironment.put("CLIENT_GAMETEST_RECORDING_CAPTURE_CLOCK", captureClock.getAbsolutePath());
                 processEnvironment.put("CLIENT_GAMETEST_RECORDING_CAPTURE_VIDEO", videoPipe.getAbsolutePath());
@@ -752,6 +748,21 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
         // Vanilla selects an enumerated OpenAL device; environment defaults alone do not pin it.
         environment.put("GTR_RECORDING_AUDIO_DEVICE", sinkName);
         return new AudioRoute(true, "virtual", sinkName + ".monitor", sinkName, environment);
+    }
+
+    /**
+     * Points the client GameTest at the files the take is handed over through. The start signal is also the mark of a
+     * recorded run, which on its own gives the child build the showcase options
+     * ({@link ClientGameTestOptions#profileId}): a game take names no sound device.
+     */
+    static void putHandoverFiles(Map<String, String> environment, File startSignal, File windowSignal,
+            File readySignal, File stopSignal, File completeSignal, File boundaries) {
+        environment.put(ClientGameTestOptions.RECORDING_SIGNAL_ENV, startSignal.getAbsolutePath());
+        environment.put("CLIENT_GAMETEST_RECORDING_WINDOW", windowSignal.getAbsolutePath());
+        environment.put("CLIENT_GAMETEST_RECORDING_READY_SIGNAL", readySignal.getAbsolutePath());
+        environment.put("CLIENT_GAMETEST_RECORDING_STOP_SIGNAL", stopSignal.getAbsolutePath());
+        environment.put("CLIENT_GAMETEST_RECORDING_COMPLETE_SIGNAL", completeSignal.getAbsolutePath());
+        environment.put("CLIENT_GAMETEST_RECORDING_BOUNDARIES", boundaries.getAbsolutePath());
     }
 
     /**

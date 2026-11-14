@@ -1,9 +1,11 @@
 package io.github.brainage04.minecraftmodconventions.gradle.recorder;
 
+import io.github.brainage04.minecraftmodconventions.gradle.production.ClientGameTestOptions;
 import org.gradle.api.GradleException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -34,6 +36,20 @@ class RecordClientGameTestTaskTest {
                 true,
                 "build/run/clientGameTest"
         ).isEmpty());
+    }
+
+    @Test
+    void theRecordedClientIsMarkedSoAGameTakeGetsTheShowcaseOptionsWithoutASoundDevice(@TempDir Path directory) {
+        File start = directory.resolve(".take.start").toFile();
+        Map<String, String> environment = new LinkedHashMap<>();
+
+        RecordClientGameTestTask.putHandoverFiles(environment, start, directory.resolve(".take.window").toFile(),
+                directory.resolve(".take.ready").toFile(), directory.resolve(".take.stop").toFile(),
+                directory.resolve(".take.complete").toFile(), directory.resolve("take-boundaries.properties").toFile());
+
+        String mark = environment.get(ClientGameTestOptions.RECORDING_SIGNAL_ENV);
+        assertEquals(start.getAbsolutePath(), mark);
+        assertEquals("showcase", ClientGameTestOptions.profileId(!mark.isBlank(), ""));
     }
 
     @Test
