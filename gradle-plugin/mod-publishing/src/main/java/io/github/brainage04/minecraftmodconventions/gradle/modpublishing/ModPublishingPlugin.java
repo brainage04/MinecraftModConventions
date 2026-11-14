@@ -13,11 +13,14 @@ import io.github.brainage04.minecraftmodconventions.gradle.modpublishing.modrint
 import org.gradle.api.GradleException;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
+import org.gradle.api.file.RegularFile;
 import org.gradle.api.provider.Provider;
 import org.gradle.api.tasks.TaskProvider;
 import org.gradle.api.tasks.bundling.AbstractArchiveTask;
 
 import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.util.List;
 import java.util.Locale;
 
@@ -479,6 +482,8 @@ public final class ModPublishingPlugin implements Plugin<Project> {
                 .map(repository -> repository + "/gradle mod-publisher");
         Provider<Boolean> enabled = extension.getModrinth().getEnabled();
         Provider<Boolean> submitForReview = extension.getModrinth().getSubmitForReview();
+        Provider<RegularFile> uploadIncomplete = project.getLayout().getBuildDirectory()
+                .file("mod-publishing/modrinth-upload-incomplete");
         TaskProvider<SubmitModrinthProjectForReviewTask> submit = project.getTasks().register(
                 SUBMIT_MODRINTH_FOR_REVIEW_TASK_NAME,
                 SubmitModrinthProjectForReviewTask.class,
@@ -502,10 +507,41 @@ public final class ModPublishingPlugin implements Plugin<Project> {
                     task.mustRunAfter("publishModrinth");
                     task.onlyIf("Modrinth publication is enabled", ignored -> enabled.get());
                     task.onlyIf("Modrinth review submission is enabled", ignored -> submitForReview.get());
+                    // A finalizer runs even when publishModrinth fails (Gradle user guide, "Finalizer tasks"), which
+                    // would submit the project without the version that just failed to upload. The configuration
+                    // cache cannot hold a reference to publishModrinth to read its state, so it leaves a marker
+                    // file until its upload succeeds.
+                    task.onlyIf(
+                            "The Modrinth upload did not fail",
+                            ignored -> !uploadIncomplete.get().getAsFile().exists()
+                    );
                     task.getOutputs().upToDateWhen(ignored -> false);
                 }
         );
-        project.getTasks().named("publishModrinth").configure(task -> task.finalizedBy(submit));
+        project.getTasks().named(CHECK_MODRINTH_VERSION_TASK_NAME).configure(task ->
+                task.doFirst(ignored -> deleteMarker(uploadIncomplete.get().getAsFile())));
+        project.getTasks().named("publishModrinth").configure(task -> {
+            task.doFirst(ignored -> writeMarker(uploadIncomplete.get().getAsFile()));
+            task.doLast(ignored -> deleteMarker(uploadIncomplete.get().getAsFile()));
+            task.finalizedBy(submit);
+        });
+    }
+
+    private static void writeMarker(File marker) {
+        try {
+            Files.createDirectories(marker.toPath().getParent());
+            Files.writeString(marker.toPath(), "");
+        } catch (IOException exception) {
+            throw new GradleException("Failed to write " + marker, exception);
+        }
+    }
+
+    private static void deleteMarker(File marker) {
+        try {
+            Files.deleteIfExists(marker.toPath());
+        } catch (IOException exception) {
+            throw new GradleException("Failed to delete " + marker, exception);
+        }
     }
 
     // The release workflow exports an empty value when an input is off, and an empty variable must not hide the
