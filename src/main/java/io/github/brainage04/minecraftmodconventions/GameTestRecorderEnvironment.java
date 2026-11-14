@@ -20,6 +20,12 @@ public final class GameTestRecorderEnvironment {
     public static final String COMPLETE_SIGNAL_ENV = "CLIENT_GAMETEST_RECORDING_COMPLETE_SIGNAL";
     public static final String BOUNDARIES_ENV = "CLIENT_GAMETEST_RECORDING_BOUNDARIES";
 
+    /**
+     * The start of the line the client prints when it cannot capture the game; the recorder fails the take with the
+     * rest of the line. The recorder's {@code RecordClientGameTestTask.CAPTURE_FAILURE_LINE} is tested against this.
+     */
+    public static final String CAPTURE_FAILURE_LINE = "[CLIENT_GAMETEST_RECORDING] CAPTURE_FAILURE: ";
+
     public static final String TEST_PROFILE_ENV = "CLIENT_GAMETEST_PROFILE";
     public static final String TEST_ONLY_ENV = "CLIENT_GAMETEST_ONLY";
     public static final String TEST_SUITE_ENV = "CLIENT_GAMETEST_SUITE";

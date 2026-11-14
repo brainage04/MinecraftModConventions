@@ -3,7 +3,10 @@ package io.github.brainage04.minecraftmodconventions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.PrintStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.IntBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -140,6 +143,26 @@ class GameCaptureTest {
         assertTrue(message.contains("Failed to open OpenAL device"), message);
         assertTrue(message.contains("ALC_SOFT_loopback"), message);
         assertTrue(message.contains("GTR_RECORDING_CAPTURE=x11grab"), message);
+    }
+
+    @Test
+    void everyCaptureFailureIsPrintedOnTheRecordersFailureLine() {
+        PrintStream original = System.err;
+        ByteArrayOutputStream printed = new ByteArrayOutputStream();
+        System.setErr(new PrintStream(printed, true, StandardCharsets.UTF_8));
+        try {
+            GameCaptureAudio.loopbackUnavailable();
+            GameCapture.reportFailure("The client's frame is 1280x720, not the recording's 1920x1080");
+        } finally {
+            System.setErr(original);
+        }
+
+        String[] lines = printed.toString(StandardCharsets.UTF_8).split("\\R");
+        assertEquals(2, lines.length, printed.toString());
+        assertTrue(lines[0].startsWith(GameTestRecorderEnvironment.CAPTURE_FAILURE_LINE + "Failed to open OpenAL"),
+                lines[0]);
+        assertEquals(GameTestRecorderEnvironment.CAPTURE_FAILURE_LINE
+                + "The client's frame is 1280x720, not the recording's 1920x1080", lines[1]);
     }
 
     @Test

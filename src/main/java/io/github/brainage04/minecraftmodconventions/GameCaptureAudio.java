@@ -90,7 +90,7 @@ public final class GameCaptureAudio {
                 + " Soft loopback device (ALC_SOFT_loopback), and this libopenal does not offer one. Record with"
                 + " GTR_RECORDING_CAPTURE=x11grab, whose sound comes from a PulseAudio sink's monitor, or use a"
                 + " libopenal built with the extension.";
-        System.err.println("[CLIENT_GAMETEST_RECORDING] CAPTURE_FAILURE: " + message);
+        GameCapture.reportFailure(message);
         return new IllegalStateException(message);
     }
 

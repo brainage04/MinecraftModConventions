@@ -11,6 +11,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -104,6 +106,23 @@ class RecordClientGameTestTaskTest {
                 RecordClientGameTestTask.gameCaptureFailure(evidence));
         assertTrue(failure.contains("1280x720"), failure);
         assertTrue(failure.contains("failed"), failure);
+    }
+
+    @Test
+    void theRecorderReadsTheFailureLineTheClientPrints() throws IOException {
+        String helper = Files.readString(Path.of(System.getProperty("mmc.recorderEnvironmentSource")));
+        Matcher declaration = Pattern.compile("CAPTURE_FAILURE_LINE\\s*=\\s*\"([^\"]*)\"").matcher(helper);
+        assertTrue(declaration.find(), "the runtime helper declares CAPTURE_FAILURE_LINE");
+        String clientPrefix = declaration.group(1);
+        assertEquals(clientPrefix, RecordClientGameTestTask.CAPTURE_FAILURE_LINE);
+
+        // The client's System.err reaches the recorder through the game's log, which puts its own prefix first.
+        assertEquals("The client's frame is 1280x720, not the recording's 1920x1080",
+                RecordClientGameTestTask.clientCaptureFailure("[12:00:00] [Render thread/INFO] (STDERR) " + clientPrefix
+                        + "The client's frame is 1280x720, not the recording's 1920x1080 "));
+        // A consumer mod printing the bare marker must not fail a recording.
+        assertNull(RecordClientGameTestTask.clientCaptureFailure("CAPTURE_FAILURE: a mod's own message"));
+        assertNull(RecordClientGameTestTask.clientCaptureFailure("Sound engine started"));
     }
 
     @Test
