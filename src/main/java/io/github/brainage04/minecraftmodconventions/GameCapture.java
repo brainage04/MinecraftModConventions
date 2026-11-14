@@ -48,6 +48,7 @@ public final class GameCapture {
     static final long HOLD_US = 250_000L;
     private static final Object LOCK = new Object();
     private static final Poll CLOCK_POLL = new Poll(CLOCK_POLL_NANOS);
+    private static final ClockReader CLOCK_READER = new ClockReader();
 
     private static GameCapture active;
     /** Why this run cannot capture the game at all; reported once, then never retried. */
@@ -162,8 +163,12 @@ public final class GameCapture {
             if (!CLOCK_POLL.due(System.nanoTime()) || !Files.isRegularFile(CLOCK)) {
                 return null;
             }
-            Clock clock = readClock(CLOCK);
+            Clock clock = CLOCK_READER.read(CLOCK);
             if (clock == null) {
+                String clockProblem = CLOCK_READER.takeProblem();
+                if (clockProblem != null) {
+                    reportFailure(clockProblem);
+                }
                 return null;
             }
             String backendProblem = backendProblem(RenderSystem.getDevice().getDeviceInfo().backendName());
@@ -179,21 +184,43 @@ public final class GameCapture {
     }
 
     /**
-     * The capture clock in {@code file}, or null when it is not there whole yet. The recorder replaces the file in
-     * one move, but a poll may still catch it missing, empty or part-read, and the next poll must retry: an exception
-     * here would be thrown out of {@code Minecraft.renderFrame} on the render thread and crash the client.
+     * Reads the capture clock, or null when it is not there whole yet. The recorder replaces the file in one move, but
+     * a poll may still catch it missing, empty or part-read, and the next poll must retry: an exception here would be
+     * thrown out of {@code Minecraft.renderFrame} on the render thread and crash the client. A clock that still does
+     * not parse after {@link #PATIENCE} polls is one the recorder wrote wrong, and is reported once on the failure
+     * line, which fails the take with what was read instead of a missing first frame 30 s later.
      */
-    static Clock readClock(Path file) {
-        String text;
-        try {
-            text = Files.readString(file);
-        } catch (IOException exception) {
-            return null;
+    static final class ClockReader {
+        static final int PATIENCE = 20;
+        private int unparsed;
+        private String problem;
+        private boolean reported;
+
+        Clock read(Path file) {
+            String text;
+            try {
+                text = Files.readString(file);
+            } catch (IOException exception) {
+                return null;
+            }
+            try {
+                return Clock.parse(text);
+            } catch (RuntimeException exception) {
+                if (++unparsed >= PATIENCE && !reported) {
+                    reported = true;
+                    // One line: the recorder takes the reason from the failure line alone.
+                    problem = ("The capture clock " + file + " still reads \"" + text.strip() + "\" after " + unparsed
+                            + " polls, not 't0Us fps width height': " + exception.getMessage()).replaceAll("\\R", " ");
+                }
+                return null;
+            }
         }
-        try {
-            return Clock.parse(text);
-        } catch (RuntimeException exception) {
-            return null;
+
+        /** The problem to report, once; null before and after. */
+        String takeProblem() {
+            String taken = problem;
+            problem = null;
+            return taken;
         }
     }
 
