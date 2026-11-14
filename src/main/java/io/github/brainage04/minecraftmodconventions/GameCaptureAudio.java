@@ -2,7 +2,6 @@ package io.github.brainage04.minecraftmodconventions;
 
 import org.lwjgl.openal.ALC10;
 import org.lwjgl.openal.SOFTLoopback;
-import org.lwjgl.system.MemoryUtil;
 
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -30,10 +29,7 @@ public final class GameCaptureAudio {
     private static final Object LOCK = new Object();
     private static final Object WRITE_LOCK = new Object();
 
-    private static Thread renderer;
-    private static volatile boolean running;
-    /** Set when a renderer could not be stopped within its join: it still owns the sound pipe. */
-    private static boolean stuck;
+    private static Renderer renderer;
     /** Where the recording's sound starts, and the clock to place a device's samples by; null until it starts. */
     private static volatile Start start;
     /** The sound pipe, shared by every device the sound engine opens, so a reload does not end the stream. */
@@ -96,16 +92,7 @@ public final class GameCaptureAudio {
 
     /** Starts rendering the device's mix; call once its context is current. */
     public static void deviceOpened(long device) {
-        synchronized (LOCK) {
-            stopRendering();
-            if (stuck) {
-                return;
-            }
-            running = true;
-            renderer = new Thread(() -> render(device), "Recording sound");
-            renderer.setDaemon(true);
-            renderer.start();
-        }
+        startRendering((buffer, frames) -> SOFTLoopback.alcRenderSamplesSOFT(device, buffer, frames));
         System.out.println("[CLIENT_GAMETEST_RECORDING] Game sound renders into the recording through an OpenAL loopback device");
     }
 
@@ -113,6 +100,15 @@ public final class GameCaptureAudio {
     public static void deviceClosing() {
         synchronized (LOCK) {
             stopRendering();
+        }
+    }
+
+    /** Stops the renderer of the device before, if any, and starts rendering {@code source}. */
+    static void startRendering(SampleSource source) {
+        synchronized (LOCK) {
+            stopRendering();
+            renderer = new Renderer(source);
+            renderer.thread.start();
         }
     }
 
@@ -134,42 +130,61 @@ public final class GameCaptureAudio {
     }
 
     private static void stopRendering() {
-        running = false;
-        if (renderer != null) {
-            try {
-                // The writer can be blocked in out.write on a full pipe while holding WRITE_LOCK; waiting for it
-                // without a bound would hang the client's shutdown behind ffmpeg. It is a daemon thread, and the
-                // sound it still writes is the recording's tail.
-                renderer.join(1000L);
-            } catch (InterruptedException exception) {
-                Thread.currentThread().interrupt();
-            }
-            if (renderer.isAlive()) {
-                // It dies with the JVM. A second renderer would write into the same pipe behind it, and the sound
-                // it still writes is the recording's tail, so nothing else starts one.
-                stuck = true;
-                System.out.println("[CLIENT_GAMETEST_RECORDING] The sound writer did not stop within a second.");
-                return;
-            }
-            renderer = null;
+        if (renderer == null) {
+            return;
         }
+        renderer.running = false;
+        try {
+            // The writer can be blocked in out.write on a full pipe while holding WRITE_LOCK; waiting for it without
+            // a bound would hang the client's shutdown behind ffmpeg. It renders nothing more once it sees its flag,
+            // so the device can close under it, and the next device's renderer queues on WRITE_LOCK behind its last
+            // write: write() places every sample by writtenFrames, so the two never interleave out of order.
+            renderer.thread.join(1000L);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+        }
+        if (renderer.thread.isAlive()) {
+            System.out.println("[CLIENT_GAMETEST_RECORDING] The sound writer did not stop within a second; it renders"
+                    + " nothing more, and the next sound device's writer follows it in the recording.");
+        }
+        renderer = null;
     }
 
-    private static void render(long device) {
-        long renderStartNanos = System.nanoTime();
-        ByteBuffer buffer = MemoryUtil.memAlloc(SAMPLE_RATE * BYTES_PER_FRAME);
-        byte[] bytes = new byte[buffer.capacity()];
-        long rendered = 0;
-        // The recording's sample index of this device's rendered sample 0, once the capture has started.
-        long offset = Long.MIN_VALUE;
-        boolean writing = true;
-        try {
+    /** Renders a device's mix into {@code buffer}, {@code frames} sample frames at a time. */
+    @FunctionalInterface
+    interface SampleSource {
+        void render(ByteBuffer buffer, int frames);
+    }
+
+    /**
+     * One device's rendering thread. Each has its own flag, so starting the next device's renderer never revives one
+     * that is still finishing a write, which would then render from a device that has closed.
+     */
+    private static final class Renderer {
+        private final SampleSource source;
+        private final Thread thread;
+        private volatile boolean running = true;
+
+        Renderer(SampleSource source) {
+            this.source = source;
+            this.thread = new Thread(this::render, "Recording sound");
+            thread.setDaemon(true);
+        }
+
+        private void render() {
+            long renderStartNanos = System.nanoTime();
+            ByteBuffer buffer = ByteBuffer.allocateDirect(SAMPLE_RATE * BYTES_PER_FRAME);
+            byte[] bytes = new byte[buffer.capacity()];
+            long rendered = 0;
+            // The recording's sample index of this device's rendered sample 0, once the capture has started.
+            long offset = Long.MIN_VALUE;
+            boolean writing = true;
             while (running) {
                 long due = (System.nanoTime() - renderStartNanos) * SAMPLE_RATE / 1_000_000_000L;
-                while (rendered < due) {
+                while (running && rendered < due) {
                     int count = (int) Math.min(due - rendered, SAMPLE_RATE);
                     buffer.clear();
-                    SOFTLoopback.alcRenderSamplesSOFT(device, buffer, count);
+                    source.render(buffer, count);
                     long first = rendered;
                     rendered += count;
                     Start capture = start;
@@ -189,8 +204,6 @@ public final class GameCaptureAudio {
                 }
                 LockSupport.parkNanos(INTERVAL_NANOS);
             }
-        } finally {
-            MemoryUtil.memFree(buffer);
         }
     }
 
