@@ -243,6 +243,15 @@ class CaptionStartTest(unittest.TestCase):
             trim_stages.caption_start(panels, 35, 20, 80, 30, "b", 32, False, 80)
         self.assertIn("b: the caption never changes near frame 35", str(failure.exception))
 
+    def test_a_repeated_stage_whose_caption_text_changes_late_fails_naming_the_clock(self) -> None:
+        # Stage b is filmed again with a new text under its id, drawn 2.5 s after the marker: the clock start shows
+        # the first take's text, and a repeated stage has no change near its start to tell that apart.
+        panels = {k: bytes([110 if k < 110 else 210] * 100) for k in range(0, 130)}
+        with self.assertRaises(SystemExit) as failure:
+            trim_stages.caption_start(panels, 35, 20, 130, 30, "b", 32, False, 120, True)
+        self.assertIn("b: the caption panel changes at frame 110, 2.5 s after the marker", str(failure.exception))
+        self.assertIn("--clock", str(failure.exception))
+
     def test_only_a_repeated_stage_opens_without_a_step_since_the_previous_clip(self) -> None:
         # The world drifts 1.6 a frame, so the panel changes near the marker but no step stands out from the drift.
         # A repeated stage opens at the clock on its own caption; any other clip may still show the previous one.
@@ -654,6 +663,21 @@ class CaptionCutTest(unittest.TestCase):
         self.assertIn("a: marker frame 90, caption from frame 87", result.stdout)
         stages = json.loads(video.with_name("cut.stages.json").read_text())
         self.assertEqual([stage["stage"] for stage in stages], ["a", "a"])
+
+    def test_a_stage_filmed_twice_whose_second_text_comes_late_fails_naming_the_clock(self) -> None:
+        # The second take of stage a draws a new text under its id 2.5 s after its marker (frame 90): its clip would
+        # otherwise open at the clock start on the first take's text.
+        log, video, meta = make_recording(
+            self.directory,
+            [(CAPTION_A, 12, 164), (CAPTION_B, 165, 179)],
+            [("STAGE_START", "a", 0.5), ("STAGE_END", "a", 1.5), ("STAGE_START", "a", 3.0),
+             ("STAGE_END", "a", 5.8)])
+
+        result = cut(log, video, meta)
+
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn("a: the caption panel changes at frame 165, 2.5 s after the marker", result.stderr)
+        self.assertIn("--clock", result.stderr)
 
     def test_a_take_without_captions_fails_unless_cut_by_the_clock(self) -> None:
         log, video, meta = make_recording(

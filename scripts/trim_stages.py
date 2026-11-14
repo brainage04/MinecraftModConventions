@@ -28,7 +28,8 @@ Where a clip starts depends on what the take records, and the run prints which s
   later clip then needs a step since the previous clip ended, or the clock start may still show that clip's caption.
   A clip whose first stage is the stage its previous clip ended on, a stage repeated with its caption, needs neither
   that step nor any change near its start: the caption still on screen is its own, and after encoding its first frame
-  is held to the first clip's rule below.
+  is held to the first clip's rule below. Its panel is watched to the stage's end instead of for 2 s, and a change
+  after 0.9 s, which may be a new text under its id, fails naming --clock.
   The panel is watched up to LATE (2 s) after the STAGE_START, or to the stage's end if that comes first; a caption
   that comes later still is not seen. The run fails, naming --clock, when the panel changes more than once after the
   clock start, or changes more than 0.5 s after the STAGE_START, or drifts so fast that a change as small as NEAREST
@@ -174,13 +175,16 @@ def caption_start(panels, marker, lowest, finish, rate, stage, clock, first, unt
     and can change off film, so neither the distance to a caption read at another moment nor a fixed limit decides
     where a caption appears.
 
-    `panels` maps a frame to its residual panel and must hold every frame from lowest - 1 to LATE after the marker."""
+    `panels` maps a frame to its residual panel and must hold every frame from lowest - 1 to LATE after the marker,
+    or to the clip's end when it continues."""
     last = finish - 1
     reference = median_panel([panels[min(last, marker + at_rate(offset, rate))] for offset in REFERENCE_OFFSETS])
     lo = max(lowest, 1)
     read = min(last, marker + at_rate(SEARCH_AFTER, rate))
     end = min(last, marker + at_rate(REFERENCE_OFFSETS[-1], rate))
-    late = min(last, until - 1, marker + at_rate(LATE, rate))
+    # Nothing shows a repeated stage's caption arriving, so a new text under its id must be seen wherever it comes in
+    # the stage, not only in the first 2 s.
+    late = min(last, until - 1) if continues else min(last, until - 1, marker + at_rate(LATE, rate))
     change = {k: mean_diff(panels[k - 1], panels[k]) for k in range(lo, max(end, late) + 1)}
     biggest = max((change[k] for k in range(lo, read + 1)), default=0.0)
     if biggest < CHANGED and not continues:
@@ -271,12 +275,15 @@ def caption_cuts(video, merged, rate):
     settle = at_rate(SETTLE, rate)
     wanted = set()
     previous_end = 0
-    for _, finish, marker, _, _ in merged:
-        wanted.update(range(max(0, previous_end - 1), min(finish - 1, marker + at_rate(LATE, rate)) + 1))
+    previous_ids = None
+    for _, finish, marker, ids, _ in merged:
+        watched = finish - 1 if repeats(previous_ids, ids) else min(finish - 1, marker + at_rate(LATE, rate))
+        wanted.update(range(max(0, previous_end - 1), watched + 1))
         # The caption the clip ends on, which is the one the next clip must not open on: a merged clip shows the
         # caption of the last stage it holds there, not the one its first stage's marker introduced.
         wanted.update(range(max(0, finish - 1 - settle), finish))
         previous_end = finish
+        previous_ids = ids
     panels = read_panels(video, wanted)
     captions = []
     previous_end = 0
