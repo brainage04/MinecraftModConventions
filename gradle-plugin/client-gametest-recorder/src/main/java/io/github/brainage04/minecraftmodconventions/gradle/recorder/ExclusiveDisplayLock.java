@@ -8,18 +8,21 @@ import java.nio.channels.FileLock;
 import java.nio.channels.OverlappingFileLockException;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.time.Duration;
 
 /**
  * An exclusive claim on a recording X display, held for the whole client run.
  *
  * <p>Two recordings that share a display both draw on it, and x11grab would capture a mix of the two
- * clients without saying so. A recorder therefore takes the display's lock, and the second one falls
- * back to its own virtual display instead of waiting: a waiting job would hold a heavy slot until the
+ * clients without saying so. A recorder therefore takes the display's lock, and by default the second one
+ * falls back to its own virtual display instead of waiting: a waiting job would hold a heavy slot until the
  * first recording ended, while the fallback still produces a usable take and names the reason in the
- * recording's metadata.
+ * recording's metadata. A recording that must be on the card waits for the lock instead, for a bounded
+ * time ({@link #acquireWithin}).
  */
 final class ExclusiveDisplayLock implements AutoCloseable {
     private static final String LOCK_PREFIX = ".gtr-recording-display-";
+    private static final long POLL_MILLIS = 1_000L;
 
     private final FileChannel channel;
     private final FileLock lock;
@@ -64,6 +67,25 @@ final class ExclusiveDisplayLock implements AutoCloseable {
         } catch (IOException exception) {
             closeQuietly(channel);
             throw new UncheckedIOException("Cannot take the recording display lock " + path, exception);
+        }
+    }
+
+    /**
+     * Takes the display's lock, waiting up to {@code wait} for the recording that holds it to stop; null
+     * when the lock is still held after that. The lock is tried once a second.
+     */
+    static ExclusiveDisplayLock acquireWithin(String display, Duration wait) throws InterruptedException {
+        long deadline = System.nanoTime() + wait.toNanos();
+        while (true) {
+            ExclusiveDisplayLock lock = tryAcquire(display);
+            if (lock != null) {
+                return lock;
+            }
+            long leftMillis = Duration.ofNanos(deadline - System.nanoTime()).toMillis();
+            if (leftMillis <= 0) {
+                return null;
+            }
+            Thread.sleep(Math.min(POLL_MILLIS, leftMillis));
         }
     }
 

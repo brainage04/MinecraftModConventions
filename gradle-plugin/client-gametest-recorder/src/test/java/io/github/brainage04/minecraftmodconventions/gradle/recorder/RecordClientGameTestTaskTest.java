@@ -7,6 +7,7 @@ import org.junit.jupiter.api.io.TempDir;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -262,6 +263,91 @@ class RecordClientGameTestTaskTest {
         assertTrue(failure.contains("The client was not started"), failure);
         assertNull(RecordClientGameTestTask.captureRateFailure(60, ":1", null));
         assertNull(RecordClientGameTestTask.captureRateFailure(30, null, null));
+    }
+
+    @Test
+    void aRecordingMayFallBackToTheVirtualDisplayUnlessItMustUseTheCard() {
+        assertNull(RecordClientGameTestTask.requiredGpuWait("false", "3600"));
+        assertNull(RecordClientGameTestTask.requiredGpuWait("off", "not read"));
+        assertEquals(Duration.ofSeconds(3600), RecordClientGameTestTask.requiredGpuWait("true", "3600"));
+        assertEquals(Duration.ofSeconds(90), RecordClientGameTestTask.requiredGpuWait("1", "90"));
+    }
+
+    @Test
+    void aMistypedRequireGpuOrWaitFailsRatherThanAllowingTheFallback() {
+        GradleException mistyped = assertThrows(GradleException.class,
+                () -> RecordClientGameTestTask.requiredGpuWait("ture", "3600"));
+        assertTrue(mistyped.getMessage().contains("GTR_RECORDING_REQUIRE_GPU must be true or false"), mistyped.getMessage());
+        assertThrows(GradleException.class, () -> RecordClientGameTestTask.requiredGpuWait("true", "0"));
+        assertThrows(GradleException.class, () -> RecordClientGameTestTask.requiredGpuWait("true", "an hour"));
+    }
+
+    @Test
+    void aRequiredCardDisplayStillTakenAfterTheWaitFailsNamingTheWaitAndTheLock() {
+        String reason = RecordClientGameTestTask.displayTakenReason(":1", Duration.ofSeconds(3600));
+        String failure = RecordClientGameTestTask.requiredGpuFailure(reason);
+
+        assertTrue(failure.startsWith("GTR_RECORDING_REQUIRE_GPU is set, so this recording must render on the card"),
+                failure);
+        assertTrue(failure.contains("X display :1 was still recording for another job after 3600 s"), failure);
+        assertTrue(failure.contains("GTR_RECORDING_GPU_WAIT_SECONDS"), failure);
+        assertTrue(failure.contains(".gtr-recording-display-1.lock"), failure);
+        assertTrue(failure.contains("did not fall back to the recorder's own virtual display"), failure);
+        assertTrue(failure.contains("The client was not started"), failure);
+        assertTrue(RecordClientGameTestTask.displayTakenReason(":1", null)
+                .startsWith("X display :1 is recording for another job (its lock"));
+    }
+
+    @Test
+    void aCardDisplayThatCannotBeUsedFallsBackUnlessRequireGpuStopsTheRecording() {
+        Duration required = Duration.ofSeconds(3600);
+        String answering = "  dimensions:    1920x1080 pixels (508x285 millimeters)\ndepth of root window:    24 planes\n";
+
+        RecordClientGameTestTask.CardDisplay card =
+                RecordClientGameTestTask.cardDisplay(":1", null, 0, answering, required);
+        assertEquals(":1", card.display(), "a display that answers is captured on");
+        assertNull(card.fallbackReason());
+        assertNull(card.failure());
+
+        // No display is named at all: a run on the recorder's own display by design, with nothing to report.
+        RecordClientGameTestTask.CardDisplay unset = RecordClientGameTestTask.cardDisplay(null, null, 0, "", null);
+        assertNull(unset.display());
+        assertNull(unset.fallbackReason());
+        assertNull(unset.failure());
+        String missing = RecordClientGameTestTask.cardDisplay(null, null, 0, "", required).failure();
+        assertTrue(missing.contains("no recording display is set (the recordingDisplay Gradle property, "
+                + "GTR_RECORDING_DISPLAY or /etc/gametest-recording-display)"), missing);
+        assertTrue(missing.contains("The client was not started"), missing);
+
+        // Another job still holds the display after the wait.
+        String taken = RecordClientGameTestTask.displayTakenReason(":1", required);
+        RecordClientGameTestTask.CardDisplay waited =
+                RecordClientGameTestTask.cardDisplay(":1", taken, 0, answering, null);
+        assertNull(waited.display());
+        assertEquals(taken, waited.fallbackReason(), "without the card required the recording falls back and says why");
+        assertNull(waited.failure());
+        assertTrue(RecordClientGameTestTask.cardDisplay(":1", taken, 0, answering, required).failure().contains(taken));
+
+        // The display's lock file cannot be opened: unusable even with a wait, so also not a fall-back when required.
+        String unopenable = "Could not lock X display :1";
+        assertEquals(unopenable, RecordClientGameTestTask.cardDisplay(":1", unopenable, 0, "", null).fallbackReason());
+        assertTrue(RecordClientGameTestTask.cardDisplay(":1", unopenable, 0, "", required).failure().contains(unopenable));
+
+        // The display does not answer xdpyinfo, with a lock and without one.
+        for (String notAnswering : List.of("", "No protocol specified\nxdpyinfo:  unable to open display \":1\"")) {
+            RecordClientGameTestTask.CardDisplay blank =
+                    RecordClientGameTestTask.cardDisplay(":1", null, 1, notAnswering, required);
+            assertNull(blank.display());
+            assertTrue(blank.failure().contains("X display :1 does not answer"), blank.failure());
+            assertTrue(blank.failure().contains("The client was not started"), blank.failure());
+            assertTrue(RecordClientGameTestTask.cardDisplay(":1", null, 1, notAnswering, null)
+                    .fallbackReason()
+                    .startsWith("X display :1 does not answer"));
+        }
+        // A display that answers with no dimensions is not a display this recorder can capture on.
+        assertTrue(RecordClientGameTestTask.cardDisplay(":1", null, 0, "name of display: :1", required)
+                .failure()
+                .contains("X display :1 does not answer"));
     }
 
     @Test
