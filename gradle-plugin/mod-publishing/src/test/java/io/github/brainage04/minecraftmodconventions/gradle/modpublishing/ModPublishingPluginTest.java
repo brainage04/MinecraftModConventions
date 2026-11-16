@@ -358,6 +358,113 @@ class ModPublishingPluginTest {
     }
 
     @Test
+    void skipsModrinthAndCurseForgeWhenTheRepositoryIsPrivate() throws Exception {
+        try (var server = FakeModrinthServer.start(true)) {
+            server.setRepositoryPrivate(true);
+            writeBuildFile("""
+                    dryRun = false
+                    github.repository = 'brainage04/publisher-fixture'
+                    github.token = 'fixture-token'
+                    github.apiEndpoint = '%s'
+                    modrinth {
+                        enabled = true
+                        projectId = 'AbCdEf12'
+                        token = 'fixture-token'
+                        apiEndpoint = '%s'
+                    }
+                    curseforge {
+                        enabled = true
+                        projectId = '12345'
+                        token = 'fixture-token'
+                        apiEndpoint = '%s'
+                    }
+                    """.formatted(server.apiEndpoint(), server.apiEndpoint(), server.apiEndpoint()), "");
+
+            BuildResult result = runGradle("publishMods");
+
+            assertEquals(TaskOutcome.SUCCESS, result.task(":checkRepositoryVisibility").getOutcome());
+            assertEquals(TaskOutcome.SKIPPED, result.task(":publishModrinth").getOutcome());
+            assertEquals(TaskOutcome.SKIPPED, result.task(":publishCurseforge").getOutcome());
+            assertEquals(0, server.requests("POST", "/version").size());
+            assertTrue(result.getOutput().contains("is private"), result.getOutput());
+        }
+    }
+
+    @Test
+    void publishesToModrinthWhenTheRepositoryIsPublic() throws Exception {
+        try (var server = FakeModrinthServer.start(true)) {
+            server.setRepositoryPrivate(false);
+            writeBuildFile("""
+                    dryRun = false
+                    github.repository = 'brainage04/publisher-fixture'
+                    github.token = 'fixture-token'
+                    github.apiEndpoint = '%s'
+                    modrinth {
+                        enabled = true
+                        projectId = 'AbCdEf12'
+                        token = 'fixture-token'
+                        apiEndpoint = '%s'
+                    }
+                    """.formatted(server.apiEndpoint(), server.apiEndpoint()), "");
+
+            BuildResult result = runGradle("publishModrinth");
+
+            assertEquals(TaskOutcome.SUCCESS, result.task(":checkRepositoryVisibility").getOutcome());
+            assertEquals(TaskOutcome.SUCCESS, result.task(":publishModrinth").getOutcome());
+            assertEquals(1, server.requests("POST", "/version").size());
+        }
+    }
+
+    @Test
+    void skipsStorePublicationWhenRepositoryVisibilityCannotBeRead() throws Exception {
+        try (var server = FakeModrinthServer.start(true)) {
+            server.setRepositoryPrivate(null);
+            writeBuildFile("""
+                    dryRun = false
+                    github.repository = 'brainage04/publisher-fixture'
+                    github.token = 'fixture-token'
+                    github.apiEndpoint = '%s'
+                    modrinth {
+                        enabled = true
+                        projectId = 'AbCdEf12'
+                        token = 'fixture-token'
+                        apiEndpoint = '%s'
+                    }
+                    """.formatted(server.apiEndpoint(), server.apiEndpoint()), "");
+
+            BuildResult result = runGradle("publishModrinth");
+
+            assertEquals(TaskOutcome.SUCCESS, result.task(":checkRepositoryVisibility").getOutcome());
+            assertEquals(TaskOutcome.SKIPPED, result.task(":publishModrinth").getOutcome());
+            assertEquals(0, server.requests("POST", "/version").size());
+            assertTrue(result.getOutput().contains("Skipping Modrinth and CurseForge publication"), result.getOutput());
+        }
+    }
+
+    @Test
+    void skipsStorePublicationWhenTheVisibilityCheckIsExcluded() throws Exception {
+        try (var server = FakeModrinthServer.start(true)) {
+            writeBuildFile("""
+                    dryRun = false
+                    github.repository = 'brainage04/publisher-fixture'
+                    github.token = 'fixture-token'
+                    github.apiEndpoint = '%s'
+                    modrinth {
+                        enabled = true
+                        projectId = 'AbCdEf12'
+                        token = 'fixture-token'
+                        apiEndpoint = '%s'
+                    }
+                    """.formatted(server.apiEndpoint(), server.apiEndpoint()), "");
+
+            BuildResult result = runGradle("publishModrinth", "-x", "checkRepositoryVisibility");
+
+            assertEquals(TaskOutcome.SKIPPED, result.task(":publishModrinth").getOutcome());
+            assertEquals(0, server.requests("POST", "/version").size());
+        }
+    }
+
+    @Test
     void resolvesAnnotatedTagNotesWithoutCallingGitHub() throws Exception {
         writeBuildFile("""
                 changelog = ''
@@ -409,13 +516,16 @@ class ModPublishingPluginTest {
         try (var server = FakeModrinthServer.start(true, true)) {
             writeBuildFile("""
                     dryRun = false
+                    github.repository = 'brainage04/publisher-fixture'
+                    github.token = 'fixture-token'
+                    github.apiEndpoint = '%s'
                     modrinth {
                         enabled = true
                         projectId = 'AbCdEf12'
                         token = 'fixture-token'
                         apiEndpoint = '%s'
                     }
-                    """.formatted(server.apiEndpoint()), "");
+                    """.formatted(server.apiEndpoint(), server.apiEndpoint()), "");
 
             BuildResult skipped = runGradle("publishModrinth");
 
@@ -469,13 +579,21 @@ class ModPublishingPluginTest {
                         dryRun = false
                         releaseTag = '%s'
                         version = '%s'
+                        github.repository = 'brainage04/publisher-fixture'
+                        github.token = 'fixture-token'
+                        github.apiEndpoint = '%s'
                         modrinth {
                             enabled = true
                             projectId = 'AbCdEf12'
                             token = 'fixture-token'
                             apiEndpoint = '%s'
                         }
-                        """.formatted(tag, tag.substring(1), server.apiEndpoint()), "");
+                        """.formatted(
+                                tag,
+                                tag.substring(1),
+                                server.apiEndpoint(),
+                                server.apiEndpoint()
+                        ), "");
                 runGradle("publishModrinth");
             }
 
@@ -491,18 +609,24 @@ class ModPublishingPluginTest {
     }
 
     @Test
-    void rejectsLivePublicationWithoutDestinationToken() throws IOException {
-        writeBuildFile("""
-                dryRun = false
-                modrinth {
-                    enabled = true
-                    projectId = 'AbCdEf12'
-                }
-                """, "");
+    void rejectsLivePublicationWithoutDestinationToken() throws Exception {
+        try (var server = FakeModrinthServer.start(true)) {
+            writeBuildFile("""
+                    dryRun = false
+                    github.repository = 'brainage04/publisher-fixture'
+                    github.token = 'fixture-token'
+                    github.apiEndpoint = '%s'
+                    modrinth {
+                        enabled = true
+                        projectId = 'AbCdEf12'
+                    }
+                    """.formatted(server.apiEndpoint()), "");
 
-        BuildResult result = runGradleAndFail("publishModrinth");
+            BuildResult result = runGradleAndFail("publishModrinth");
 
-        assertTrue(result.getOutput().contains("modPublishing.modrinth.token or MODRINTH_TOKEN"));
+            assertTrue(result.getOutput().contains("modPublishing.modrinth.token or MODRINTH_TOKEN"));
+            assertEquals(0, server.requests("POST", "/version").size());
+        }
     }
 
     @Test
@@ -605,11 +729,13 @@ class ModPublishingPluginTest {
     private String modrinthSyncConfiguration(String apiEndpoint) {
         return """
                 github.repository = 'brainage04/publisher-fixture'
+                github.token = 'fixture-token'
+                github.apiEndpoint = '%s'
                 modrinth {
                     token = 'fixture-token'
                     apiEndpoint = '%s'
                 }
-                """.formatted(apiEndpoint);
+                """.formatted(apiEndpoint, apiEndpoint);
     }
 
     private String enabledDestinations() {
@@ -713,6 +839,8 @@ class ModPublishingPluginTest {
         private volatile boolean githubAssetExists;
         private volatile String iconUrl = "https://cdn.modrinth.com/data/AbCdEf12/old_icon.png";
         private volatile int githubFailuresRemaining;
+        // Defaults to a public repository; null answers the lookup with 404, as an unauthenticated private one does.
+        private volatile Boolean repositoryPrivate = Boolean.FALSE;
 
         private FakeModrinthServer(
                 HttpServer server,
@@ -772,6 +900,10 @@ class ModPublishingPluginTest {
             githubFailuresRemaining = failures;
         }
 
+        void setRepositoryPrivate(Boolean repositoryPrivate) {
+            this.repositoryPrivate = repositoryPrivate;
+        }
+
         RecordedRequest singleRequest(String method, String path) {
             List<RecordedRequest> matches = requests(method, path);
             assertEquals(1, matches.size(), () -> method + " " + path + " requests: " + requests);
@@ -807,7 +939,16 @@ class ModPublishingPluginTest {
             }
             if ("GET".equals(exchange.getRequestMethod())
                     && "/repos/brainage04/publisher-fixture".equals(path)) {
-                respond(exchange, 200, "{\"full_name\":\"brainage04/publisher-fixture\"}");
+                if (repositoryPrivate == null) {
+                    respond(exchange, 404, "{\"message\":\"Not Found\"}");
+                    return;
+                }
+                respond(
+                        exchange,
+                        200,
+                        "{\"full_name\":\"brainage04/publisher-fixture\",\"private\":%s}"
+                                .formatted(repositoryPrivate)
+                );
                 return;
             }
             if ("POST".equals(exchange.getRequestMethod())

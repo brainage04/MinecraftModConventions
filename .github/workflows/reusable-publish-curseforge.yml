@@ -65,21 +65,44 @@ jobs:
   publish:
     runs-on: ${{ fromJSON(inputs.runner) }}
     steps:
-      - name: check CurseForge configuration
+      - name: check CurseForge configuration and repository visibility
         id: config
         env:
           CURSEFORGE_PROJECT_ID: ${{ inputs.project_id }}
           CURSEFORGE_TOKEN: ${{ secrets.curseforge_token }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           if [ -z "${CURSEFORGE_TOKEN}" ]; then
             echo "enabled=false" >> "$GITHUB_OUTPUT"
             echo "::notice::Skipping CurseForge publication because its token is not configured."
-          elif [ -z "${CURSEFORGE_PROJECT_ID}" ]; then
+            exit 0
+          fi
+          if [ -z "${CURSEFORGE_PROJECT_ID}" ]; then
             echo "Missing CurseForge project id."
             exit 1
-          else
-            echo "enabled=true" >> "$GITHUB_OUTPUT"
           fi
+          # A private repository is never published to the stores, and the release continues without them. Every
+          # answer that cannot be read refuses rather than guesses, so only GitHub's own "false" publishes.
+          error="${RUNNER_TEMP}/repository-visibility-error.txt"
+          if [ -z "${GH_TOKEN}" ]; then
+            private='unknown'
+            reason="no GitHub token was given to read whether ${GITHUB_REPOSITORY} is private"
+          elif private="$(gh api "repos/${GITHUB_REPOSITORY}" --jq '.private' 2>"${error}")"; then
+            case "${private}" in
+              false) ;;
+              true) reason="GitHub repository ${GITHUB_REPOSITORY} is private" ;;
+              *) reason="the GitHub API answer for ${GITHUB_REPOSITORY} has no private flag" ;;
+            esac
+          else
+            private='unknown'
+            reason="the GitHub API answer for ${GITHUB_REPOSITORY} could not be read: $(head -1 "${error}" 2>/dev/null)"
+          fi
+          if [ "${private}" != 'false' ]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Skipping CurseForge publication: ${reason}. A mod is published to the stores only once its repository is public; its GitHub release still happens."
+            exit 0
+          fi
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
 
       - name: checkout repository
         if: steps.config.outputs.enabled == 'true'
@@ -211,6 +234,8 @@ jobs:
         if: steps.config.outputs.enabled == 'true'
         env:
           CURSEFORGE_TOKEN: ${{ secrets.curseforge_token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_TOKEN: ${{ github.token }}
           GRADLE_TASK: ${{ inputs.gradle_task }}
           MOD_PUBLISHING_RELEASE_JAR: release-artifacts/${{ inputs.artifact_file }}
           RELEASE_BODY: ${{ inputs.release_body }}
