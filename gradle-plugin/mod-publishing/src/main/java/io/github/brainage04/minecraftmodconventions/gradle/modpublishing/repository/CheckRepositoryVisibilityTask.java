@@ -50,6 +50,9 @@ public abstract class CheckRepositoryVisibilityTask extends DefaultTask {
     @Internal
     public abstract Property<String> getToken();
 
+    @Input
+    public abstract Property<Long> getBuildStartMillis();
+
     @OutputFile
     public abstract RegularFileProperty getStateFile();
 
@@ -162,6 +165,7 @@ public abstract class CheckRepositoryVisibilityTask extends DefaultTask {
         JsonObject state = new JsonObject();
         state.addProperty("status", status);
         state.addProperty("allowed", allowed);
+        state.addProperty("checkedAt", System.currentTimeMillis());
         var file = getStateFile().get().getAsFile().toPath();
         Files.createDirectories(file.getParent());
         Files.writeString(
@@ -178,15 +182,48 @@ public abstract class CheckRepositoryVisibilityTask extends DefaultTask {
      * check did not run, which happens when the task is excluded by hand, and an unreadable file means its answer is
      * unknown; both refuse the stores, because the release must not publish there on a guess.
      */
-    public static boolean storePublicationAllowed(File file) {
+    public static boolean storePublicationAllowed(
+            org.gradle.api.logging.Logger logger,
+            long buildStartMillis,
+            File file
+    ) {
         if (!file.isFile()) {
+            logger.warn(
+                    "Skipping Modrinth and CurseForge publication: {} is missing, so it was not checked whether this "
+                            + "repository may publish to the stores. A private repository must not publish there, so "
+                            + "the stores are skipped rather than guessed at. The GitHub release still happens.",
+                    file
+            );
             return false;
         }
         try {
             JsonObject state = JsonParser.parseString(Files.readString(file.toPath())).getAsJsonObject();
             JsonElement allowed = state.get("allowed");
-            return allowed != null && allowed.isJsonPrimitive() && allowed.getAsBoolean();
-        } catch (IOException | RuntimeException exception) {
+            JsonElement checkedAt = state.get("checkedAt");
+            if (allowed == null || !allowed.isJsonPrimitive() || !allowed.getAsBoolean()) {
+                return false;
+            }
+            // A file an earlier build wrote reports nothing about this one, which is what an excluded check leaves.
+            if (checkedAt == null
+                    || !checkedAt.isJsonPrimitive()
+                    || checkedAt.getAsLong() < buildStartMillis) {
+                logger.warn(
+                        "Skipping Modrinth and CurseForge publication: {} was written by an earlier build, so this "
+                                + "build has not checked whether the repository may publish to the stores. A private "
+                                + "repository must not publish there, so the stores are skipped rather than guessed "
+                                + "at. The GitHub release still happens.",
+                        file
+                );
+                return false;
+            }
+            return true;
+        } catch (IOException | RuntimeException ignored) {
+            logger.warn(
+                    "Skipping Modrinth and CurseForge publication: {} cannot be read, so it was not checked whether "
+                            + "this repository may publish to the stores. A private repository must not publish there, "
+                            + "so the stores are skipped rather than guessed at. The GitHub release still happens.",
+                    file
+            );
             return false;
         }
     }

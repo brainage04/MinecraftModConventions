@@ -465,6 +465,33 @@ class ModPublishingPluginTest {
     }
 
     @Test
+    void skipsStorePublicationWhenTheVisibilityStateCannotBeRead() throws Exception {
+        try (var server = FakeModrinthServer.start(true)) {
+            writeBuildFile("""
+                    dryRun = false
+                    github.repository = 'brainage04/publisher-fixture'
+                    github.token = 'fixture-token'
+                    github.apiEndpoint = '%s'
+                    modrinth {
+                        enabled = true
+                        projectId = 'AbCdEf12'
+                        token = 'fixture-token'
+                        apiEndpoint = '%s'
+                    }
+                    """.formatted(server.apiEndpoint(), server.apiEndpoint()), "");
+            Path state = projectDirectory.resolve("build/mod-publishing/repository-visibility.json");
+            Files.createDirectories(state.getParent());
+            Files.writeString(state, "{not json");
+
+            BuildResult result = runGradle("publishModrinth", "-x", "checkRepositoryVisibility");
+
+            assertEquals(TaskOutcome.SKIPPED, result.task(":publishModrinth").getOutcome());
+            assertEquals(0, server.requests("POST", "/version").size());
+            assertTrue(result.getOutput().contains("cannot be read"), result.getOutput());
+        }
+    }
+
+    @Test
     void resolvesAnnotatedTagNotesWithoutCallingGitHub() throws Exception {
         writeBuildFile("""
                 changelog = ''

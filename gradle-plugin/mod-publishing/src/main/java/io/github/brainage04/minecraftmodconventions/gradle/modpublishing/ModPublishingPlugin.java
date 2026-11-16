@@ -51,14 +51,20 @@ public final class ModPublishingPlugin implements Plugin<Project> {
 
         TaskProvider<ValidateModPublicationTask> validate = registerValidation(project, extension);
         registerReleaseNotes(project, extension);
-        TaskProvider<CheckRepositoryVisibilityTask> storeVisibility = registerStoreVisibility(project, extension);
+        long buildStartMillis = System.currentTimeMillis();
+        TaskProvider<CheckRepositoryVisibilityTask> storeVisibility = registerStoreVisibility(
+                project,
+                extension,
+                buildStartMillis
+        );
         registerPublicationPreflights(
                 project,
                 extension,
                 destinations.github(),
                 destinations.modrinth(),
                 validate,
-                storeVisibility
+                storeVisibility,
+                buildStartMillis
         );
         TaskProvider<PrepareModrinthProjectMetadataTask> prepareModrinth = registerMetadataPreparation(
                 project,
@@ -68,16 +74,24 @@ public final class ModPublishingPlugin implements Plugin<Project> {
                 project,
                 extension,
                 prepareModrinth,
-                storeVisibility
+                storeVisibility,
+                buildStartMillis
         );
-        registerIconSync(project, extension, prepareModrinth, syncProject, storeVisibility);
+        registerIconSync(
+                project,
+                extension,
+                prepareModrinth,
+                syncProject,
+                storeVisibility,
+                buildStartMillis
+        );
 
         configurePublicationTask(project, "publishGithub", extension.getGithub().getEnabled(), validate);
         configurePublicationTask(project, "publishModrinth", extension.getModrinth().getEnabled(), validate);
         configurePublicationTask(project, "publishCurseforge", extension.getCurseforge().getEnabled(), validate);
         for (String storeTask : List.of("publishModrinth", "publishCurseforge")) {
             project.getTasks().named(storeTask)
-                    .configure(task -> requirePublicRepository(task, storeVisibility));
+                    .configure(task -> requirePublicRepository(task, buildStartMillis, storeVisibility));
         }
         project.getTasks().named("publishMods").configure(task -> task.setDescription(
                 "Publishes the validated release artifact to every enabled distribution destination."
@@ -293,7 +307,8 @@ public final class ModPublishingPlugin implements Plugin<Project> {
             org.gradle.api.NamedDomainObjectProvider<me.modmuss50.mpp.platforms.github.Github> github,
             org.gradle.api.NamedDomainObjectProvider<me.modmuss50.mpp.platforms.modrinth.Modrinth> modrinth,
             TaskProvider<ValidateModPublicationTask> validate,
-            TaskProvider<CheckRepositoryVisibilityTask> storeVisibility
+            TaskProvider<CheckRepositoryVisibilityTask> storeVisibility,
+            long buildStartMillis
     ) {
         Provider<String> userAgent = extension.getGithub().getRepository()
                 .orElse("unknown")
@@ -360,7 +375,7 @@ public final class ModPublishingPlugin implements Plugin<Project> {
                     );
                     task.getOutputs().upToDateWhen(ignored -> false);
                     task.dependsOn(validate);
-                    requirePublicRepository(task, storeVisibility);
+                    requirePublicRepository(task, buildStartMillis, storeVisibility);
                 }
         );
         Provider<org.gradle.api.file.RegularFile> modrinthState = modrinthPreflight.flatMap(
@@ -404,7 +419,8 @@ public final class ModPublishingPlugin implements Plugin<Project> {
 
     private static TaskProvider<CheckRepositoryVisibilityTask> registerStoreVisibility(
             Project project,
-            ModPublishingExtension extension
+            ModPublishingExtension extension,
+            long buildStartMillis
     ) {
         Provider<String> userAgent = extension.getGithub().getRepository()
                 .orElse("unknown")
@@ -423,6 +439,7 @@ public final class ModPublishingPlugin implements Plugin<Project> {
                                             modrinth || curseforge)
                     );
                     task.getDryRun().convention(extension.getDryRun());
+                    task.getBuildStartMillis().convention(buildStartMillis);
                     task.getRepository().convention(extension.getGithub().getRepository().orElse(""));
                     task.getApiEndpoint().convention(extension.getGithub().getApiEndpoint());
                     task.getUserAgent().convention(userAgent);
@@ -442,7 +459,8 @@ public final class ModPublishingPlugin implements Plugin<Project> {
             Project project,
             ModPublishingExtension extension,
             TaskProvider<PrepareModrinthProjectMetadataTask> prepareMetadata,
-            TaskProvider<CheckRepositoryVisibilityTask> storeVisibility
+            TaskProvider<CheckRepositoryVisibilityTask> storeVisibility,
+            long buildStartMillis
     ) {
         Provider<String> userAgent = extension.getGithub().getRepository()
                 .orElse("unknown")
@@ -467,7 +485,7 @@ public final class ModPublishingPlugin implements Plugin<Project> {
                     );
                     sync.dependsOn(prepareMetadata);
                     sync.onlyIf("Modrinth publication is enabled", ignored -> extension.getModrinth().getEnabled().get());
-                    requirePublicRepository(sync, storeVisibility);
+                    requirePublicRepository(sync, buildStartMillis, storeVisibility);
                     sync.getOutputs().upToDateWhen(ignored -> false);
                 }
         );
@@ -479,7 +497,8 @@ public final class ModPublishingPlugin implements Plugin<Project> {
             ModPublishingExtension extension,
             TaskProvider<PrepareModrinthProjectMetadataTask> prepareMetadata,
             TaskProvider<SyncModrinthProjectTask> syncProject,
-            TaskProvider<CheckRepositoryVisibilityTask> storeVisibility
+            TaskProvider<CheckRepositoryVisibilityTask> storeVisibility,
+            long buildStartMillis
     ) {
         Provider<String> userAgent = extension.getGithub().getRepository()
                 .orElse("unknown")
@@ -501,7 +520,7 @@ public final class ModPublishingPlugin implements Plugin<Project> {
             );
             sync.dependsOn(syncProject);
             sync.onlyIf("Modrinth publication is enabled", ignored -> extension.getModrinth().getEnabled().get());
-            requirePublicRepository(sync, storeVisibility);
+            requirePublicRepository(sync, buildStartMillis, storeVisibility);
             sync.getOutputs().upToDateWhen(ignored -> false);
         });
     }
@@ -521,6 +540,7 @@ public final class ModPublishingPlugin implements Plugin<Project> {
     /** Skips a store task unless the visibility check showed that this repository may publish there. */
     private static void requirePublicRepository(
             org.gradle.api.Task task,
+            long buildStartMillis,
             TaskProvider<CheckRepositoryVisibilityTask> storeVisibility
     ) {
         Provider<org.gradle.api.file.RegularFile> visibilityState = storeVisibility.flatMap(
@@ -530,6 +550,8 @@ public final class ModPublishingPlugin implements Plugin<Project> {
         task.onlyIf(
                 "The GitHub repository allows store publication",
                 ignored -> CheckRepositoryVisibilityTask.storePublicationAllowed(
+                        task.getLogger(),
+                        buildStartMillis,
                         visibilityState.get().getAsFile()
                 )
         );
