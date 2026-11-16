@@ -53,10 +53,9 @@ public final class ModPublishingPlugin implements Plugin<Project> {
 
         TaskProvider<ValidateModPublicationTask> validate = registerValidation(project, extension);
         registerReleaseNotes(project, extension);
-        // One service per project: its check answers for its own repository, and a sibling loader's answer must not
-        // decide this project's store tasks.
+        // One service per project, because a sibling loader's answer must not decide this project's store tasks.
         Provider<StoreVisibility> storeVisibility = project.getGradle().getSharedServices().registerIfAbsent(
-                "storeVisibility" + project.getPath().replace(':', '-'),
+                "storeVisibility" + project.getPath(),
                 StoreVisibility.class,
                 spec -> {
                 }
@@ -447,6 +446,7 @@ public final class ModPublishingPlugin implements Plugin<Project> {
                     task.getMaxRetries().convention(extension.getMaxRetries());
                     task.getToken().convention(extension.getGithub().getToken().orElse(""));
                     task.getVisibility().convention(storeVisibility);
+                    task.usesService(storeVisibility);
                     task.getOutputs().upToDateWhen(ignored -> false);
                 }
         );
@@ -541,9 +541,12 @@ public final class ModPublishingPlugin implements Plugin<Project> {
             TaskProvider<CheckRepositoryVisibilityTask> visibilityCheck
     ) {
         task.dependsOn(visibilityCheck);
+        task.usesService(storeVisibility);
         String taskPath = task.getPath();
-        String checkPath = visibilityCheck.get().getPath();
-        // Nothing captured here may be a Gradle object: a Task in an onlyIf spec breaks the configuration cache.
+        String checkPath = taskPath.substring(0, taskPath.lastIndexOf(':') + 1)
+                + CHECK_REPOSITORY_VISIBILITY_TASK_NAME;
+        // A Task reference captured here is a prohibited type for the configuration cache (Gradle's
+        // TaskReferenceCodec), so only the paths and the service go into the spec.
         task.onlyIf("The GitHub repository allows store publication", ignored -> {
             StoreVisibility visibility = storeVisibility.get();
             if (!visibility.wasChecked()) {

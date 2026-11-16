@@ -1,7 +1,6 @@
 package io.github.brainage04.minecraftmodconventions.gradle.modpublishing.repository;
 
 import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import io.github.brainage04.minecraftmodconventions.gradle.modpublishing.http.PublishingHttpClient;
 import org.gradle.api.DefaultTask;
