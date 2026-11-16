@@ -77,10 +77,6 @@ jobs:
             echo "::notice::Skipping CurseForge publication because its token is not configured."
             exit 0
           fi
-          if [ -z "${CURSEFORGE_PROJECT_ID}" ]; then
-            echo "Missing CurseForge project id."
-            exit 1
-          fi
           # A private repository is never published to the stores, and the release continues without them. Every
           # answer that cannot be read refuses rather than guesses, so only GitHub's own "false" publishes.
           error="${RUNNER_TEMP}/repository-visibility-error.txt"
@@ -101,6 +97,10 @@ jobs:
             echo "enabled=false" >> "$GITHUB_OUTPUT"
             echo "::notice::Skipping CurseForge publication: ${reason}. A mod is published to the stores only once its repository is public; its GitHub release still happens."
             exit 0
+          fi
+          if [ -z "${CURSEFORGE_PROJECT_ID}" ]; then
+            echo "Missing CurseForge project id."
+            exit 1
           fi
           echo "enabled=true" >> "$GITHUB_OUTPUT"
 

@@ -174,8 +174,9 @@ public abstract class CheckRepositoryVisibilityTask extends DefaultTask {
     /**
      * Whether the state file written by this task allows store publication.
      *
-     * <p>A missing state file means the check did not run, which happens only when the task is excluded by hand; the
-     * stores are then refused, because nothing showed the repository may publish there.
+     * <p>Only a state file this task wrote with {@code "allowed": true} allows publication. A missing file means the
+     * check did not run, which happens when the task is excluded by hand, and an unreadable file means its answer is
+     * unknown; both refuse the stores, because the release must not publish there on a guess.
      */
     public static boolean storePublicationAllowed(File file) {
         if (!file.isFile()) {
@@ -186,7 +187,7 @@ public abstract class CheckRepositoryVisibilityTask extends DefaultTask {
             JsonElement allowed = state.get("allowed");
             return allowed != null && allowed.isJsonPrimitive() && allowed.getAsBoolean();
         } catch (IOException | RuntimeException exception) {
-            throw new GradleException("Failed to read store visibility state " + file, exception);
+            return false;
         }
     }
 }
