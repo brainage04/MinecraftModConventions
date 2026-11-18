@@ -5,6 +5,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.ChatComponent;
+import net.minecraft.util.Mth;
 import net.minecraft.util.Util;
 
 import java.util.ArrayList;
@@ -312,9 +313,10 @@ public final class InputOverlay {
      * and {@code getWidth} is {@code floor(pct * 280 + 40)} ({@code ChatComponent.java:416-419}).
      */
     static int chatColumnWidth(double chatWidthPct, double chatScale) {
-        double scale = chatScale <= 0.0 ? 1.0 : chatScale;
-        int maxWidth = (int) Math.ceil(ChatComponent.getWidth(chatWidthPct) / scale);
-        return (int) Math.ceil(scale * (maxWidth + 12));
+        // The game divides in float (ChatComponent.java:147), so a double divide can round a pixel short.
+        float scale = chatScale <= 0.0 ? 1.0F : (float) chatScale;
+        int maxWidth = Mth.ceil(ChatComponent.getWidth(chatWidthPct) / scale);
+        return Mth.ceil(scale * (maxWidth + 12));
     }
 
     /** The chat column's right edge for the client's own chat width and scale. */

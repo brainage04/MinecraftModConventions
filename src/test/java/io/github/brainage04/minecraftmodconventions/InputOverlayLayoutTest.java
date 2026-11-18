@@ -56,12 +56,14 @@ class InputOverlayLayoutTest {
 
     @Test
     void thePanelKeepsClearOfTheChatColumn() {
-        // The chat background reaches 332 GUI pixels at chat scale 1, so a panel built from the widest
-        // content the overlay allows must start at or past that on the 640-wide showcase GUI.
+        // The widest content is the GUI less both screen margins, both paddings and the chat column. The
+        // value is pinned here because the placement below is algebra over it: a formula that dropped the
+        // chat term would still place the panel it built clear of chat.
         int chatColumn = InputOverlay.chatColumnWidth(1.0, 1.0);
-        int panelWidth = InputOverlay.maxContentWidth(SHOWCASE_GUI_WIDTH, chatColumn) + 3 * 2;
+        int widest = InputOverlay.maxContentWidth(SHOWCASE_GUI_WIDTH, chatColumn);
+        assertEquals(SHOWCASE_GUI_WIDTH - 2 * 5 - 2 * 3 - chatColumn, widest);
 
-        int[] origin = InputOverlay.panelOrigin(SHOWCASE_GUI_WIDTH, SHOWCASE_GUI_HEIGHT, panelWidth, 20,
+        int[] origin = InputOverlay.panelOrigin(SHOWCASE_GUI_WIDTH, SHOWCASE_GUI_HEIGHT, widest + 2 * 3, 20,
                 Integer.MIN_VALUE);
 
         assertTrue(origin[0] >= chatColumn, "panel left " + origin[0] + " over chat " + chatColumn);
