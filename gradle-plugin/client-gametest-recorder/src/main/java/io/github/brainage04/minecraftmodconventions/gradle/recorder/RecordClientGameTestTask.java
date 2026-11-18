@@ -109,6 +109,7 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
      * The project properties the recorded child build must be given, as {@code name=value}: the outer
      * build's own values, so a switch such as {@code -PinputOverlay=false} reaches the run that records.
      */
+    @Input
     public abstract ListProperty<String> getForwardedProjectProperties();
 
     @TaskAction
