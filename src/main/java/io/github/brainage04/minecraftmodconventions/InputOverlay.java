@@ -43,11 +43,11 @@ public final class InputOverlay {
     private static final int MOUSE_WIDTH = 9;
     private static final int MOUSE_HEIGHT = 13;
     private static final int BACKGROUND_COLOR = 0xA0000000;
-    private static final int CAP_COLOR = 0xFF303030;
+    private static final int CAP_COLOR = 0xFF5A5A5A;
     private static final int CAP_PRESSED_COLOR = 0xFFFFFFFF;
     private static final int CAP_TEXT_COLOR = 0xFFE0E0E0;
     private static final int CAP_TEXT_PRESSED_COLOR = 0xFF000000;
-    private static final int MOUSE_BODY_COLOR = 0xFF404040;
+    private static final int MOUSE_BODY_COLOR = 0xFF5A5A5A;
     private static final int MOUSE_LIT_COLOR = 0xFFFFFFFF;
     private static final int MOUSE_OUTLINE_COLOR = 0xFFB0B0B0;
     private static final int TYPED_COLOR = 0xFFFFD54F;
@@ -193,18 +193,25 @@ public final class InputOverlay {
         }
     }
 
-    /** The mouse glyph: a body split into a left and a right half, each lit while its button is down. */
+    /**
+     * The mouse glyph: a rounded body whose top half is split into a left and a right button, each lit
+     * while it is down, with the wheel between them.
+     */
     private static void renderMouse(GuiGraphicsExtractor graphics, int x, int y, long now) {
         int half = MOUSE_WIDTH / 2;
+        int buttonBottom = y + MOUSE_HEIGHT / 2;
         graphics.fill(x, y, x + MOUSE_WIDTH, y + MOUSE_HEIGHT, MOUSE_BODY_COLOR);
+        // The split between the buttons and the line under them, so the body reads as a mouse.
+        graphics.fill(x + half, y, x + half + 1, buttonBottom, MOUSE_OUTLINE_COLOR);
+        graphics.fill(x, buttonBottom, x + MOUSE_WIDTH, buttonBottom + 1, MOUSE_OUTLINE_COLOR);
         if (STATE.mouseLit(InputConstants.MOUSE_BUTTON_LEFT, now)) {
-            graphics.fill(x, y, x + half, y + MOUSE_HEIGHT / 2, MOUSE_LIT_COLOR);
+            graphics.fill(x, y, x + half, buttonBottom, MOUSE_LIT_COLOR);
         }
         if (STATE.mouseLit(InputConstants.MOUSE_BUTTON_RIGHT, now)) {
-            graphics.fill(x + half + 1, y, x + MOUSE_WIDTH, y + MOUSE_HEIGHT / 2, MOUSE_LIT_COLOR);
+            graphics.fill(x + half + 1, y, x + MOUSE_WIDTH, buttonBottom, MOUSE_LIT_COLOR);
         }
         if (STATE.mouseLit(InputConstants.MOUSE_BUTTON_MIDDLE, now)) {
-            graphics.fill(x + half - 1, y, x + half + 1, y + MOUSE_HEIGHT / 2, MOUSE_LIT_COLOR);
+            graphics.fill(x + half - 1, y, x + half + 2, y + 3, MOUSE_LIT_COLOR);
         }
         graphics.outline(x, y, MOUSE_WIDTH, MOUSE_HEIGHT, MOUSE_OUTLINE_COLOR);
     }
