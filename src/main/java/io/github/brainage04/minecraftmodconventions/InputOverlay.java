@@ -233,15 +233,19 @@ public final class InputOverlay {
 
     /** The cursor's height in GUI pixels. */
     static final int CURSOR_HEIGHT = 12;
+    /** The rows of the cursor's head, the triangle from its tip down to its base. */
+    static final int CURSOR_HEAD_ROWS = 9;
 
-    /** How wide the cursor's arrow is on {@code row}, from its tip. */
+    /**
+     * How wide the cursor's arrow is on {@code row}, from its tip. The head widens by one pixel every
+     * two rows, so it is taller than it is wide and reads as a pointer rather than a triangle, and the
+     * tail below it is two pixels wide.
+     */
     static int cursorRowWidth(int row) {
         if (row < 0 || row >= CURSOR_HEIGHT) {
             return 0;
         }
-        // A one-pixel tip that widens by one every row to the head's base, then a two-pixel tail.
-        int head = 7;
-        return row < head ? row + 1 : 2;
+        return row < CURSOR_HEAD_ROWS ? row / 2 + 1 : 2;
     }
 
     /** How far right of the tip the cursor's arrow starts on {@code row}: the tail leans right. */
@@ -249,8 +253,7 @@ public final class InputOverlay {
         if (row < 0 || row >= CURSOR_HEIGHT) {
             return 0;
         }
-        int head = 7;
-        return row < head ? 0 : row - head + 1;
+        return row < CURSOR_HEAD_ROWS ? 0 : row - CURSOR_HEAD_ROWS + 3;
     }
 
     /**

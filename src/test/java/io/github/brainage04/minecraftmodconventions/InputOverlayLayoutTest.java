@@ -43,9 +43,14 @@ class InputOverlayLayoutTest {
     }
 
     @Test
-    void theCursorIsAnArrowWithATail() {
+    void theCursorIsTallerThanItIsWide() {
+        int widest = 0;
+        for (int row = 0; row < InputOverlay.CURSOR_HEIGHT; row++) {
+            widest = Math.max(widest, InputOverlay.cursorRowWidth(row));
+        }
+
+        assertTrue(widest < InputOverlay.CURSOR_HEIGHT, "widest row " + widest);
         assertEquals(1, InputOverlay.cursorRowWidth(0));
-        assertTrue(InputOverlay.cursorRowWidth(3) > InputOverlay.cursorRowWidth(1));
         assertEquals(2, InputOverlay.cursorRowWidth(InputOverlay.CURSOR_HEIGHT - 1));
         assertEquals(0, InputOverlay.cursorRowWidth(-1));
         assertEquals(0, InputOverlay.cursorRowWidth(InputOverlay.CURSOR_HEIGHT));
