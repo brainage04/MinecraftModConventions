@@ -122,19 +122,29 @@ public final class InputOverlay {
             return;
         }
         long now = Util.getMillis();
+        boolean input = !STATE.isEmpty(now);
+        boolean cursor = hasFreeCursor(client);
+        if (!input && !cursor) {
+            return;
+        }
         graphics.nextStratum();
-        renderInput(graphics, client, now);
-        renderCursor(graphics, client);
+        if (input) {
+            renderInput(graphics, client, now);
+        }
+        if (cursor) {
+            renderCursor(graphics, client);
+        }
+    }
+
+    /** Whether a screen has the mouse free, so the overlay draws the cursor. */
+    private static boolean hasFreeCursor(Minecraft client) {
+        return client.gui.screen() != null && !client.mouseHandler.isMouseGrabbed();
     }
 
     private static void renderInput(GuiGraphicsExtractor graphics, Minecraft client, long now) {
         Font font = client.font;
         List<InputOverlayState.Chip> chips = STATE.chips(now);
         String typed = STATE.typedText(now);
-        if (chips.isEmpty() && typed.isEmpty()) {
-            return;
-        }
-
         int capsWidth = 0;
         for (InputOverlayState.Chip chip : chips) {
             capsWidth += capWidth(font, chip.label()) + CAP_GAP;
@@ -144,7 +154,8 @@ public final class InputOverlay {
         }
         int typedWidth = typed.isEmpty() ? 0 : font.width("> " + typed);
         int contentWidth = Math.max(capsWidth, typedWidth);
-        int contentHeight = CAP_HEIGHT + (typed.isEmpty() ? 0 : font.lineHeight + LINE_GAP);
+        int rowHeight = Math.max(CAP_HEIGHT, MOUSE_HEIGHT);
+        int contentHeight = rowHeight + (typed.isEmpty() ? 0 : font.lineHeight + LINE_GAP);
         int panelWidth = contentWidth + PANEL_PADDING * 2;
         int panelHeight = contentHeight + PANEL_PADDING * 2;
 
@@ -204,9 +215,6 @@ public final class InputOverlay {
      * shows nothing moving.
      */
     private static void renderCursor(GuiGraphicsExtractor graphics, Minecraft client) {
-        if (client.gui.screen() == null || client.mouseHandler.isMouseGrabbed()) {
-            return;
-        }
         int x = (int) client.mouseHandler.getScaledXPos(client.getWindow());
         int y = (int) client.mouseHandler.getScaledYPos(client.getWindow());
         // A pointer: a filled triangle with a black edge, drawn from the tip at (x, y).
