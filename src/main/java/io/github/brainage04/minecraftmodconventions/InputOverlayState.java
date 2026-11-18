@@ -47,12 +47,15 @@ public final class InputOverlayState {
         }
     }
 
-    /** Records a key going down. A repeat of a held key changes nothing. */
+    /** Records a key going down. A repeat of a key that is already down changes nothing. */
     public void keyDown(String id, String label, long nowMillis) {
         Entry entry = keys.get(id);
         if (entry == null) {
             entry = new Entry(label);
             keys.put(id, entry);
+        }
+        if (entry.pressed) {
+            return;
         }
         entry.pressed = true;
         entry.releasedAt = Long.MIN_VALUE;

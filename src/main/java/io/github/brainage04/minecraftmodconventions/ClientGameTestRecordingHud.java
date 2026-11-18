@@ -123,6 +123,8 @@ public final class ClientGameTestRecordingHud {
     private static void render(GuiGraphicsExtractor graphics, net.minecraft.client.DeltaTracker deltaTracker) {
         Minecraft client = Minecraft.getInstance();
         if (client.player == null || !isEnabledForEnvironment()) {
+            // Nothing is drawn this frame, so the rectangle the input overlay reads must not survive it.
+            performancePanelRect = null;
             return;
         }
 

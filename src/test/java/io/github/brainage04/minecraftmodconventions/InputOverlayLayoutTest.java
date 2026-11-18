@@ -2,6 +2,9 @@ package io.github.brainage04.minecraftmodconventions;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+import java.util.function.ToIntFunction;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -28,7 +31,9 @@ class InputOverlayLayoutTest {
     }
 
     @Test
-    void thePanelStaysOnScreenWhenItIsWiderThanTheGui() {
+    void thePanelIsPushedToTheLeftEdgeWhenItIsWiderThanTheGui() {
+        // A panel wider than the GUI cannot fit; the clamp keeps its left edge on screen rather than
+        // letting it start off the left side.
         int[] origin = InputOverlay.panelOrigin(320, 240, 400, 20, Integer.MIN_VALUE);
 
         assertEquals(5, origin[0]);
@@ -47,6 +52,31 @@ class InputOverlayLayoutTest {
                         "panel bottom " + (origin[1] + panelHeight) + " over overlay top " + performanceTop);
             }
         }
+    }
+
+    @Test
+    void aWideCapIsSkippedAndTheNarrowOnesAfterItStillShow() {
+        // Every character is 6 pixels wide, so "Shift" is 30 and "W" is 6.
+        ToIntFunction<String> width = text -> text.length() * 6;
+        List<InputOverlayState.Chip> chips = List.of(
+                new InputOverlayState.Chip("a", "Shift", true),
+                new InputOverlayState.Chip("b", "W", true));
+
+        // The glyph is 9 wide plus a 2-pixel gap, and a cap is its text plus 3 pixels of padding each
+        // side plus a 2-pixel gap: "W" needs 14, so 25 holds the glyph and "W" but not "Shift" (38).
+        List<InputOverlayState.Chip> fitted = InputOverlay.fitChips(width, chips, 25);
+
+        assertEquals(List.of("b"), fitted.stream().map(InputOverlayState.Chip::id).toList());
+    }
+
+    @Test
+    void typedTextIsCutWithAnEllipsisWhenItDoesNotFit() {
+        ToIntFunction<String> width = text -> text.length() * 6;
+
+        // The caller adds the "> " prefix, so the cut text is what is returned.
+        assertEquals("magic", InputOverlay.fitText(width, "magic", 100));
+        assertEquals("ma…", InputOverlay.fitText(width, "magic carpet", 30));
+        assertEquals("", InputOverlay.fitText(width, "magic", 6));
     }
 
     @Test

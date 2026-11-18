@@ -29,9 +29,11 @@ abstract class RecordingKeyboardHandlerMixin {
 
     @Inject(method = "charTyped", at = @At("HEAD"))
     private void recordingInputCharTyped(long handle, CharacterEvent event, CallbackInfo callback) {
-        // charTyped drops a character with no screen open (KeyboardHandler.java:580-581), so the overlay
-        // must not show one the game never accepted.
-        if (isThisWindow(handle) && Minecraft.getInstance().gui.screen() != null) {
+        // charTyped drops a character with no screen open or with an overlay up (KeyboardHandler.java:580-581),
+        // so the overlay must not show one the game never accepted.
+        if (isThisWindow(handle)
+                && Minecraft.getInstance().gui.screen() != null
+                && Minecraft.getInstance().gui.overlay() == null) {
             InputOverlay.onChar(event.codepoint());
         }
     }

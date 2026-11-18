@@ -47,14 +47,15 @@ class InputOverlayStateTest {
     }
 
     @Test
-    void aRepeatOfAHeldKeyDoesNotRestartItsVisibleWindow() {
+    void aRepeatOfAHeldKeyChangesNothing() {
         InputOverlayState state = new InputOverlayState();
         state.keyDown("key.keyboard.w", "W", 1000L);
-        state.keyUp("key.keyboard.w", 2000L);
-        // A repeat is a press of a key that is already down, so it must not clear the release time.
-        state.keyDown("key.keyboard.w", "W", 2100L);
+        // A repeat is a press of a key that is already down: it must not restart the press.
+        state.keyDown("key.keyboard.w", "W", 1100L);
 
-        assertEquals(List.of(new InputOverlayState.Chip("key.keyboard.w", "W", true)), state.chips(2100L));
+        assertEquals(List.of(new InputOverlayState.Chip("key.keyboard.w", "W", true)), state.chips(1100L));
+        state.keyUp("key.keyboard.w", 2000L);
+        assertEquals(List.of(), state.chips(2000L + MIN_VISIBLE));
     }
 
     @Test

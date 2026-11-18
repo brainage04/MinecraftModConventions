@@ -8,6 +8,7 @@ import net.minecraft.util.Util;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.ToIntFunction;
 
 /**
  * The recording's input overlay: the keys and mouse buttons the game received, and a cursor wherever a
@@ -57,11 +58,12 @@ public final class InputOverlay {
     /** The hotbar's top edge is 22 pixels above the bottom of the GUI ({@code Hud.java:575}). */
     static final int HOTBAR_HEIGHT = 22;
     /**
-     * The widest the chat column gets, in GUI pixels: {@code ChatComponent.getWidth} is
+     * The widest the chat column gets, in GUI pixels. {@code ChatComponent.getWidth} is
      * {@code floor(pct * 280 + 40)} with a maximum of 320 ({@code ChatComponent.java:416-419}), and the
-     * column starts at the left edge, so the input panel keeps clear of it.
+     * background is drawn from {@code -4} to {@code maxWidth + 8} after a 4-pixel translate
+     * ({@code ChatComponent.java:161-167}), so its right edge is 332 at chat scale 1.
      */
-    static final int CHAT_COLUMN_WIDTH = 320;
+    static final int CHAT_COLUMN_WIDTH = 332;
 
     private static final InputOverlayState STATE = new InputOverlayState();
     private static volatile boolean enabled = true;
@@ -160,11 +162,11 @@ public final class InputOverlay {
         int maxContentWidth = Math.max(
                 MOUSE_WIDTH + CAP_GAP,
                 graphics.guiWidth() - SCREEN_MARGIN * 2 - PANEL_PADDING * 2 - CHAT_COLUMN_WIDTH);
-        List<InputOverlayState.Chip> chips = fitChips(font, STATE.chips(now), maxContentWidth);
-        String typed = fitText(font, STATE.typedText(now), maxContentWidth);
+        List<InputOverlayState.Chip> chips = fitChips(font::width, STATE.chips(now), maxContentWidth);
+        String typed = fitText(font::width, STATE.typedText(now), maxContentWidth);
         int capsWidth = 0;
         for (InputOverlayState.Chip chip : chips) {
-            capsWidth += capWidth(font, chip.label()) + CAP_GAP;
+            capsWidth += capWidth(font::width, chip.label()) + CAP_GAP;
         }
         capsWidth += MOUSE_WIDTH + CAP_GAP;
         int typedWidth = typed.isEmpty() ? 0 : font.width("> " + typed);
@@ -192,7 +194,7 @@ public final class InputOverlay {
 
         int x = panelX + PANEL_PADDING;
         for (InputOverlayState.Chip chip : chips) {
-            int width = capWidth(font, chip.label());
+            int width = capWidth(font::width, chip.label());
             graphics.fill(x, textY, x + width, textY + CAP_HEIGHT, chip.pressed() ? CAP_PRESSED_COLOR : CAP_COLOR);
             graphics.text(
                     font,
@@ -307,18 +309,23 @@ public final class InputOverlay {
         return bottomRight ? performance[1] : Integer.MIN_VALUE;
     }
 
-    private static int capWidth(Font font, String label) {
-        return font.width(label) + CAP_PADDING * 2;
+    private static int capWidth(ToIntFunction<String> textWidth, String label) {
+        return textWidth.applyAsInt(label) + CAP_PADDING * 2;
     }
 
-    /** The caps that fit beside the mouse glyph in {@code maxWidth}, in press order. */
-    static List<InputOverlayState.Chip> fitChips(Font font, List<InputOverlayState.Chip> chips, int maxWidth) {
+    /**
+     * The caps that fit beside the mouse glyph in {@code maxWidth}, in press order. A cap that does not
+     * fit is skipped rather than ending the row, so one wide label does not hide the narrow keys after it.
+     * {@code textWidth} is the font's width of a string, so the rule is tested without a client.
+     */
+    static List<InputOverlayState.Chip> fitChips(
+            ToIntFunction<String> textWidth, List<InputOverlayState.Chip> chips, int maxWidth) {
         List<InputOverlayState.Chip> fitted = new ArrayList<>();
         int width = MOUSE_WIDTH + CAP_GAP;
         for (InputOverlayState.Chip chip : chips) {
-            int capWidth = capWidth(font, chip.label()) + CAP_GAP;
+            int capWidth = capWidth(textWidth, chip.label()) + CAP_GAP;
             if (width + capWidth > maxWidth) {
-                break;
+                continue;
             }
             fitted.add(chip);
             width += capWidth;
@@ -327,13 +334,13 @@ public final class InputOverlay {
     }
 
     /** The typed text cut to {@code maxWidth}, with an ellipsis when it does not fit. */
-    static String fitText(Font font, String text, int maxWidth) {
-        if (text.isEmpty() || font.width("> " + text) <= maxWidth) {
+    static String fitText(ToIntFunction<String> textWidth, String text, int maxWidth) {
+        if (text.isEmpty() || textWidth.applyAsInt("> " + text) <= maxWidth) {
             return text;
         }
         String suffix = "…";
         int end = text.length();
-        while (end > 0 && font.width("> " + text.substring(0, end) + suffix) > maxWidth) {
+        while (end > 0 && textWidth.applyAsInt("> " + text.substring(0, end) + suffix) > maxWidth) {
             end--;
         }
         return end == 0 ? "" : text.substring(0, end) + suffix;
