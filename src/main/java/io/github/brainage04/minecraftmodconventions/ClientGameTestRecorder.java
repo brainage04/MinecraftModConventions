@@ -18,6 +18,7 @@ public final class ClientGameTestRecorder {
                 throw new IllegalStateException("Start recording before connecting to a world.");
             }
             ClientGameTestRecordingHud.clear();
+            InputOverlay.clear();
         });
         ClientGameTestRecordingSession.start(context::waitTick, windowRect(context));
     }

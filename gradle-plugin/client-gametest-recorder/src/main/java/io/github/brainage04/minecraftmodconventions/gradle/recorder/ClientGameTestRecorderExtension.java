@@ -9,6 +9,9 @@ import org.gradle.api.provider.ProviderFactory;
 import javax.inject.Inject;
 
 public abstract class ClientGameTestRecorderExtension {
+    /** The Gradle property that turns the recording's input overlay off for one run. */
+    public static final String INPUT_OVERLAY_PROPERTY = "inputOverlay";
+
     private final Property<String> recordingAudioDeviceProperty;
     private final Property<String> recordingAudioDeviceEnv;
     private final Property<String> managedXvfbEnv;
@@ -19,6 +22,7 @@ public abstract class ClientGameTestRecorderExtension {
     private final Property<Boolean> disableRecipeToasts;
     private final Property<Boolean> disableAdvancementToasts;
     private final Property<Boolean> disableAdvancementChatMessages;
+    private final Property<Boolean> inputOverlay;
 
     @Inject
     public ClientGameTestRecorderExtension(ObjectFactory objects, ProjectLayout layout, ProviderFactory providers) {
@@ -35,6 +39,10 @@ public abstract class ClientGameTestRecorderExtension {
         disableRecipeToasts = objects.property(Boolean.class).convention(true);
         disableAdvancementToasts = objects.property(Boolean.class).convention(true);
         disableAdvancementChatMessages = objects.property(Boolean.class).convention(true);
+        inputOverlay = objects.property(Boolean.class).convention(providers
+                .gradleProperty(INPUT_OVERLAY_PROPERTY)
+                .map(value -> !"false".equalsIgnoreCase(value.strip()))
+                .orElse(true));
     }
 
 
@@ -80,5 +88,14 @@ public abstract class ClientGameTestRecorderExtension {
 
     public Property<Boolean> getDisableAdvancementChatMessages() {
         return disableAdvancementChatMessages;
+    }
+
+    /**
+     * Whether a recording draws the input overlay: the keys and mouse buttons the game received, and a
+     * cursor wherever a screen has the mouse free. On by default; {@code -PinputOverlay=false} turns it
+     * off for one run.
+     */
+    public Property<Boolean> getInputOverlay() {
+        return inputOverlay;
     }
 }

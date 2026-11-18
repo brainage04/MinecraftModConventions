@@ -401,6 +401,7 @@ A recorded test prints the markers `scripts/trim_stages.py` reads and waits for 
 | `ClientGameTestWaits.holdFor(context, millis)` | Waits by the clock, as the film runs, not by ticks, which run slower under load. |
 | `ClientGameTestRecorder.showStepAndHold(context, id, title, subtitle, holdTicks)` | The caption and its shot length in one call. |
 | `ClientGameTestRecorder.placePerformanceOverlay(context, placement)` | Moves the [performance overlay](#shooting-a-recording) to another corner, or hides it with `HIDDEN`, until the next call. |
+| `InputOverlay.setEnabled(boolean)` | Turns the [input overlay](#input-overlay) on or off for the rest of the run. |
 
 Each wait fails the test naming what was still missing, so a frame is never filmed half-built.
 
@@ -415,6 +416,27 @@ Each wait fails the test naming what was still missing, so a frame is never film
 | `ClientGameTestCommands.awaitChat(context[, timeoutTicks], texts…)` | Waits until each text appears in some chat message, then fails naming what the panel holds instead. |
 | `ClientGameTestCommands.chatLines(context)` | The text of every message the panel holds. |
 | `ClientGameTestCommands.clickChatCommand(context, command, settleTicks)` | Clicks a chat line's run-command link, such as `[ACCEPT]`, with the cursor resting over it first. |
+
+### Input overlay
+
+Every recording draws the input the game received, so a viewer can see what the player did. The capture holds no operating-system cursor, and a client GameTest presses a key for a single tick, which is one frame of a 30 fps recording, so without the overlay a right click on a block or a click on a chat link is invisible.
+
+- **Key caps.** Each key the game received is a small cap in the bottom-right corner, above the hotbar: lit while the key is held, and for 0.4 s after its release, so a one-tick press is readable. A key held longer than that shows for as long as it is held.
+- **Mouse glyph.** A mouse beside the caps, with the left, middle and right buttons lit while they are down and for 0.4 s after their release.
+- **Typed text.** The characters typed into a screen, on a line above the caps, for 2 s after the last one, so a typed command is readable.
+- **Cursor.** An arrow at the game's own mouse position whenever a screen has the mouse free, drawn above the screen and its tooltips. With no screen open the mouse is grabbed and the crosshair is the pointer, so no cursor is drawn.
+
+Input is read where the game receives it, not where a test sends it: `KeyboardHandler.keyPress` (`KeyboardHandler.java:436` in the 26.3 sources), `KeyboardHandler.charTyped` (`KeyboardHandler.java:578`) and `MouseHandler.onButton` (`MouseHandler.java:63`). Fabric's client GameTest input calls exactly those three methods, so a test's presses and a player's presses look the same, and a mod adds no code for the overlay.
+
+The overlay is on for every recording. Turn it off for one run with `-PinputOverlay=false`, or for a project in its build file:
+
+```gradle
+clientGameTestRecorder {
+    inputOverlay = false
+}
+```
+
+A test can also turn it off for part of a run with `InputOverlay.setEnabled(false)`, and back on with `true`.
 
 ### Film-only code in the `recording` source set
 
@@ -436,10 +458,12 @@ clientGameTestRecorder {
     disableAdvancementToasts = true
     disableAdvancementChatMessages = true
     clientStartupTimeoutSeconds = 300
+    inputOverlay = true
 }
 ```
 
 - The five `disable…` options default to `true`; the toasts and chat messages they name stay hidden in every client GameTest run.
+- `inputOverlay` defaults to `true` and draws the [input overlay](#input-overlay) in every recording; `-PinputOverlay=false` turns it off for one run.
 - The recording HUD panel sits in the top-right corner, clear of chat in the bottom-left, with the [performance overlay](#shooting-a-recording) under it. `GTR_RECORDING_PROFILE=showcase` shows a title card there instead of the diagnostic overlay.
 - `GTR_RECORDING_PRE_PADDING_SECONDS` / `GTR_RECORDING_POST_PADDING_SECONDS`: `0`–`60`, default `0.5`.
 - Each recording writes metadata with tick and frame boundaries, effective padding and any capture gaps. A run fails if game audio does not reach the recording or cannot be decoded.

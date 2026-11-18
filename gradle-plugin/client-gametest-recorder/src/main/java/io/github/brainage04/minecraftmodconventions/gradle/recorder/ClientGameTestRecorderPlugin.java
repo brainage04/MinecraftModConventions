@@ -106,13 +106,15 @@ public final class ClientGameTestRecorderPlugin implements Plugin<Project> {
             task.getDisableSocialInteractionsToast().set(extension.getDisableSocialInteractionsToast());
             task.getGpuRendering().set(gpuRendering(project));
         });
-        project.getTasks().withType(ClientGameTestProductionRunTask.class).configureEach(task ->
-                ClientStartupDeadline.install(
-                        task,
-                        readyFile(project, task),
-                        extension.getClientStartupTimeoutSeconds(),
-                        task.getJvmArgs()::add
-                ));
+        project.getTasks().withType(ClientGameTestProductionRunTask.class).configureEach(task -> {
+            task.getJvmArgs().add(runtimeProperty("inputOverlay", extension.getInputOverlay().get()));
+            ClientStartupDeadline.install(
+                    task,
+                    readyFile(project, task),
+                    extension.getClientStartupTimeoutSeconds(),
+                    task.getJvmArgs()::add
+            );
+        });
     }
 
     private static Path readyFile(Project project, Task task) {
@@ -210,7 +212,8 @@ public final class ClientGameTestRecorderPlugin implements Plugin<Project> {
                 runtimeProperty("disableUnsecureChatToast", extension.getDisableUnsecureChatToast().get()),
                 runtimeProperty("disableRecipeToasts", extension.getDisableRecipeToasts().get()),
                 runtimeProperty("disableAdvancementToasts", extension.getDisableAdvancementToasts().get()),
-                runtimeProperty("disableAdvancementChatMessages", extension.getDisableAdvancementChatMessages().get())
+                runtimeProperty("disableAdvancementChatMessages", extension.getDisableAdvancementChatMessages().get()),
+                runtimeProperty("inputOverlay", extension.getInputOverlay().get())
         ));
 
         String openAlDrivers = project.getProviders()

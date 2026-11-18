@@ -5,7 +5,10 @@
   "client": [
     "ClientAdvancementsMixin",
     "ClientPacketListenerMixin",
+    "RecordingGuiGraphicsMixin",
+    "RecordingKeyboardHandlerMixin",
     "RecordingMinecraftMixin",
+    "RecordingMouseHandlerMixin",
     "RecordingSoundEngineMixin",
     "RecordingSoundLibraryMixin"
   ],
