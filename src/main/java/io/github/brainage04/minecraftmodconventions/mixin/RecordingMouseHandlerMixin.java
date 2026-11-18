@@ -1,6 +1,7 @@
 package io.github.brainage04.minecraftmodconventions.mixin;
 
 import io.github.brainage04.minecraftmodconventions.InputOverlay;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.MouseHandler;
 import net.minecraft.client.input.MouseButtonInfo;
 import org.spongepowered.asm.mixin.Mixin;
@@ -17,6 +18,9 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 abstract class RecordingMouseHandlerMixin {
     @Inject(method = "onButton", at = @At("HEAD"))
     private void recordingInputOnButton(long handle, MouseButtonInfo button, int action, CallbackInfo callback) {
-        InputOverlay.onMouseButton(button.button(), action);
+        // onButton ignores an event for another window (MouseHandler.java:65), so the overlay does too.
+        if (handle != 0L && handle == Minecraft.getInstance().getWindow().handle()) {
+            InputOverlay.onMouseButton(button.button(), action);
+        }
     }
 }

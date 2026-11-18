@@ -51,9 +51,22 @@ class InputOverlayStateTest {
         InputOverlayState state = new InputOverlayState();
         state.keyDown("key.keyboard.w", "W", 1000L);
         state.keyUp("key.keyboard.w", 2000L);
+        // A repeat is a press of a key that is already down, so it must not clear the release time.
         state.keyDown("key.keyboard.w", "W", 2100L);
 
         assertEquals(List.of(new InputOverlayState.Chip("key.keyboard.w", "W", true)), state.chips(2100L));
+    }
+
+    @Test
+    void aMouseClickWithNoKeyHeldIsNotAnEmptyOverlay() {
+        InputOverlayState state = new InputOverlayState();
+        state.mouseDown(3);
+
+        assertFalse(state.isEmpty(1000L));
+        assertTrue(state.anyMouseLit(1000L));
+        state.mouseUp(3, 1000L);
+        assertFalse(state.isEmpty(1000L + MIN_VISIBLE - 1));
+        assertTrue(state.isEmpty(1000L + MIN_VISIBLE));
     }
 
     @Test

@@ -41,7 +41,7 @@ public abstract class ClientGameTestRecorderExtension {
         disableAdvancementChatMessages = objects.property(Boolean.class).convention(true);
         inputOverlay = objects.property(Boolean.class).convention(providers
                 .gradleProperty(INPUT_OVERLAY_PROPERTY)
-                .map(value -> !"false".equalsIgnoreCase(value.strip()))
+                .map(value -> Boolean.parseBoolean(value.strip()))
                 .orElse(true));
     }
 

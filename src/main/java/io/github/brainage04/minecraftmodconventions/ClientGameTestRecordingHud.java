@@ -40,6 +40,11 @@ public final class ClientGameTestRecordingHud {
     private static final ArrayDeque<String> LOG_LINES = new ArrayDeque<>(MAX_LOG_LINES);
     private static volatile Step currentStep;
     private static volatile PerformanceOverlayPlacement overlayPlacement = PerformanceOverlayPlacement.TOP_RIGHT;
+    /**
+     * The performance panel's rectangle as the last frame drew it, {@code x, y, width, height}, or null when
+     * it was not drawn. The input overlay reads it to stay clear of the panel without sampling twice.
+     */
+    private static volatile int[] performancePanelRect;
     private static boolean registered;
 
     private ClientGameTestRecordingHud() {
@@ -101,9 +106,15 @@ public final class ClientGameTestRecordingHud {
         return overlayPlacement;
     }
 
+    /** The performance panel's rectangle as the last frame drew it, or null when it was not drawn. */
+    static int[] performancePanelRect() {
+        return performancePanelRect;
+    }
+
     public static void clear() {
         currentStep = null;
         overlayPlacement = PerformanceOverlayPlacement.TOP_RIGHT;
+        performancePanelRect = null;
         synchronized (LOG_LOCK) {
             LOG_LINES.clear();
         }
@@ -170,8 +181,10 @@ public final class ClientGameTestRecordingHud {
                 client.getWindow().getGuiScaledHeight(), captionBottom, panelWidth, panelHeight,
                 client.gui.screen() instanceof ChatScreen);
         if (position == null) {
+            performancePanelRect = null;
             return;
         }
+        performancePanelRect = new int[] {position[0], position[1], panelWidth, panelHeight};
         int panelX = position[0];
         int panelY = position[1];
         graphics.fill(panelX, panelY, panelX + panelWidth, panelY + panelHeight, BACKGROUND_COLOR);

@@ -28,6 +28,13 @@ class InputOverlayLayoutTest {
     }
 
     @Test
+    void thePanelStaysOnScreenWhenItIsWiderThanTheGui() {
+        int[] origin = InputOverlay.panelOrigin(320, 240, 400, 20, Integer.MIN_VALUE);
+
+        assertEquals(5, origin[0]);
+    }
+
+    @Test
     void thePanelRisesAboveThePerformanceOverlayAndStaysOnScreen() {
         int panelHeight = 20;
         for (int performanceTop = 0; performanceTop < SHOWCASE_GUI_HEIGHT; performanceTop += 10) {

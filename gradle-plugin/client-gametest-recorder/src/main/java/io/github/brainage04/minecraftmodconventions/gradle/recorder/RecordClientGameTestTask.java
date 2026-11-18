@@ -5,6 +5,7 @@ import io.github.brainage04.minecraftmodconventions.gradle.production.ClientLaun
 import org.gradle.api.DefaultTask;
 import org.gradle.api.GradleException;
 import org.gradle.api.file.DirectoryProperty;
+import org.gradle.api.provider.ListProperty;
 import org.gradle.api.provider.Property;
 import org.gradle.api.tasks.Input;
 import org.gradle.api.tasks.Internal;
@@ -104,6 +105,12 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
     @Input
     public abstract Property<String> getRunTaskName();
 
+    /**
+     * The project properties the recorded child build must be given, as {@code name=value}: the outer
+     * build's own values, so a switch such as {@code -PinputOverlay=false} reaches the run that records.
+     */
+    public abstract ListProperty<String> getForwardedProjectProperties();
+
     @TaskAction
     public void record() {
         boolean gameCapture = capturesGame(env(CAPTURE_SOURCE_ENV, DEFAULT_CAPTURE_SOURCE));
@@ -189,12 +196,14 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
         Map<String, String> processEnvironment = new LinkedHashMap<>(System.getenv());
         // A game take names no sound device; the client's own recording mark still selects the showcase options.
         String audioDevice = audioRoute.sink() == null ? "" : audioRoute.sink();
-        List<String> gradleCommand = List.of(
-                "./gradlew",
-                "--no-daemon",
-                "-P" + getRecordingAudioDeviceProjectProperty().get() + "=" + audioDevice,
-                getRunTaskName().get()
-        );
+        List<String> gradleCommand = new ArrayList<>();
+        gradleCommand.add("./gradlew");
+        gradleCommand.add("--no-daemon");
+        gradleCommand.add("-P" + getRecordingAudioDeviceProjectProperty().get() + "=" + audioDevice);
+        for (String property : getForwardedProjectProperties().get()) {
+            gradleCommand.add("-P" + property);
+        }
+        gradleCommand.add(getRunTaskName().get());
 
         recordingDir.mkdirs();
         deleteIfExists(startSignal.toPath());

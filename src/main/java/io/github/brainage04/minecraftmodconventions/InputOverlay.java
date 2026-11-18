@@ -6,6 +6,7 @@ import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.util.Util;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -55,6 +56,12 @@ public final class InputOverlay {
     private static final int CURSOR_OUTLINE_COLOR = 0xFF000000;
     /** The hotbar's top edge is 22 pixels above the bottom of the GUI ({@code Hud.java:575}). */
     static final int HOTBAR_HEIGHT = 22;
+    /**
+     * The widest the chat column gets, in GUI pixels: {@code ChatComponent.getWidth} is
+     * {@code floor(pct * 280 + 40)} with a maximum of 320 ({@code ChatComponent.java:416-419}), and the
+     * column starts at the left edge, so the input panel keeps clear of it.
+     */
+    static final int CHAT_COLUMN_WIDTH = 320;
 
     private static final InputOverlayState STATE = new InputOverlayState();
     private static volatile boolean enabled = true;
@@ -67,9 +74,12 @@ public final class InputOverlay {
         enabled = Boolean.parseBoolean(System.getProperty(ENABLED_PROPERTY, "true"));
     }
 
-    /** Whether the overlay draws at all: a recording, with the switch on. */
+    /**
+     * Whether the overlay draws at all: a recording, with the switch on. A plain client GameTest run
+     * draws nothing, so a mod's screenshot comparison sees the same picture it did before.
+     */
     public static boolean isEnabled() {
-        return enabled && GameTestRecorderEnvironment.isEnabled();
+        return enabled && ClientGameTestRecordingSession.isEnabled();
     }
 
     /** Turns the overlay on or off for the rest of the run. */
@@ -116,9 +126,13 @@ public final class InputOverlay {
         STATE.typed(Character.toString(codepoint), Util.getMillis());
     }
 
-    /** Draws the overlay and, with a screen open, the cursor. Call on the client thread, after the screen. */
+    /**
+     * Draws the overlay and, with a screen open, the cursor. Call on the client thread, after the screen.
+     * A title screen or a world-creation screen has no player and still has a cursor, so the player is
+     * not required.
+     */
     public static void render(GuiGraphicsExtractor graphics, Minecraft client) {
-        if (!isEnabled() || client.player == null) {
+        if (!isEnabled()) {
             return;
         }
         long now = Util.getMillis();
@@ -143,15 +157,16 @@ public final class InputOverlay {
 
     private static void renderInput(GuiGraphicsExtractor graphics, Minecraft client, long now) {
         Font font = client.font;
-        List<InputOverlayState.Chip> chips = STATE.chips(now);
-        String typed = STATE.typedText(now);
+        int maxContentWidth = Math.max(
+                MOUSE_WIDTH + CAP_GAP,
+                graphics.guiWidth() - SCREEN_MARGIN * 2 - PANEL_PADDING * 2 - CHAT_COLUMN_WIDTH);
+        List<InputOverlayState.Chip> chips = fitChips(font, STATE.chips(now), maxContentWidth);
+        String typed = fitText(font, STATE.typedText(now), maxContentWidth);
         int capsWidth = 0;
         for (InputOverlayState.Chip chip : chips) {
             capsWidth += capWidth(font, chip.label()) + CAP_GAP;
         }
-        if (!chips.isEmpty()) {
-            capsWidth += MOUSE_WIDTH + CAP_GAP;
-        }
+        capsWidth += MOUSE_WIDTH + CAP_GAP;
         int typedWidth = typed.isEmpty() ? 0 : font.width("> " + typed);
         int contentWidth = Math.max(capsWidth, typedWidth);
         int rowHeight = Math.max(CAP_HEIGHT, MOUSE_HEIGHT);
@@ -164,7 +179,7 @@ public final class InputOverlay {
                 graphics.guiHeight(),
                 panelWidth,
                 panelHeight,
-                performancePanelTop(client, panelWidth, panelHeight));
+                performancePanelTop(client));
         int panelX = origin[0];
         int panelY = origin[1];
         graphics.fill(panelX, panelY, panelX + panelWidth, panelY + panelHeight, BACKGROUND_COLOR);
@@ -188,9 +203,7 @@ public final class InputOverlay {
                     false);
             x += width + CAP_GAP;
         }
-        if (!chips.isEmpty()) {
-            renderMouse(graphics, x, textY, now);
-        }
+        renderMouse(graphics, x, textY, now);
     }
 
     /**
@@ -268,7 +281,7 @@ public final class InputOverlay {
      * performance overlay when a test put that in the bottom-right corner too.
      */
     static int[] panelOrigin(int guiWidth, int guiHeight, int panelWidth, int panelHeight, int performanceTop) {
-        int x = guiWidth - panelWidth - SCREEN_MARGIN;
+        int x = Math.max(SCREEN_MARGIN, guiWidth - panelWidth - SCREEN_MARGIN);
         int y = guiHeight - panelHeight - SCREEN_MARGIN - HOTBAR_HEIGHT;
         if (performanceTop != Integer.MIN_VALUE) {
             y = Math.max(SCREEN_MARGIN, Math.min(y, performanceTop - panelHeight - LINE_GAP));
@@ -276,22 +289,16 @@ public final class InputOverlay {
         return new int[] {x, y};
     }
 
-    /** The performance overlay's top edge when it is in the bottom-right corner, else {@link Integer#MIN_VALUE}. */
-    private static int performancePanelTop(Minecraft client, int panelWidth, int panelHeight) {
+    /**
+     * The performance overlay's top edge when it is in the bottom-right corner, else
+     * {@link Integer#MIN_VALUE}. The panel's own rectangle comes from the frame it was drawn in, so the
+     * input panel is placed against the real panel rather than against a second guess at its size.
+     */
+    private static int performancePanelTop(Minecraft client) {
         if (!ClientGameTestRecordingSession.isEnabled()) {
             return Integer.MIN_VALUE;
         }
-        int[] performance = ClientGameTestRecordingHud.performancePanel(
-                true,
-                ClientGameTestRecordingHud.performanceOverlayPlacement(),
-                client.getWindow().getGuiScaledWidth(),
-                client.getWindow().getGuiScaledHeight(),
-                SCREEN_MARGIN + ClientGameTestRecordingHud.panelHeight(
-                        ClientGameTestRecordingHud.captionLinesAtMost(
-                                "showcase".equals(System.getenv(GameTestRecorderEnvironment.RECORDING_PROFILE_ENV)))),
-                panelWidth,
-                panelHeight,
-                client.gui.screen() instanceof net.minecraft.client.gui.screens.ChatScreen);
+        int[] performance = ClientGameTestRecordingHud.performancePanelRect();
         if (performance == null) {
             return Integer.MIN_VALUE;
         }
@@ -302,5 +309,33 @@ public final class InputOverlay {
 
     private static int capWidth(Font font, String label) {
         return font.width(label) + CAP_PADDING * 2;
+    }
+
+    /** The caps that fit beside the mouse glyph in {@code maxWidth}, in press order. */
+    static List<InputOverlayState.Chip> fitChips(Font font, List<InputOverlayState.Chip> chips, int maxWidth) {
+        List<InputOverlayState.Chip> fitted = new ArrayList<>();
+        int width = MOUSE_WIDTH + CAP_GAP;
+        for (InputOverlayState.Chip chip : chips) {
+            int capWidth = capWidth(font, chip.label()) + CAP_GAP;
+            if (width + capWidth > maxWidth) {
+                break;
+            }
+            fitted.add(chip);
+            width += capWidth;
+        }
+        return fitted;
+    }
+
+    /** The typed text cut to {@code maxWidth}, with an ellipsis when it does not fit. */
+    static String fitText(Font font, String text, int maxWidth) {
+        if (text.isEmpty() || font.width("> " + text) <= maxWidth) {
+            return text;
+        }
+        String suffix = "…";
+        int end = text.length();
+        while (end > 0 && font.width("> " + text.substring(0, end) + suffix) > maxWidth) {
+            end--;
+        }
+        return end == 0 ? "" : text.substring(0, end) + suffix;
     }
 }

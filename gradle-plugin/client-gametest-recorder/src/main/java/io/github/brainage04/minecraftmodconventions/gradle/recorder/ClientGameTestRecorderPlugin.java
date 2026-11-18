@@ -18,6 +18,7 @@ import org.gradle.api.tasks.TaskProvider;
 
 import java.io.File;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
@@ -65,6 +66,7 @@ public final class ClientGameTestRecorderPlugin implements Plugin<Project> {
             task.getRunDirectory().convention(extension.getRunDir());
             task.getRecordingAudioDeviceProjectProperty().convention(extension.getRecordingAudioDeviceProperty());
             task.getRunTaskName().convention(clientGameTestTaskPath(project.getPath()));
+            task.getForwardedProjectProperties().convention(forwardedProjectProperties(project));
             task.getRecordingDisplay().convention(recordingDisplay(project));
             task.getExpectedRenderer().convention(expectedRenderer(project));
             task.getOutputs().upToDateWhen(_ -> false);
@@ -249,6 +251,24 @@ public final class ClientGameTestRecorderPlugin implements Plugin<Project> {
                     PLUGIN_ID + " requires a Fabric-compatible Loom plugin to be applied first."
             );
         }
+    }
+
+    /**
+     * The project properties the recorded child build is given, so a switch the outer build was run with
+     * reaches the run that records. Only the recorder's own switches are forwarded: a property the child
+     * does not know is harmless, but forwarding every property would copy paths and secrets into a log.
+     */
+    private static Provider<List<String>> forwardedProjectProperties(Project project) {
+        return project.getProviders().provider(() -> {
+            List<String> forwarded = new ArrayList<>();
+            for (String name : List.of(ClientGameTestRecorderExtension.INPUT_OVERLAY_PROPERTY)) {
+                Object value = project.findProperty(name);
+                if (value != null) {
+                    forwarded.add(name + "=" + value);
+                }
+            }
+            return forwarded;
+        });
     }
 
     private static String runtimeProperty(String name, boolean value) {

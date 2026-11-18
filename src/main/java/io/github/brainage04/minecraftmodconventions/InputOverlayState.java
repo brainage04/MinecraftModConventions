@@ -131,9 +131,19 @@ public final class InputOverlayState {
         return chips;
     }
 
+    /** Whether any mouse button is lit: held, or released within the visible window. */
+    public boolean anyMouseLit(long nowMillis) {
+        for (int button : List.of(1, 2, 3)) {
+            if (mouseLit(button, nowMillis)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /** Whether anything at all is on screen, so an idle overlay draws nothing. */
     public boolean isEmpty(long nowMillis) {
-        return chips(nowMillis).isEmpty() && typedText(nowMillis).isEmpty();
+        return chips(nowMillis).isEmpty() && typedText(nowMillis).isEmpty() && !anyMouseLit(nowMillis);
     }
 
     /** Forgets every key, button and typed character, for the start of a recording. */
