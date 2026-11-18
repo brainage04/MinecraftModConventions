@@ -9,13 +9,52 @@ import org.gradle.api.plugins.quality.CheckstyleExtension;
 import org.gradle.api.provider.Provider;
 import org.gradle.api.tasks.compile.JavaCompile;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 /** Configures one staged Java quality policy across every Java project in a build. */
 public final class JavaQualityConventionsPlugin implements Plugin<Project> {
     public static final String PLUGIN_ID = "io.github.brainage04.java-quality-conventions";
 
-    private static final String GOOGLE_JAVA_FORMAT_VERSION = "1.36.1";
+    private static final String ECLIPSE_JAVA_STYLE = "eclipse-java-style.xml";
+    // google-java-format AOSP's import order, which the Eclipse step does not apply itself: Android packages
+    // first, then the rest alphabetically, then java and javax, with a catch-all last.
+    private static final String[] IMPORT_ORDER = {
+            "\\#android",
+            "\\#androidx",
+            "\\#dalvik",
+            "\\#libcore",
+            "\\#com.android",
+            "\\#com",
+            "\\#io",
+            "\\#it",
+            "\\#jdk",
+            "\\#junit",
+            "\\#mezz",
+            "\\#net",
+            "\\#org",
+            "\\#java",
+            "\\#javax",
+            "\\#*",
+            "android",
+            "androidx",
+            "dalvik",
+            "libcore",
+            "com.android",
+            "com",
+            "io",
+            "it",
+            "jdk",
+            "junit",
+            "mezz",
+            "net",
+            "org",
+            "*",
+            "java",
+            "javax"
+    };
     private static final String CHECKSTYLE_VERSION = "13.9.0";
     private static final String CHECKSTYLE_CONFIG = """
             <?xml version="1.0"?>
@@ -59,7 +98,8 @@ public final class JavaQualityConventionsPlugin implements Plugin<Project> {
         SpotlessExtension spotless = project.getExtensions().getByType(SpotlessExtension.class);
         spotless.java(java -> {
             java.target("src/**/*.java");
-            java.googleJavaFormat(GOOGLE_JAVA_FORMAT_VERSION).aosp();
+            java.eclipse().configXml(readResource(ECLIPSE_JAVA_STYLE));
+            java.importOrder(IMPORT_ORDER);
             java.removeUnusedImports();
             java.trimTrailingWhitespace();
             java.endWithNewline();
@@ -86,5 +126,16 @@ public final class JavaQualityConventionsPlugin implements Plugin<Project> {
                 task.getOptions().getCompilerArgs().add("-Werror");
             }
         });
+    }
+
+    private static String readResource(String name) {
+        try (InputStream stream = JavaQualityConventionsPlugin.class.getResourceAsStream(name)) {
+            if (stream == null) {
+                throw new GradleException("Missing plugin resource " + name);
+            }
+            return new String(stream.readAllBytes(), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new GradleException("Cannot read plugin resource " + name, e);
+        }
     }
 }
