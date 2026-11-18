@@ -40,10 +40,7 @@ public final class ClientGameTestRecordingHud {
     private static final ArrayDeque<String> LOG_LINES = new ArrayDeque<>(MAX_LOG_LINES);
     private static volatile Step currentStep;
     private static volatile PerformanceOverlayPlacement overlayPlacement = PerformanceOverlayPlacement.TOP_RIGHT;
-    /**
-     * The performance panel's rectangle as the last frame drew it, {@code x, y, width, height}, or null when
-     * it was not drawn. The input overlay reads it to stay clear of the panel without sampling twice.
-     */
+    /** This frame's performance panel, {@code x, y, width, height}, or null when it was not drawn. */
     private static volatile int[] performancePanelRect;
     private static boolean registered;
 
@@ -111,6 +108,11 @@ public final class ClientGameTestRecordingHud {
      * forgets it. The input overlay calls this once a frame, after the HUD, so a frame that skipped the
      * HUD (a hidden HUD, no player) leaves nothing behind for the next one.
      */
+    /** Records this frame's performance panel, or null when it was not drawn. */
+    static void recordPerformancePanelRect(int[] rect) {
+        performancePanelRect = rect;
+    }
+
     static int[] consumePerformancePanelRect() {
         int[] rect = performancePanelRect;
         performancePanelRect = null;
@@ -186,11 +188,10 @@ public final class ClientGameTestRecordingHud {
         int[] position = performancePanel(recording, overlayPlacement, client.getWindow().getGuiScaledWidth(),
                 client.getWindow().getGuiScaledHeight(), captionBottom, panelWidth, panelHeight,
                 client.gui.screen() instanceof ChatScreen);
+        recordPerformancePanelRect(position == null ? null : new int[] {position[0], position[1], panelWidth, panelHeight});
         if (position == null) {
-            performancePanelRect = null;
             return;
         }
-        performancePanelRect = new int[] {position[0], position[1], panelWidth, panelHeight};
         int panelX = position[0];
         int panelY = position[1];
         graphics.fill(panelX, panelY, panelX + panelWidth, panelY + panelHeight, BACKGROUND_COLOR);

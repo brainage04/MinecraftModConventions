@@ -9,8 +9,20 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ClientGameTestRecorderPluginTest {
+    @Test
+    void aSwitchAcceptsTheSpellingsTheOtherSwitchesDo() {
+        for (String on : new String[] {"1", "true", "TRUE", "yes", "on", " true"}) {
+            assertTrue(ClientGameTestRecorderPlugin.truthy(on), on);
+        }
+        for (String off : new String[] {"0", "false", "no", "off", "", null}) {
+            assertFalse(ClientGameTestRecorderPlugin.truthy(off), String.valueOf(off));
+        }
+    }
+
     @Test
     void rootProjectUsesUnqualifiedRunTaskName() {
         assertEquals("runClientGameTest", ClientGameTestRecorderPlugin.clientGameTestTaskPath(":"));

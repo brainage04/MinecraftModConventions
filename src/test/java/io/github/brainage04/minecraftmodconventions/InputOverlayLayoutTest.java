@@ -56,16 +56,21 @@ class InputOverlayLayoutTest {
 
     @Test
     void thePanelKeepsClearOfTheChatColumn() {
-        // The chat background reaches 332 GUI pixels from the left edge, so the panel's left edge must
-        // be at or past that on the 640-wide showcase GUI.
-        int maxContentWidth = SHOWCASE_GUI_WIDTH - 5 * 2 - 3 * 2 - InputOverlay.CHAT_COLUMN_WIDTH;
-        int panelWidth = maxContentWidth + 3 * 2;
+        // The chat background reaches 332 GUI pixels from the left edge, so a panel built from the
+        // widest content the overlay allows must start at or past that on the 640-wide showcase GUI.
+        int panelWidth = InputOverlay.maxContentWidth(SHOWCASE_GUI_WIDTH) + 3 * 2;
 
         int[] origin = InputOverlay.panelOrigin(SHOWCASE_GUI_WIDTH, SHOWCASE_GUI_HEIGHT, panelWidth, 20,
                 Integer.MIN_VALUE);
 
         assertTrue(origin[0] >= InputOverlay.CHAT_COLUMN_WIDTH,
                 "panel left " + origin[0] + " over chat " + InputOverlay.CHAT_COLUMN_WIDTH);
+    }
+
+    @Test
+    void theChatColumnIsTheWidthTheChatBackgroundReaches() {
+        // getWidth is at most 320 and the background runs 12 pixels wider (ChatComponent.java:161-167).
+        assertEquals(332, InputOverlay.CHAT_COLUMN_WIDTH);
     }
 
     @Test

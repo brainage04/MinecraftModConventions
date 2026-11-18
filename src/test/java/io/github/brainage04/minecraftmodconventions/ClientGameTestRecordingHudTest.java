@@ -33,6 +33,16 @@ class ClientGameTestRecordingHudTest {
     }
 
     @Test
+    void thePerformancePanelRectangleIsReadOnceAndThenForgotten() {
+        ClientGameTestRecordingHud.recordPerformancePanelRect(new int[] {500, 300, 130, 41});
+
+        assertArrayEquals(new int[] {500, 300, 130, 41}, ClientGameTestRecordingHud.consumePerformancePanelRect());
+        // A frame that skipped the HUD leaves nothing behind, so the input overlay is not pushed above a
+        // panel that is not on screen.
+        assertNull(ClientGameTestRecordingHud.consumePerformancePanelRect());
+    }
+
+    @Test
     void theOverlaySitsUnderTheCaptionPanelInTheTopRightByDefault() {
         assertEquals(PerformanceOverlayPlacement.TOP_RIGHT, ClientGameTestRecordingHud.performanceOverlayPlacement());
         // A title card holds at most a header, a title and a subtitle: 39 pixels from y 5, so the overlay starts at 46.

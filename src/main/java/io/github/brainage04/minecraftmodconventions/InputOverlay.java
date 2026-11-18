@@ -163,9 +163,7 @@ public final class InputOverlay {
     private static void renderInput(
             GuiGraphicsExtractor graphics, Minecraft client, long now, int performanceTop) {
         Font font = client.font;
-        int maxContentWidth = Math.max(
-                MOUSE_WIDTH + CAP_GAP,
-                graphics.guiWidth() - SCREEN_MARGIN * 2 - PANEL_PADDING * 2 - CHAT_COLUMN_WIDTH);
+        int maxContentWidth = maxContentWidth(graphics.guiWidth());
         List<InputOverlayState.Chip> chips = fitChips(font::width, STATE.chips(now), maxContentWidth);
         String typed = fitText(font::width, STATE.typedText(now), maxContentWidth);
         int capsWidth = 0;
@@ -311,6 +309,13 @@ public final class InputOverlay {
         boolean bottomRight = performance[0] > client.getWindow().getGuiScaledWidth() / 2
                 && performance[1] > client.getWindow().getGuiScaledHeight() / 2;
         return bottomRight ? performance[1] : Integer.MIN_VALUE;
+    }
+
+    /** The widest the panel's content may be on a GUI {@code guiWidth} wide, so it keeps clear of chat. */
+    static int maxContentWidth(int guiWidth) {
+        return Math.max(
+                MOUSE_WIDTH + CAP_GAP,
+                guiWidth - SCREEN_MARGIN * 2 - PANEL_PADDING * 2 - CHAT_COLUMN_WIDTH);
     }
 
     private static int capWidth(ToIntFunction<String> textWidth, String label) {
