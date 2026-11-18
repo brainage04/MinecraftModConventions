@@ -217,30 +217,40 @@ public final class InputOverlay {
     private static void renderCursor(GuiGraphicsExtractor graphics, Minecraft client) {
         int x = (int) client.mouseHandler.getScaledXPos(client.getWindow());
         int y = (int) client.mouseHandler.getScaledYPos(client.getWindow());
-        // A pointer: a filled triangle with a black edge, drawn from the tip at (x, y).
+        // A pointer: a white arrow with a black edge, its tip at (x, y).
         for (int row = 0; row < CURSOR_HEIGHT; row++) {
-            int width = cursorRowWidth(row);
-            graphics.fill(x, y + row, x + width, y + row + 1, CURSOR_FILL_COLOR);
-            graphics.fill(x - 1, y + row, x, y + row + 1, CURSOR_OUTLINE_COLOR);
-            graphics.fill(x + width, y + row, x + width + 1, y + row + 1, CURSOR_OUTLINE_COLOR);
+            int left = cursorRowLeft(row);
+            int right = left + cursorRowWidth(row);
+            graphics.fill(x + left, y + row, x + right, y + row + 1, CURSOR_FILL_COLOR);
+            graphics.fill(x + left - 1, y + row, x + left, y + row + 1, CURSOR_OUTLINE_COLOR);
+            graphics.fill(x + right, y + row, x + right + 1, y + row + 1, CURSOR_OUTLINE_COLOR);
         }
         graphics.fill(x - 1, y - 1, x + cursorRowWidth(0) + 1, y, CURSOR_OUTLINE_COLOR);
-        graphics.fill(x - 1, y + CURSOR_HEIGHT, x + cursorRowWidth(CURSOR_HEIGHT - 1) + 1, y + CURSOR_HEIGHT + 1,
-                CURSOR_OUTLINE_COLOR);
+        int tailLeft = cursorRowLeft(CURSOR_HEIGHT - 1);
+        graphics.fill(x + tailLeft - 1, y + CURSOR_HEIGHT, x + tailLeft + cursorRowWidth(CURSOR_HEIGHT - 1) + 1,
+                y + CURSOR_HEIGHT + 1, CURSOR_OUTLINE_COLOR);
     }
 
     /** The cursor's height in GUI pixels. */
-    static final int CURSOR_HEIGHT = 11;
+    static final int CURSOR_HEIGHT = 12;
 
     /** How wide the cursor's arrow is on {@code row}, from its tip. */
     static int cursorRowWidth(int row) {
         if (row < 0 || row >= CURSOR_HEIGHT) {
             return 0;
         }
-        // A 1-pixel tip that widens by one every row to 6, then narrows to the tail.
-        int widest = 6;
-        int peak = 5;
-        return row <= peak ? row + 1 : Math.max(1, widest - (row - peak));
+        // A one-pixel tip that widens by one every row to the head's base, then a two-pixel tail.
+        int head = 7;
+        return row < head ? row + 1 : 2;
+    }
+
+    /** How far right of the tip the cursor's arrow starts on {@code row}: the tail leans right. */
+    static int cursorRowLeft(int row) {
+        if (row < 0 || row >= CURSOR_HEIGHT) {
+            return 0;
+        }
+        int head = 7;
+        return row < head ? 0 : row - head + 1;
     }
 
     /**

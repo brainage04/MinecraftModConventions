@@ -43,11 +43,18 @@ class InputOverlayLayoutTest {
     }
 
     @Test
-    void theCursorIsAnArrowThatWidensThenNarrows() {
+    void theCursorIsAnArrowWithATail() {
         assertEquals(1, InputOverlay.cursorRowWidth(0));
         assertTrue(InputOverlay.cursorRowWidth(3) > InputOverlay.cursorRowWidth(1));
-        assertTrue(InputOverlay.cursorRowWidth(InputOverlay.CURSOR_HEIGHT - 1) < InputOverlay.cursorRowWidth(3));
+        assertEquals(2, InputOverlay.cursorRowWidth(InputOverlay.CURSOR_HEIGHT - 1));
         assertEquals(0, InputOverlay.cursorRowWidth(-1));
         assertEquals(0, InputOverlay.cursorRowWidth(InputOverlay.CURSOR_HEIGHT));
+    }
+
+    @Test
+    void theCursorTailLeansRightOfItsTip() {
+        assertEquals(0, InputOverlay.cursorRowLeft(0));
+        assertTrue(InputOverlay.cursorRowLeft(InputOverlay.CURSOR_HEIGHT - 1) > 0);
+        assertEquals(0, InputOverlay.cursorRowLeft(-1));
     }
 }
