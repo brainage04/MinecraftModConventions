@@ -313,10 +313,11 @@ public final class InputOverlay {
      * and {@code getWidth} is {@code floor(pct * 280 + 40)} ({@code ChatComponent.java:416-419}).
      */
     static int chatColumnWidth(double chatWidthPct, double chatScale) {
-        // The game divides in float (ChatComponent.java:147), so a double divide can round a pixel short.
+        // The game divides in float (ChatComponent.java:147) and scales the pose before translating it 4
+        // pixels (ChatComponent.java:160-162), so the right edge is two float steps, not one multiply.
         float scale = chatScale <= 0.0 ? 1.0F : (float) chatScale;
         int maxWidth = Mth.ceil(ChatComponent.getWidth(chatWidthPct) / scale);
-        return Mth.ceil(scale * (maxWidth + 12));
+        return Mth.ceil(scale * (maxWidth + 8) + scale * 4.0F);
     }
 
     /** The chat column's right edge for the client's own chat width and scale. */

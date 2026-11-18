@@ -73,10 +73,13 @@ class InputOverlayLayoutTest {
     void theChatColumnIsAsWideAsTheChatBackgroundReaches() {
         // getWidth is at most 320 and the background runs 12 pixels wider (ChatComponent.java:160-167).
         assertEquals(332, InputOverlay.chatColumnWidth(1.0, 1.0));
-        // A chat scale of 2 doubles the column: ceil(320 / 2) + 12, times 2.
-        assertEquals(344, InputOverlay.chatColumnWidth(1.0, 2.0));
         // A narrower chat is narrower: getWidth(0.5) is floor(0.5 * 280 + 40) = 180, plus 12.
         assertEquals(192, InputOverlay.chatColumnWidth(0.5, 1.0));
+        // chatScale is a UnitDouble, so it cannot pass 1 (OptionInstance.java:583-585). The widest
+        // reachable column is 333, at a chat scale just under 1.
+        assertEquals(333, InputOverlay.chatColumnWidth(1.0, 0.9275));
+        // A small chat at a small scale rounds up: the game's two float steps, not one multiply.
+        assertEquals(52, InputOverlay.chatColumnWidth(0.0, 0.85));
     }
 
     @Test
