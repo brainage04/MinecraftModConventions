@@ -55,6 +55,20 @@ class InputOverlayLayoutTest {
     }
 
     @Test
+    void thePanelKeepsClearOfTheChatColumn() {
+        // The chat background reaches 332 GUI pixels from the left edge, so the panel's left edge must
+        // be at or past that on the 640-wide showcase GUI.
+        int maxContentWidth = SHOWCASE_GUI_WIDTH - 5 * 2 - 3 * 2 - InputOverlay.CHAT_COLUMN_WIDTH;
+        int panelWidth = maxContentWidth + 3 * 2;
+
+        int[] origin = InputOverlay.panelOrigin(SHOWCASE_GUI_WIDTH, SHOWCASE_GUI_HEIGHT, panelWidth, 20,
+                Integer.MIN_VALUE);
+
+        assertTrue(origin[0] >= InputOverlay.CHAT_COLUMN_WIDTH,
+                "panel left " + origin[0] + " over chat " + InputOverlay.CHAT_COLUMN_WIDTH);
+    }
+
+    @Test
     void aWideCapIsSkippedAndTheNarrowOnesAfterItStillShow() {
         // Every character is 6 pixels wide, so "Shift" is 30 and "W" is 6.
         ToIntFunction<String> width = text -> text.length() * 6;

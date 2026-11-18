@@ -54,9 +54,6 @@ public final class InputOverlayState {
             entry = new Entry(label);
             keys.put(id, entry);
         }
-        if (entry.pressed) {
-            return;
-        }
         entry.pressed = true;
         entry.releasedAt = Long.MIN_VALUE;
     }

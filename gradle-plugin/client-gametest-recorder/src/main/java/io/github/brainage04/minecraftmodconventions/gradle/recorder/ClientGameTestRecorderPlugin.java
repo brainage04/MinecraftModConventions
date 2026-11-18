@@ -289,9 +289,8 @@ public final class ClientGameTestRecorderPlugin implements Plugin<Project> {
         throw new GradleException("Task " + task.getPath() + " must be a Fabric Loom run task to disable Loom-managed Xvfb.");
     }
 
-    /** Whether a switch's value means on: {@code 1}, {@code true}, {@code yes} or {@code on}. */
     static boolean truthy(String value) {
-        String normalized = value == null ? "" : value.toLowerCase(Locale.ROOT);
+        String normalized = value == null ? "" : value.strip().toLowerCase(Locale.ROOT);
         return List.of("1", "true", "yes", "on").contains(normalized);
     }
 }

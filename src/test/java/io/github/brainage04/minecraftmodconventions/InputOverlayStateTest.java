@@ -59,6 +59,18 @@ class InputOverlayStateTest {
     }
 
     @Test
+    void aRepeatAfterAReleaseIsAFreshPress() {
+        InputOverlayState state = new InputOverlayState();
+        state.keyDown("key.keyboard.w", "W", 1000L);
+        state.keyUp("key.keyboard.w", 1100L);
+        state.keyDown("key.keyboard.w", "W", 1200L);
+
+        assertEquals(List.of(new InputOverlayState.Chip("key.keyboard.w", "W", true)), state.chips(1200L));
+        state.keyUp("key.keyboard.w", 1300L);
+        assertEquals(List.of(), state.chips(1300L + MIN_VISIBLE));
+    }
+
+    @Test
     void aMouseClickWithNoKeyHeldIsNotAnEmptyOverlay() {
         InputOverlayState state = new InputOverlayState();
         state.mouseDown(3);

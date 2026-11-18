@@ -138,6 +138,9 @@ public final class InputOverlay {
             return;
         }
         long now = Util.getMillis();
+        // Read once a frame, whether or not the panel draws, so a frame that skipped the HUD leaves
+        // nothing behind for the next one.
+        int performanceTop = performancePanelTop(client);
         boolean input = !STATE.isEmpty(now);
         boolean cursor = hasFreeCursor(client);
         if (!input && !cursor) {
@@ -145,7 +148,7 @@ public final class InputOverlay {
         }
         graphics.nextStratum();
         if (input) {
-            renderInput(graphics, client, now);
+            renderInput(graphics, client, now, performanceTop);
         }
         if (cursor) {
             renderCursor(graphics, client);
@@ -157,7 +160,8 @@ public final class InputOverlay {
         return client.gui.screen() != null && !client.mouseHandler.isMouseGrabbed();
     }
 
-    private static void renderInput(GuiGraphicsExtractor graphics, Minecraft client, long now) {
+    private static void renderInput(
+            GuiGraphicsExtractor graphics, Minecraft client, long now, int performanceTop) {
         Font font = client.font;
         int maxContentWidth = Math.max(
                 MOUSE_WIDTH + CAP_GAP,
@@ -181,7 +185,7 @@ public final class InputOverlay {
                 graphics.guiHeight(),
                 panelWidth,
                 panelHeight,
-                performancePanelTop(client));
+                performanceTop);
         int panelX = origin[0];
         int panelY = origin[1];
         graphics.fill(panelX, panelY, panelX + panelWidth, panelY + panelHeight, BACKGROUND_COLOR);
@@ -300,7 +304,7 @@ public final class InputOverlay {
         if (!ClientGameTestRecordingSession.isEnabled()) {
             return Integer.MIN_VALUE;
         }
-        int[] performance = ClientGameTestRecordingHud.performancePanelRect();
+        int[] performance = ClientGameTestRecordingHud.consumePerformancePanelRect();
         if (performance == null) {
             return Integer.MIN_VALUE;
         }

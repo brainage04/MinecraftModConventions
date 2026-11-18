@@ -106,9 +106,15 @@ public final class ClientGameTestRecordingHud {
         return overlayPlacement;
     }
 
-    /** The performance panel's rectangle as the last frame drew it, or null when it was not drawn. */
-    static int[] performancePanelRect() {
-        return performancePanelRect;
+    /**
+     * The performance panel's rectangle from this frame, or null when this frame did not draw it, and
+     * forgets it. The input overlay calls this once a frame, after the HUD, so a frame that skipped the
+     * HUD (a hidden HUD, no player) leaves nothing behind for the next one.
+     */
+    static int[] consumePerformancePanelRect() {
+        int[] rect = performancePanelRect;
+        performancePanelRect = null;
+        return rect;
     }
 
     public static void clear() {
@@ -123,8 +129,6 @@ public final class ClientGameTestRecordingHud {
     private static void render(GuiGraphicsExtractor graphics, net.minecraft.client.DeltaTracker deltaTracker) {
         Minecraft client = Minecraft.getInstance();
         if (client.player == null || !isEnabledForEnvironment()) {
-            // Nothing is drawn this frame, so the rectangle the input overlay reads must not survive it.
-            performancePanelRect = null;
             return;
         }
 
