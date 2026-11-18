@@ -103,16 +103,16 @@ public final class ClientGameTestRecordingHud {
         return overlayPlacement;
     }
 
-    /**
-     * The performance panel's rectangle from this frame, or null when this frame did not draw it, and
-     * forgets it. The input overlay calls this once a frame, after the HUD, so a frame that skipped the
-     * HUD (a hidden HUD, no player) leaves nothing behind for the next one.
-     */
     /** Records this frame's performance panel, or null when it was not drawn. */
     static void recordPerformancePanelRect(int[] rect) {
         performancePanelRect = rect;
     }
 
+    /**
+     * This frame's performance panel, or null when this frame did not draw it, and forgets it. The input
+     * overlay calls this once a frame, after the HUD, so a frame that skipped the HUD (a hidden HUD, no
+     * player) leaves nothing behind for the next one.
+     */
     static int[] consumePerformancePanelRect() {
         int[] rect = performancePanelRect;
         performancePanelRect = null;

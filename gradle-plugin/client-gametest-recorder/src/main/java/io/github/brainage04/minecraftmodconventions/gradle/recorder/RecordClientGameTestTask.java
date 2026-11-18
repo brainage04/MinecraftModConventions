@@ -142,7 +142,7 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
         if (encoderProblem != null) {
             throw new GradleException(encoderProblem);
         }
-        if (truthy(env("GTR_RECORDING_AUDIO_SET_DEFAULT", "false"))) {
+        if (ClientGameTestRecorderPlugin.truthy(env("GTR_RECORDING_AUDIO_SET_DEFAULT", "false"))) {
             throw new GradleException("Changing the desktop default audio sink is prohibited; recording uses a dedicated route.");
         }
         String safeRecordingName = sanitizePathComponent(recordingName);
@@ -555,7 +555,7 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
         Map<String, Object> metadataModel = new LinkedHashMap<>();
         metadataModel.put("name", recordingName);
         metadataModel.put("profile", recordingProfile);
-        metadataModel.put("trace", truthy(recordingTrace));
+        metadataModel.put("trace", ClientGameTestRecorderPlugin.truthy(recordingTrace));
         metadataModel.put("startedAt", recordingStartedAt);
         metadataModel.put("finishedAt", DateTimeFormatter.ISO_INSTANT.format(Instant.now()));
         metadataModel.put("gradleStatus", gradleStatus);
@@ -1452,11 +1452,6 @@ public abstract class RecordClientGameTestTask extends DefaultTask {
     private static String env(String name, String fallback) {
         String value = System.getenv(name);
         return value == null || value.isBlank() ? fallback : value;
-    }
-
-    private static boolean truthy(String value) {
-        String normalized = value == null ? "" : value.toLowerCase(Locale.ROOT);
-        return List.of("1", "true", "yes", "on").contains(normalized);
     }
 
     private static String sanitizePathComponent(String value) {

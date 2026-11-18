@@ -4,6 +4,7 @@ import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.components.ChatComponent;
 import net.minecraft.util.Util;
 
 import java.util.ArrayList;
@@ -57,13 +58,6 @@ public final class InputOverlay {
     private static final int CURSOR_OUTLINE_COLOR = 0xFF000000;
     /** The hotbar's top edge is 22 pixels above the bottom of the GUI ({@code Hud.java:575}). */
     static final int HOTBAR_HEIGHT = 22;
-    /**
-     * The widest the chat column gets, in GUI pixels. {@code ChatComponent.getWidth} is
-     * {@code floor(pct * 280 + 40)} with a maximum of 320 ({@code ChatComponent.java:416-419}), and the
-     * background is drawn from {@code -4} to {@code maxWidth + 8} after a 4-pixel translate
-     * ({@code ChatComponent.java:161-167}), so its right edge is 332 at chat scale 1.
-     */
-    static final int CHAT_COLUMN_WIDTH = 332;
 
     private static final InputOverlayState STATE = new InputOverlayState();
     private static volatile boolean enabled = true;
@@ -163,7 +157,7 @@ public final class InputOverlay {
     private static void renderInput(
             GuiGraphicsExtractor graphics, Minecraft client, long now, int performanceTop) {
         Font font = client.font;
-        int maxContentWidth = maxContentWidth(graphics.guiWidth());
+        int maxContentWidth = maxContentWidth(graphics.guiWidth(), chatColumnWidth(client));
         List<InputOverlayState.Chip> chips = fitChips(font::width, STATE.chips(now), maxContentWidth);
         String typed = fitText(font::width, STATE.typedText(now), maxContentWidth);
         int capsWidth = 0;
@@ -311,11 +305,28 @@ public final class InputOverlay {
         return bottomRight ? performance[1] : Integer.MIN_VALUE;
     }
 
+    /**
+     * The chat column's right edge in GUI pixels, from the game's own options. The chat scales its pose by
+     * {@code chatScale} and translates 4 pixels, then fills from {@code -4} to {@code maxWidth + 8}
+     * ({@code ChatComponent.java:160-167}), where {@code maxWidth} is {@code ceil(getWidth(pct) / scale)}
+     * and {@code getWidth} is {@code floor(pct * 280 + 40)} ({@code ChatComponent.java:416-419}).
+     */
+    static int chatColumnWidth(double chatWidthPct, double chatScale) {
+        double scale = chatScale <= 0.0 ? 1.0 : chatScale;
+        int maxWidth = (int) Math.ceil(ChatComponent.getWidth(chatWidthPct) / scale);
+        return (int) Math.ceil(scale * (maxWidth + 12));
+    }
+
+    /** The chat column's right edge for the client's own chat width and scale. */
+    private static int chatColumnWidth(Minecraft client) {
+        return chatColumnWidth(client.options.chatWidth().get(), client.options.chatScale().get());
+    }
+
     /** The widest the panel's content may be on a GUI {@code guiWidth} wide, so it keeps clear of chat. */
-    static int maxContentWidth(int guiWidth) {
+    static int maxContentWidth(int guiWidth, int chatColumnWidth) {
         return Math.max(
                 MOUSE_WIDTH + CAP_GAP,
-                guiWidth - SCREEN_MARGIN * 2 - PANEL_PADDING * 2 - CHAT_COLUMN_WIDTH);
+                guiWidth - SCREEN_MARGIN * 2 - PANEL_PADDING * 2 - chatColumnWidth);
     }
 
     private static int capWidth(ToIntFunction<String> textWidth, String label) {
