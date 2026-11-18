@@ -424,11 +424,12 @@ Every recording draws the input the game received, so a viewer can see what the 
 - **Key caps.** Each key the game received is a small cap in the bottom-right corner, above the hotbar: lit while the key is held, and for 0.4 s after its release, so a one-tick press is readable. A key held longer than that shows for as long as it is held.
 - **Mouse glyph.** A mouse beside the caps, with the left, middle and right buttons lit while they are down and for 0.4 s after their release.
 - **Typed text.** The characters typed into a screen, on a line above the caps, for 2 s after the last one, so a typed command is readable.
-- **Cursor.** An arrow at the game's own mouse position whenever a screen has the mouse free, drawn above the screen and its tooltips. With no screen open the mouse is grabbed and the crosshair is the pointer, so no cursor is drawn.
+- **Cursor.** An arrow at the game's own mouse position whenever a screen has the mouse free, drawn above the screen and its tooltips. With no screen open the mouse is grabbed and the crosshair is the pointer, so no cursor is drawn. A title screen and a world-creation screen have a cursor too, and the overlay draws it there.
+- **Placement.** The panel sits above the hotbar and keeps clear of the chat column, which is at most 320 GUI pixels wide (`ChatComponent.java:416-419`). Caps and typed text that would not fit are cut, so the panel never covers chat or leaves the screen.
 
 Input is read where the game receives it, not where a test sends it: `KeyboardHandler.keyPress` (`KeyboardHandler.java:436` in the 26.3 sources), `KeyboardHandler.charTyped` (`KeyboardHandler.java:578`) and `MouseHandler.onButton` (`MouseHandler.java:63`). Fabric's client GameTest input calls exactly those three methods, so a test's presses and a player's presses look the same, and a mod adds no code for the overlay.
 
-The overlay is on for every recording. Turn it off for one run with `-PinputOverlay=false`, or for a project in its build file:
+The overlay draws only in a recording, so a plain client GameTest run and its screenshot comparisons see the same picture they did before. Turn it off for one run with `-PinputOverlay=false`, which `recordClientGameTest` passes on to the run that records, or for a project in its build file:
 
 ```gradle
 clientGameTestRecorder {
