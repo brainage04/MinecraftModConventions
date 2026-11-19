@@ -259,6 +259,20 @@ clientGameTestRecorder {
 - The raw capture's muxer queues up to 4096 encoded packets (over a minute of capture), so a write that waits on a busy disk does not stop the screen grab and leave a frame gap.
 - When the job runs in a cgroup of its own with a memory limit (a job runner's slot, such as a systemd scope), the recording sets that cgroup's `memory.low` to the limit for the run, so the kernel reclaims sibling jobs first instead of evicting ffmpeg's and the game's files, whose reads from a busy disk stall the capture. A cgroup without a limit is left alone.
 
+### Review checklist
+
+```shell
+./scripts/review_checklist.py ../SomeMod                      # newest batch under ../SomeMod/build/recordings
+./scripts/review_checklist.py <batch directory> [--project ../SomeMod] [--output FILE] [--speed 1.75]
+```
+
+Writes `REVIEW-CHECKLIST.md` into the batch directory (all recordings whose `.json` metadata sits directly in it, or in its `metadata/` for a `mod_fleet.py record` output), plus one `<video>.chapters.ffmetadata` per recording. Nothing is built or run; it needs Python 3 and, for exact durations, `ffprobe`.
+
+- One entry per `ClientGameTestRecorder.showStep` step, timed from the `[CLIENT_GAMETEST_RECORDER]` lines in the kept run directory's `logs/latest.log` (1 s resolution). The step id is looked up in the mod's non-`main`, non-`test` source sets: a lambda or method reference passed with the id (a scenario table) or the statements after an inline `showStep`, expanded two calls deep, give **What it does**; assertions, `AssertionError` messages, chat lines printed during the step and the step's own description give the 2–5 **Look for** checks. Checks with no such backing are marked *guessed*.
+- A step that appears in an earlier recording of the batch gets a short *Same test as* entry; the time estimate assumes 1.75x plus a few seconds per entry.
+- The header has an `mpv` playlist command with each recording's steps as chapters (`PgDn`/`PgUp`).
+- Without recordings (or with `--project` and an empty batch) it lists the steps found in the sources, without times. Recordings without a kept run log or without `showStep` calls become a single *whole recording* entry.
+
 ### Dedicated-server harness
 
 ```java
