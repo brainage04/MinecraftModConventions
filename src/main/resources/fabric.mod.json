@@ -9,7 +9,8 @@
 	],
 	"contact": {
 		"homepage": "https://github.com/brainage04/MinecraftModConventions",
-		"sources": "https://github.com/brainage04/MinecraftModConventions"
+		"sources": "https://github.com/brainage04/MinecraftModConventions",
+		"issues": "https://github.com/brainage04/MinecraftModConventions/issues"
 	},
 	"license": "MIT",
 	"icon": "assets/minecraftmodconventions/icon.png",
