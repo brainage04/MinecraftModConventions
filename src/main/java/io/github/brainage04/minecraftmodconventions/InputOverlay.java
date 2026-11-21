@@ -108,38 +108,42 @@ public final class InputOverlay {
 
     /**
      * A key the game received: {@code action} is {@code InputConstants.PRESS}, {@code RELEASE} or
-     * {@code REPEAT}, and {@code screenOpen} is whether a screen had the keyboard when it arrived.
+     * {@code REPEAT}.
      *
-     * <p>With no screen open the game sets the key's mapping down, so the mapping is the record of
-     * the press. With a screen open it does not ({@code KeyboardHandler.java:568-570} in 26.3), so
-     * the press is kept here instead. Only those presses are kept: a key held when a screen opens is
-     * released by the game without a release event ({@code Gui.java:263}), and a kept press would
-     * then stay lit for the rest of the recording.
+     * <p>Every press is kept, not only the ones the game sets on a key mapping: a press with a
+     * screen open does not reach the mapping ({@code KeyboardHandler.java:568-570} in 26.3), and a
+     * one-tick press is dark on the next frame either way, so the press is what the afterglow is
+     * measured from.
      */
-    public static void onKey(InputConstants.Key key, int action, boolean screenOpen) {
-        if (!isEnabled() || key == null) {
+    public static void onKey(InputConstants.Key key, int action) {
+        if (!enabled || key == null) {
             return;
         }
         long now = Util.getMillis();
         if (action == InputConstants.RELEASE) {
             STATE.keyUp(key.getName(), now);
-        } else if (screenOpen) {
+        } else {
             STATE.keyDown(key.getName(), now);
         }
     }
 
     /**
-     * A mouse button the game received, with the same actions as {@link #onKey}. A click with no
-     * screen open sets the button's mapping down ({@code MouseHandler.java:139-146}), so it needs no
-     * press kept here.
+     * Forgets every key that is down, for a screen opening. The game releases every mapping there
+     * without sending a release event ({@code Gui.java:263} in 26.3), so a key held at that moment
+     * would otherwise stay lit for the rest of the recording.
      */
+    public static void releaseAll() {
+        STATE.releaseAll();
+    }
+
+    /** A mouse button the game received, with the same actions as {@link #onKey}. */
     public static void onMouseButton(int button, int action) {
-        onKey(InputConstants.Type.MOUSE.getOrCreate(button), action, false);
+        onKey(InputConstants.Type.MOUSE.getOrCreate(button), action);
     }
 
     /** A character typed into a screen. */
     public static void onChar(int codepoint) {
-        if (!isEnabled()) {
+        if (!enabled) {
             return;
         }
         STATE.typed(Character.toString(codepoint), Util.getMillis());
@@ -246,8 +250,16 @@ public final class InputOverlay {
      */
     private static boolean isLit(Minecraft client, Cap cap, long now) {
         KeyMapping mapping = mapping(client, cap.id());
-        String id = mapping.saveString();
-        return mapping.isDown() || STATE.isDown(id) || STATE.keyLit(id, now);
+        return mapping.isDown() || keyLit(mapping.saveString(), now);
+    }
+
+    /**
+     * Whether the events the game received light a key: it is down, or it was released within
+     * {@link InputOverlayState#MIN_VISIBLE_MILLIS}. The mapping is read separately, because a toggle
+     * key such as sneak stays down while it is toggled on and no event says so.
+     */
+    static boolean keyLit(String id, long now) {
+        return STATE.isDown(id) || STATE.keyLit(id, now);
     }
 
     private static void renderCaps(
@@ -372,19 +384,29 @@ public final class InputOverlay {
 
     /**
      * The panel's top-left corner: the bottom-right of the GUI, above the hotbar, and above the
-     * performance overlay when a test put that in the bottom-right corner too. The panel keeps its
-     * left edge clear of the chat column, which is the only thing in that corner a film must not
-     * cover.
+     * performance overlay when a test put that in the bottom-right corner too.
+     *
+     * <p>The panel keeps its left edge clear of the chat column, which is the only thing in that
+     * corner a film must not cover, whenever the GUI is wide enough for both. A GUI narrower than
+     * the chat column plus the panel cannot hold both, and there the panel stays on screen and
+     * covers part of the chat: the keys are what a viewer watches the film for.
      */
     static int[] panelOrigin(
             int guiWidth, int guiHeight, int panelWidth, int panelHeight, int performanceTop, int chatColumn) {
         int x = Math.max(SCREEN_MARGIN, guiWidth - panelWidth - SCREEN_MARGIN);
-        x = Math.max(x, chatColumn + SCREEN_MARGIN);
+        if (fitsBesideChat(guiWidth, panelWidth, chatColumn)) {
+            x = Math.max(x, chatColumn + SCREEN_MARGIN);
+        }
         int y = guiHeight - panelHeight - SCREEN_MARGIN - HOTBAR_HEIGHT;
         if (performanceTop != Integer.MIN_VALUE) {
             y = Math.max(SCREEN_MARGIN, Math.min(y, performanceTop - panelHeight - LINE_GAP));
         }
         return new int[] {x, y};
+    }
+
+    /** Whether the panel fits between the chat column and the GUI's right edge. */
+    static boolean fitsBesideChat(int guiWidth, int panelWidth, int chatColumn) {
+        return chatColumn + SCREEN_MARGIN + panelWidth + SCREEN_MARGIN <= guiWidth;
     }
 
     /**

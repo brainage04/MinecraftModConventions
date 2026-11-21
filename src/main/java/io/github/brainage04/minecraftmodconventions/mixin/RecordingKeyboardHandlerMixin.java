@@ -23,8 +23,7 @@ abstract class RecordingKeyboardHandlerMixin {
     @Inject(method = "keyPress", at = @At("HEAD"))
     private void recordingInputKeyPress(long handle, int action, KeyEvent event, CallbackInfo callback) {
         if (isThisWindow(handle)) {
-            Minecraft client = Minecraft.getInstance();
-            InputOverlay.onKey(InputConstants.getKey(event), action, client.gui.screen() != null);
+            InputOverlay.onKey(InputConstants.getKey(event), action);
         }
     }
 

@@ -9,8 +9,8 @@ import java.util.Set;
  * What the recording's keystrokes overlay shows: which keys the game received, each for a short while
  * after its release, and the text typed into a screen.
  *
- * <p>A client GameTest presses a key for a single tick, which is one frame of a 30 fps recording, so a
- * press that only showed while it was held would be invisible. Every press therefore stays lit for
+ * <p>A client GameTest presses a key for a single tick, shorter than two frames of a 30 fps
+ * recording, so a press that only showed while it was held would be invisible. Every press therefore stays lit for
  * {@link #MIN_VISIBLE_MILLIS} after its release, and a key held longer than that stays lit for as long
  * as it is held.
  *
@@ -34,6 +34,15 @@ public final class InputOverlayState {
     public void keyDown(String id, long nowMillis) {
         down.add(id);
         releasedAt.remove(id);
+    }
+
+    /**
+     * Forgets every key that is down, for a screen opening: the game releases every mapping there
+     * without sending a release event ({@code Gui.java:263} in 26.3), so a key held at that moment
+     * would otherwise stay lit for the rest of the recording.
+     */
+    public void releaseAll() {
+        down.clear();
     }
 
     /** Records a key coming up; it stays lit for {@link #MIN_VISIBLE_MILLIS} more. */

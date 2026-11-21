@@ -6,6 +6,7 @@
     "ClientAdvancementsMixin",
     "ClientPacketListenerMixin",
     "RecordingGuiGraphicsMixin",
+    "RecordingGuiMixin",
     "RecordingKeyboardHandlerMixin",
     "RecordingMinecraftMixin",
     "RecordingMouseHandlerMixin",
