@@ -14,7 +14,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * the keyboard, and a screen opening forgets the keys that are down.
  */
 class InputOverlayTest {
-    private static final InputConstants.Key W = InputConstants.Type.KEYBOARD.getOrCreate(87);
+    private static final InputConstants.Key W = InputConstants.Type.KEYBOARD.getOrCreate(InputConstants.KEY_W);
 
     @BeforeEach
     void enableTheOverlay() {

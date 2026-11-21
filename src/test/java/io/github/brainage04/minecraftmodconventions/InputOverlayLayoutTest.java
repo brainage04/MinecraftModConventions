@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.function.ToIntFunction;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class InputOverlayLayoutTest {
@@ -59,7 +60,7 @@ class InputOverlayLayoutTest {
     @Test
     void thePanelKeepsClearOfTheChatColumnAndOnScreen() {
         // The real panel, at the GUI a recording uses and at the narrowest a client can have. The
-        // chat column is 332 wide, so a GUI narrower than 401 cannot hold both: there the panel
+        // chat column is 332 wide, so a GUI narrower than 406 cannot hold both: there the panel
         // stays on screen and covers part of the chat.
         int panelWidth = InputOverlay.panelWidth(InputOverlay.caps());
         int chatColumn = InputOverlay.chatColumnWidth(1.0, 1.0);
@@ -83,7 +84,7 @@ class InputOverlayLayoutTest {
 
         // 332 + 5 + 64 + 5 = 406, so 406 is the narrowest GUI that holds both.
         assertTrue(InputOverlay.fitsBesideChat(406, panelWidth, chatColumn));
-        assertTrue(!InputOverlay.fitsBesideChat(405, panelWidth, chatColumn));
+        assertFalse(InputOverlay.fitsBesideChat(405, panelWidth, chatColumn));
     }
 
     @Test

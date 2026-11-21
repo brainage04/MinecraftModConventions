@@ -10,9 +10,9 @@ import java.util.Set;
  * after its release, and the text typed into a screen.
  *
  * <p>A client GameTest presses a key for a single tick, shorter than two frames of a 30 fps
- * recording, so a press that only showed while it was held would be invisible. Every press therefore stays lit for
- * {@link #MIN_VISIBLE_MILLIS} after its release, and a key held longer than that stays lit for as long
- * as it is held.
+ * recording, so a press that only showed while it was held would be invisible. Every press therefore
+ * stays lit for {@link #MIN_VISIBLE_MILLIS} after its release, and a key held longer than that stays
+ * lit for as long as it is held.
  *
  * <p>The class holds no game state and reads no clock: the caller passes the time, so the timing rules
  * are unit-tested without a client.
