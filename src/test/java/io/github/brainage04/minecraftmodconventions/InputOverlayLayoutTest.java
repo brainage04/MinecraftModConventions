@@ -15,7 +15,8 @@ class InputOverlayLayoutTest {
 
     @Test
     void thePanelSitsAboveTheHotbarInTheBottomRight() {
-        int[] origin = InputOverlay.panelOrigin(SHOWCASE_GUI_WIDTH, SHOWCASE_GUI_HEIGHT, 100, 20, Integer.MIN_VALUE);
+        int[] origin = InputOverlay.panelOrigin(
+                SHOWCASE_GUI_WIDTH, SHOWCASE_GUI_HEIGHT, 100, 20, Integer.MIN_VALUE, 0);
 
         assertEquals(SHOWCASE_GUI_WIDTH - 100 - 5, origin[0]);
         assertEquals(SHOWCASE_GUI_HEIGHT - 20 - 5 - InputOverlay.HOTBAR_HEIGHT, origin[1]);
@@ -25,7 +26,8 @@ class InputOverlayLayoutTest {
     void thePanelRisesAboveAPerformanceOverlayInTheSameCorner() {
         int performanceTop = 300;
 
-        int[] origin = InputOverlay.panelOrigin(SHOWCASE_GUI_WIDTH, SHOWCASE_GUI_HEIGHT, 100, 20, performanceTop);
+        int[] origin = InputOverlay.panelOrigin(
+                SHOWCASE_GUI_WIDTH, SHOWCASE_GUI_HEIGHT, 100, 20, performanceTop, 0);
 
         assertEquals(performanceTop - 20 - 2, origin[1]);
     }
@@ -34,7 +36,7 @@ class InputOverlayLayoutTest {
     void thePanelIsPushedToTheLeftEdgeWhenItIsWiderThanTheGui() {
         // A panel wider than the GUI cannot fit; the clamp keeps its left edge on screen rather than
         // letting it start off the left side.
-        int[] origin = InputOverlay.panelOrigin(320, 240, 400, 20, Integer.MIN_VALUE);
+        int[] origin = InputOverlay.panelOrigin(320, 240, 400, 20, Integer.MIN_VALUE, 0);
 
         assertEquals(5, origin[0]);
     }
@@ -44,7 +46,7 @@ class InputOverlayLayoutTest {
         int panelHeight = 20;
         for (int performanceTop = 0; performanceTop < SHOWCASE_GUI_HEIGHT; performanceTop += 10) {
             int[] origin = InputOverlay.panelOrigin(
-                    SHOWCASE_GUI_WIDTH, SHOWCASE_GUI_HEIGHT, 100, panelHeight, performanceTop);
+                    SHOWCASE_GUI_WIDTH, SHOWCASE_GUI_HEIGHT, 100, panelHeight, performanceTop, 0);
 
             assertTrue(origin[1] >= 5, "panel top " + origin[1] + " is off screen");
             if (performanceTop - panelHeight - 2 >= 5) {
@@ -56,14 +58,29 @@ class InputOverlayLayoutTest {
 
     @Test
     void thePanelKeepsClearOfTheChatColumn() {
+        // The real panel, at the GUI a recording uses and at a narrow one where the chat column
+        // reaches past the panel's own right-aligned place.
+        int panelWidth = InputOverlay.panelWidth(InputOverlay.caps());
+        int chatColumn = InputOverlay.chatColumnWidth(1.0, 1.0);
+        for (int guiWidth : new int[] {SHOWCASE_GUI_WIDTH, 400, 360}) {
+            int[] origin = InputOverlay.panelOrigin(
+                    guiWidth, SHOWCASE_GUI_HEIGHT, panelWidth, 20, Integer.MIN_VALUE, chatColumn);
+
+            assertTrue(origin[0] >= chatColumn + 5,
+                    "panel left " + origin[0] + " over chat " + chatColumn + " at GUI " + guiWidth);
+        }
+    }
+
+    @Test
+    void theTypedLineKeepsClearOfTheChatColumn() {
         int chatColumn = InputOverlay.chatColumnWidth(1.0, 1.0);
         int widest = InputOverlay.maxContentWidth(SHOWCASE_GUI_WIDTH, chatColumn);
         assertEquals(SHOWCASE_GUI_WIDTH - 2 * 5 - chatColumn, widest);
 
-        int[] origin = InputOverlay.panelOrigin(SHOWCASE_GUI_WIDTH, SHOWCASE_GUI_HEIGHT, widest, 20,
-                Integer.MIN_VALUE);
+        int[] origin = InputOverlay.panelOrigin(
+                SHOWCASE_GUI_WIDTH, SHOWCASE_GUI_HEIGHT, widest, 20, Integer.MIN_VALUE, chatColumn);
 
-        assertTrue(origin[0] >= chatColumn, "panel left " + origin[0] + " over chat " + chatColumn);
+        assertTrue(origin[0] >= chatColumn, "typed line left " + origin[0] + " over chat " + chatColumn);
     }
 
     @Test

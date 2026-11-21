@@ -19,13 +19,14 @@ import java.util.function.ToIntFunction;
  * The recording's keystrokes overlay: the nine keys a film is watched for, always on screen in the
  * bottom-right corner, each lit while it is down.
  *
- * <p>It is BrainageHUD's keystrokes HUD ({@code KeystrokesHud}): 20-pixel caps two pixels apart, W
- * over S, A and D beside it, a space bar three caps wide, then LMB and RMB, then Shift and Sprint.
- * A cap is black at 100/255 with white text, and lights to white at the same opacity with black text
- * over 100 ms, so a press reads as a flash rather than a jump.
+ * <p>The layout and colours follow BrainageHUD's keystrokes HUD ({@code KeystrokesHud}): 20-pixel
+ * caps two pixels apart, W over S, A and D beside it, a space bar three caps wide, then LMB and RMB,
+ * black at 100/255 with white text, lit to white at the same opacity with black text over 100 ms.
+ * Shift and Sprint take the place of that HUD's clicks-per-second row, and the space bar is labelled
+ * {@code Space} rather than drawn as a bar.
  *
  * <p>A recording is watched to see what a player did, and a client GameTest presses a key for one
- * tick, which is a single frame of a 30 fps recording. A cap therefore stays lit for
+ * tick, shorter than two frames of a 30 fps recording. A cap therefore stays lit for
  * {@link InputOverlayState#MIN_VISIBLE_MILLIS} after its release, and a key the game still holds
  * down stays lit for as long as it is held.
  *
@@ -59,21 +60,21 @@ public final class InputOverlay {
     /** A cap's backdrop: black at 100/255, as BrainageHUD's keystrokes HUD draws it. */
     static final int BACKDROP_OPACITY = 100;
 
-    /** The text on an unlit cap, and the colour a lit cap's backdrop becomes. */
+    /** The text on an unlit cap; a lit cap's backdrop takes its RGB at {@link #BACKDROP_OPACITY}. */
     static final int TEXT_COLOUR = 0xFFFFFFFF;
 
     /** How long a cap takes to light or dim, as BrainageHUD's keystrokes HUD does. */
     static final long TRANSITION_NANOS = 100_000_000L;
 
     private static final int TYPED_COLOUR = 0xFFFFD54F;
-    private static final int CURSOR_FILL_COLOR = 0xFFFFFFFF;
-    private static final int CURSOR_OUTLINE_COLOR = 0xFF000000;
+    private static final int CURSOR_FILL_COLOUR = 0xFFFFFFFF;
+    private static final int CURSOR_OUTLINE_COLOUR = 0xFF000000;
 
     private static final InputOverlayState STATE = new InputOverlayState();
     private static volatile boolean enabled = true;
 
     /** How lit each cap is, 0 to 1, in {@link #caps()} order. */
-    private static final float[] PROGRESS = new float[9];
+    private static final float[] PROGRESS = new float[caps().size()];
 
     private static long lastNanos;
 
@@ -105,22 +106,35 @@ public final class InputOverlay {
         lastNanos = 0L;
     }
 
-    /** A key the game received: {@code action} is {@code InputConstants.PRESS}, {@code RELEASE} or {@code REPEAT}. */
-    public static void onKey(InputConstants.Key key, int action) {
+    /**
+     * A key the game received: {@code action} is {@code InputConstants.PRESS}, {@code RELEASE} or
+     * {@code REPEAT}, and {@code screenOpen} is whether a screen had the keyboard when it arrived.
+     *
+     * <p>With no screen open the game sets the key's mapping down, so the mapping is the record of
+     * the press. With a screen open it does not ({@code KeyboardHandler.java:568-570} in 26.3), so
+     * the press is kept here instead. Only those presses are kept: a key held when a screen opens is
+     * released by the game without a release event ({@code Gui.java:263}), and a kept press would
+     * then stay lit for the rest of the recording.
+     */
+    public static void onKey(InputConstants.Key key, int action, boolean screenOpen) {
         if (!isEnabled() || key == null) {
             return;
         }
         long now = Util.getMillis();
         if (action == InputConstants.RELEASE) {
             STATE.keyUp(key.getName(), now);
-        } else {
+        } else if (screenOpen) {
             STATE.keyDown(key.getName(), now);
         }
     }
 
-    /** A mouse button the game received, with the same actions as {@link #onKey}. */
+    /**
+     * A mouse button the game received, with the same actions as {@link #onKey}. A click with no
+     * screen open sets the button's mapping down ({@code MouseHandler.java:139-146}), so it needs no
+     * press kept here.
+     */
     public static void onMouseButton(int button, int action) {
-        onKey(InputConstants.Type.MOUSE.getOrCreate(button), action);
+        onKey(InputConstants.Type.MOUSE.getOrCreate(button), action, false);
     }
 
     /** A character typed into a screen. */
@@ -142,8 +156,6 @@ public final class InputOverlay {
         }
         long now = Util.getMillis();
         long nowNanos = System.nanoTime();
-        // Read once a frame, whether or not the panel draws, so a frame that skipped the HUD leaves
-        // nothing behind for the next one.
         int performanceTop = performancePanelTop(client);
         List<Cap> caps = caps();
         int[] origin = panelOrigin(
@@ -151,7 +163,8 @@ public final class InputOverlay {
                 graphics.guiHeight(),
                 panelWidth(caps),
                 panelHeight(caps),
-                performanceTop);
+                performanceTop,
+                chatColumnWidth(client));
         graphics.nextStratum();
         renderCaps(graphics, client, caps, origin, now, nowNanos);
         renderTyped(graphics, client, caps, origin, now);
@@ -166,8 +179,8 @@ public final class InputOverlay {
 
     /**
      * The nine caps, in BrainageHUD's keystrokes layout: W over S, A and D beside it, a space bar
-     * three caps wide, then LMB and RMB, then Shift and Sprint. The ids name the game's own key
-     * mappings, so a rebound key still lights the cap that shows it.
+     * three caps wide, then LMB and RMB, then Shift and Sprint. The ids select the client's key
+     * mapping in {@link #mapping}, so a rebound key still lights its cap.
      */
     static List<Cap> caps() {
         int size = KEY_SIZE;
@@ -317,14 +330,14 @@ public final class InputOverlay {
         for (int row = 0; row < CURSOR_HEIGHT; row++) {
             int left = cursorRowLeft(row);
             int right = left + cursorRowWidth(row);
-            graphics.fill(x + left, y + row, x + right, y + row + 1, CURSOR_FILL_COLOR);
-            graphics.fill(x + left - 1, y + row, x + left, y + row + 1, CURSOR_OUTLINE_COLOR);
-            graphics.fill(x + right, y + row, x + right + 1, y + row + 1, CURSOR_OUTLINE_COLOR);
+            graphics.fill(x + left, y + row, x + right, y + row + 1, CURSOR_FILL_COLOUR);
+            graphics.fill(x + left - 1, y + row, x + left, y + row + 1, CURSOR_OUTLINE_COLOUR);
+            graphics.fill(x + right, y + row, x + right + 1, y + row + 1, CURSOR_OUTLINE_COLOUR);
         }
-        graphics.fill(x - 1, y - 1, x + cursorRowWidth(0) + 1, y, CURSOR_OUTLINE_COLOR);
+        graphics.fill(x - 1, y - 1, x + cursorRowWidth(0) + 1, y, CURSOR_OUTLINE_COLOUR);
         int tailLeft = cursorRowLeft(CURSOR_HEIGHT - 1);
         graphics.fill(x + tailLeft - 1, y + CURSOR_HEIGHT, x + tailLeft + cursorRowWidth(CURSOR_HEIGHT - 1) + 1,
-                y + CURSOR_HEIGHT + 1, CURSOR_OUTLINE_COLOR);
+                y + CURSOR_HEIGHT + 1, CURSOR_OUTLINE_COLOUR);
     }
 
     /** Whether a screen has the mouse free, so the overlay draws the cursor. */
@@ -359,10 +372,14 @@ public final class InputOverlay {
 
     /**
      * The panel's top-left corner: the bottom-right of the GUI, above the hotbar, and above the
-     * performance overlay when a test put that in the bottom-right corner too.
+     * performance overlay when a test put that in the bottom-right corner too. The panel keeps its
+     * left edge clear of the chat column, which is the only thing in that corner a film must not
+     * cover.
      */
-    static int[] panelOrigin(int guiWidth, int guiHeight, int panelWidth, int panelHeight, int performanceTop) {
+    static int[] panelOrigin(
+            int guiWidth, int guiHeight, int panelWidth, int panelHeight, int performanceTop, int chatColumn) {
         int x = Math.max(SCREEN_MARGIN, guiWidth - panelWidth - SCREEN_MARGIN);
+        x = Math.max(x, chatColumn + SCREEN_MARGIN);
         int y = guiHeight - panelHeight - SCREEN_MARGIN - HOTBAR_HEIGHT;
         if (performanceTop != Integer.MIN_VALUE) {
             y = Math.max(SCREEN_MARGIN, Math.min(y, performanceTop - panelHeight - LINE_GAP));
