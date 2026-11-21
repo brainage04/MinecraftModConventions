@@ -56,14 +56,11 @@ class InputOverlayLayoutTest {
 
     @Test
     void thePanelKeepsClearOfTheChatColumn() {
-        // The widest content is the GUI less both screen margins, both paddings and the chat column. The
-        // value is pinned here because the placement below is algebra over it: a formula that dropped the
-        // chat term would still place the panel it built clear of chat.
         int chatColumn = InputOverlay.chatColumnWidth(1.0, 1.0);
         int widest = InputOverlay.maxContentWidth(SHOWCASE_GUI_WIDTH, chatColumn);
-        assertEquals(SHOWCASE_GUI_WIDTH - 2 * 5 - 2 * 3 - chatColumn, widest);
+        assertEquals(SHOWCASE_GUI_WIDTH - 2 * 5 - chatColumn, widest);
 
-        int[] origin = InputOverlay.panelOrigin(SHOWCASE_GUI_WIDTH, SHOWCASE_GUI_HEIGHT, widest + 2 * 3, 20,
+        int[] origin = InputOverlay.panelOrigin(SHOWCASE_GUI_WIDTH, SHOWCASE_GUI_HEIGHT, widest, 20,
                 Integer.MIN_VALUE);
 
         assertTrue(origin[0] >= chatColumn, "panel left " + origin[0] + " over chat " + chatColumn);
@@ -83,18 +80,70 @@ class InputOverlayLayoutTest {
     }
 
     @Test
-    void aWideCapIsSkippedAndTheNarrowOnesAfterItStillShow() {
-        // Every character is 6 pixels wide, so "Shift" is 30 and "W" is 6.
-        ToIntFunction<String> width = text -> text.length() * 6;
-        List<InputOverlayState.Chip> chips = List.of(
-                new InputOverlayState.Chip("a", "Shift", true),
-                new InputOverlayState.Chip("b", "W", true));
+    void everyKeyTheFilmShowsHasACap() {
+        List<String> ids = InputOverlay.caps().stream().map(InputOverlay.Cap::id).toList();
 
-        // The glyph is 9 wide plus a 2-pixel gap, and a cap is its text plus 3 pixels of padding each
-        // side plus a 2-pixel gap: "W" needs 14, so 25 holds the glyph and "W" but not "Shift" (38).
-        List<InputOverlayState.Chip> fitted = InputOverlay.fitChips(width, chips, 25);
+        assertEquals(List.of("forward", "left", "back", "right", "jump", "attack", "use", "sneak", "sprint"), ids);
+        assertEquals(
+                List.of("W", "A", "S", "D", "Space", "LMB", "RMB", "Shift", "Sprint"),
+                InputOverlay.caps().stream().map(InputOverlay.Cap::label).toList());
+    }
 
-        assertEquals(List.of("b"), fitted.stream().map(InputOverlayState.Chip::id).toList());
+    @Test
+    void theCapsSitInBrainageHudsKeystrokesLayout() {
+        // KeystrokesHud: 20-pixel caps two pixels apart, W over S, A and D beside it, a space bar
+        // three caps wide, then LMB and RMB, then Shift and Sprint (KeystrokesHud.java:45-129).
+        int size = InputOverlay.KEY_SIZE;
+        int pad = InputOverlay.KEY_PADDING;
+        int half = (int) (size * 1.5 + (double) pad / 2);
+        List<InputOverlay.Cap> caps = InputOverlay.caps();
+
+        assertEquals(new InputOverlay.Cap("forward", "W", size + pad, 0, size, size), caps.get(0));
+        assertEquals(new InputOverlay.Cap("left", "A", 0, size + pad, size, size), caps.get(1));
+        assertEquals(new InputOverlay.Cap("back", "S", size + pad, size + pad, size, size), caps.get(2));
+        assertEquals(new InputOverlay.Cap("right", "D", (size + pad) * 2, size + pad, size, size), caps.get(3));
+        assertEquals(new InputOverlay.Cap("jump", "Space", 0, (size + pad) * 2, size * 3 + pad * 2, size),
+                caps.get(4));
+        assertEquals(new InputOverlay.Cap("attack", "LMB", 0, (size + pad) * 3, half, size), caps.get(5));
+        assertEquals(new InputOverlay.Cap("use", "RMB", half + pad, (size + pad) * 3, half, size), caps.get(6));
+        assertEquals(new InputOverlay.Cap("sneak", "Shift", 0, (size + pad) * 4, half, size), caps.get(7));
+        assertEquals(new InputOverlay.Cap("sprint", "Sprint", half + pad, (size + pad) * 4, half, size),
+                caps.get(8));
+    }
+
+    @Test
+    void thePanelIsAsBigAsItsCaps() {
+        int size = InputOverlay.KEY_SIZE;
+        int pad = InputOverlay.KEY_PADDING;
+        int half = (int) (size * 1.5 + (double) pad / 2);
+
+        // The space bar is the widest cap, and the last row is the lowest.
+        assertEquals(size * 3 + pad * 2, InputOverlay.panelWidth(InputOverlay.caps()));
+        assertEquals((size + pad) * 4 + size, InputOverlay.panelHeight(InputOverlay.caps()));
+        assertTrue(half + pad + half <= size * 3 + pad * 2, "LMB and RMB must fit the space bar's width");
+    }
+
+    @Test
+    void aCapLightsInAHundredMillisecondsAndDimsInTheSameTime() {
+        // KeystrokesHud lights a cap over 100 ms (KeystrokesHud.java:22, :154-165).
+        assertEquals(0.5F, InputOverlay.advance(0.0F, true, 50_000_000L), 1.0E-6F);
+        assertEquals(1.0F, InputOverlay.advance(0.0F, true, 100_000_000L), 1.0E-6F);
+        assertEquals(1.0F, InputOverlay.advance(0.9F, true, 100_000_000L), 1.0E-6F);
+        assertEquals(0.5F, InputOverlay.advance(1.0F, false, 50_000_000L), 1.0E-6F);
+        assertEquals(0.0F, InputOverlay.advance(0.1F, false, 100_000_000L), 1.0E-6F);
+        // A frame that took longer than the transition finishes it rather than overshooting.
+        assertEquals(1.0F, InputOverlay.advance(0.0F, true, 5_000_000_000L), 1.0E-6F);
+        assertEquals(0.0F, InputOverlay.advance(1.0F, false, 5_000_000_000L), 1.0E-6F);
+    }
+
+    @Test
+    void anUnlitCapIsBlackAndALitOneIsWhite() {
+        // BrainageHUD's keystrokes HUD: a black backdrop at 100/255 with white text, lit to a white
+        // backdrop at the same opacity with black text (KeystrokesHud.java:188-210).
+        assertEquals(0x64000000, InputOverlay.backdropColour(0.0F));
+        assertEquals(0x64FFFFFF, InputOverlay.backdropColour(1.0F));
+        assertEquals(0xFFFFFFFF, InputOverlay.textColour(0.0F));
+        assertEquals(0xFF000000, InputOverlay.textColour(1.0F));
     }
 
     @Test

@@ -1,26 +1,33 @@
 package io.github.brainage04.minecraftmodconventions;
 
 import com.mojang.blaze3d.platform.InputConstants;
+import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.ChatComponent;
+import net.minecraft.util.ARGB;
 import net.minecraft.util.Mth;
 import net.minecraft.util.Util;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.function.ToIntFunction;
 
 /**
- * The recording's input overlay: the keys and mouse buttons the game received, and a cursor wherever a
- * screen has the mouse free.
+ * The recording's keystrokes overlay: the nine keys a film is watched for, always on screen in the
+ * bottom-right corner, each lit while it is down.
  *
- * <p>A recording is watched to see what a player did, and the capture holds no operating-system cursor,
- * so a right click on a block or a click on a chat link is invisible without this. The overlay draws
- * each press as a key cap, lights the mouse glyph's pressed button, and keeps a press on screen for
- * {@link InputOverlayState#MIN_VISIBLE_MILLIS} after its release, because a client GameTest presses a
- * key for one tick, which is a single frame of a 30 fps recording.
+ * <p>It is BrainageHUD's keystrokes HUD ({@code KeystrokesHud}): 20-pixel caps two pixels apart, W
+ * over S, A and D beside it, a space bar three caps wide, then LMB and RMB, then Shift and Sprint.
+ * A cap is black at 100/255 with white text, and lights to white at the same opacity with black text
+ * over 100 ms, so a press reads as a flash rather than a jump.
+ *
+ * <p>A recording is watched to see what a player did, and a client GameTest presses a key for one
+ * tick, which is a single frame of a 30 fps recording. A cap therefore stays lit for
+ * {@link InputOverlayState#MIN_VISIBLE_MILLIS} after its release, and a key the game still holds
+ * down stays lit for as long as it is held.
  *
  * <p>Input arrives where the game receives it, not where a test sends it: {@code KeyboardHandler.keyPress}
  * ({@code KeyboardHandler.java:436} in the 26.3 sources), {@code KeyboardHandler.charTyped}
@@ -38,30 +45,37 @@ public final class InputOverlay {
     /** The switch that turns the overlay off for a run; the Gradle plugin sets it from its extension. */
     public static final String ENABLED_PROPERTY = "minecraftmodconventions.clientGameTestRecorder.inputOverlay";
 
-    private static final int SCREEN_MARGIN = 5;
-    private static final int PANEL_PADDING = 3;
-    private static final int CAP_HEIGHT = 11;
-    private static final int CAP_PADDING = 3;
-    private static final int CAP_GAP = 2;
-    private static final int LINE_GAP = 2;
-    private static final int MOUSE_WIDTH = 9;
-    private static final int MOUSE_HEIGHT = 13;
-    private static final int BACKGROUND_COLOR = 0xA0000000;
-    private static final int CAP_COLOR = 0xFF5A5A5A;
-    private static final int CAP_PRESSED_COLOR = 0xFFFFFFFF;
-    private static final int CAP_TEXT_COLOR = 0xFFE0E0E0;
-    private static final int CAP_TEXT_PRESSED_COLOR = 0xFF000000;
-    private static final int MOUSE_BODY_COLOR = 0xFF5A5A5A;
-    private static final int MOUSE_LIT_COLOR = 0xFFFFFFFF;
-    private static final int MOUSE_OUTLINE_COLOR = 0xFFB0B0B0;
-    private static final int TYPED_COLOR = 0xFFFFD54F;
-    private static final int CURSOR_FILL_COLOR = 0xFFFFFFFF;
-    private static final int CURSOR_OUTLINE_COLOR = 0xFF000000;
+    /** A cap's side in GUI pixels, and the gap between caps: BrainageHUD's keystrokes HUD. */
+    static final int KEY_SIZE = 20;
+
+    static final int KEY_PADDING = 2;
+
     /** The hotbar's top edge is 22 pixels above the bottom of the GUI ({@code Hud.java:575}). */
     static final int HOTBAR_HEIGHT = 22;
 
+    private static final int SCREEN_MARGIN = 5;
+    private static final int LINE_GAP = 2;
+
+    /** A cap's backdrop: black at 100/255, as BrainageHUD's keystrokes HUD draws it. */
+    static final int BACKDROP_OPACITY = 100;
+
+    /** The text on an unlit cap, and the colour a lit cap's backdrop becomes. */
+    static final int TEXT_COLOUR = 0xFFFFFFFF;
+
+    /** How long a cap takes to light or dim, as BrainageHUD's keystrokes HUD does. */
+    static final long TRANSITION_NANOS = 100_000_000L;
+
+    private static final int TYPED_COLOUR = 0xFFFFD54F;
+    private static final int CURSOR_FILL_COLOR = 0xFFFFFFFF;
+    private static final int CURSOR_OUTLINE_COLOR = 0xFF000000;
+
     private static final InputOverlayState STATE = new InputOverlayState();
     private static volatile boolean enabled = true;
+
+    /** How lit each cap is, 0 to 1, in {@link #caps()} order. */
+    private static final float[] PROGRESS = new float[9];
+
+    private static long lastNanos;
 
     private InputOverlay() {
     }
@@ -87,6 +101,8 @@ public final class InputOverlay {
     /** Forgets every key, button and typed character, for the start of a recording. */
     public static void clear() {
         STATE.clear();
+        Arrays.fill(PROGRESS, 0.0F);
+        lastNanos = 0L;
     }
 
     /** A key the game received: {@code action} is {@code InputConstants.PRESS}, {@code RELEASE} or {@code REPEAT}. */
@@ -95,24 +111,16 @@ public final class InputOverlay {
             return;
         }
         long now = Util.getMillis();
-        String id = key.getName();
         if (action == InputConstants.RELEASE) {
-            STATE.keyUp(id, now);
+            STATE.keyUp(key.getName(), now);
         } else {
-            STATE.keyDown(id, InputOverlayLabels.label(id), now);
+            STATE.keyDown(key.getName(), now);
         }
     }
 
     /** A mouse button the game received, with the same actions as {@link #onKey}. */
     public static void onMouseButton(int button, int action) {
-        if (!isEnabled()) {
-            return;
-        }
-        if (action == InputConstants.RELEASE) {
-            STATE.mouseUp(button, Util.getMillis());
-        } else {
-            STATE.mouseDown(button);
-        }
+        onKey(InputConstants.Type.MOUSE.getOrCreate(button), action);
     }
 
     /** A character typed into a screen. */
@@ -133,99 +141,168 @@ public final class InputOverlay {
             return;
         }
         long now = Util.getMillis();
+        long nowNanos = System.nanoTime();
         // Read once a frame, whether or not the panel draws, so a frame that skipped the HUD leaves
         // nothing behind for the next one.
         int performanceTop = performancePanelTop(client);
-        boolean input = !STATE.isEmpty(now);
-        boolean cursor = hasFreeCursor(client);
-        if (!input && !cursor) {
-            return;
-        }
+        List<Cap> caps = caps();
+        int[] origin = panelOrigin(
+                graphics.guiWidth(),
+                graphics.guiHeight(),
+                panelWidth(caps),
+                panelHeight(caps),
+                performanceTop);
         graphics.nextStratum();
-        if (input) {
-            renderInput(graphics, client, now, performanceTop);
-        }
-        if (cursor) {
+        renderCaps(graphics, client, caps, origin, now, nowNanos);
+        renderTyped(graphics, client, caps, origin, now);
+        if (hasFreeCursor(client)) {
             renderCursor(graphics, client);
         }
     }
 
-    /** Whether a screen has the mouse free, so the overlay draws the cursor. */
-    private static boolean hasFreeCursor(Minecraft client) {
-        return client.gui.screen() != null && !client.mouseHandler.isMouseGrabbed();
-    }
-
-    private static void renderInput(
-            GuiGraphicsExtractor graphics, Minecraft client, long now, int performanceTop) {
-        Font font = client.font;
-        int maxContentWidth = maxContentWidth(graphics.guiWidth(), chatColumnWidth(client));
-        List<InputOverlayState.Chip> chips = fitChips(font::width, STATE.chips(now), maxContentWidth);
-        String typed = fitText(font::width, STATE.typedText(now), maxContentWidth);
-        int capsWidth = 0;
-        for (InputOverlayState.Chip chip : chips) {
-            capsWidth += capWidth(font::width, chip.label()) + CAP_GAP;
-        }
-        capsWidth += MOUSE_WIDTH + CAP_GAP;
-        int typedWidth = typed.isEmpty() ? 0 : font.width("> " + typed);
-        int contentWidth = Math.max(capsWidth, typedWidth);
-        int rowHeight = Math.max(CAP_HEIGHT, MOUSE_HEIGHT);
-        int contentHeight = rowHeight + (typed.isEmpty() ? 0 : font.lineHeight + LINE_GAP);
-        int panelWidth = contentWidth + PANEL_PADDING * 2;
-        int panelHeight = contentHeight + PANEL_PADDING * 2;
-
-        int[] origin = panelOrigin(
-                graphics.guiWidth(),
-                graphics.guiHeight(),
-                panelWidth,
-                panelHeight,
-                performanceTop);
-        int panelX = origin[0];
-        int panelY = origin[1];
-        graphics.fill(panelX, panelY, panelX + panelWidth, panelY + panelHeight, BACKGROUND_COLOR);
-
-        int textY = panelY + PANEL_PADDING;
-        if (!typed.isEmpty()) {
-            graphics.text(font, "> " + typed, panelX + PANEL_PADDING, textY, TYPED_COLOR, true);
-            textY += font.lineHeight + LINE_GAP;
-        }
-
-        int x = panelX + PANEL_PADDING;
-        for (InputOverlayState.Chip chip : chips) {
-            int width = capWidth(font::width, chip.label());
-            graphics.fill(x, textY, x + width, textY + CAP_HEIGHT, chip.pressed() ? CAP_PRESSED_COLOR : CAP_COLOR);
-            graphics.text(
-                    font,
-                    chip.label(),
-                    x + CAP_PADDING,
-                    textY + (CAP_HEIGHT - font.lineHeight) / 2 + 1,
-                    chip.pressed() ? CAP_TEXT_PRESSED_COLOR : CAP_TEXT_COLOR,
-                    false);
-            x += width + CAP_GAP;
-        }
-        renderMouse(graphics, x, textY, now);
+    /** A key cap: the key it shows, its label, and where it sits in the panel. */
+    record Cap(String id, String label, int x, int y, int width, int height) {
     }
 
     /**
-     * The mouse glyph: a rounded body whose top half is split into a left and a right button, each lit
-     * while it is down, with the wheel between them.
+     * The nine caps, in BrainageHUD's keystrokes layout: W over S, A and D beside it, a space bar
+     * three caps wide, then LMB and RMB, then Shift and Sprint. The ids name the game's own key
+     * mappings, so a rebound key still lights the cap that shows it.
      */
-    private static void renderMouse(GuiGraphicsExtractor graphics, int x, int y, long now) {
-        int half = MOUSE_WIDTH / 2;
-        int buttonBottom = y + MOUSE_HEIGHT / 2;
-        graphics.fill(x, y, x + MOUSE_WIDTH, y + MOUSE_HEIGHT, MOUSE_BODY_COLOR);
-        // The split between the buttons and the line under them, so the body reads as a mouse.
-        graphics.fill(x + half, y, x + half + 1, buttonBottom, MOUSE_OUTLINE_COLOR);
-        graphics.fill(x, buttonBottom, x + MOUSE_WIDTH, buttonBottom + 1, MOUSE_OUTLINE_COLOR);
-        if (STATE.mouseLit(InputConstants.MOUSE_BUTTON_LEFT, now)) {
-            graphics.fill(x, y, x + half, buttonBottom, MOUSE_LIT_COLOR);
+    static List<Cap> caps() {
+        int size = KEY_SIZE;
+        int pad = KEY_PADDING;
+        int half = (int) (size * 1.5 + (double) pad / 2);
+        List<Cap> caps = new ArrayList<>(9);
+        caps.add(new Cap("forward", "W", size + pad, 0, size, size));
+        int row = size + pad;
+        caps.add(new Cap("left", "A", 0, row, size, size));
+        caps.add(new Cap("back", "S", size + pad, row, size, size));
+        caps.add(new Cap("right", "D", (size + pad) * 2, row, size, size));
+        row += size + pad;
+        caps.add(new Cap("jump", "Space", 0, row, size * 3 + pad * 2, size));
+        row += size + pad;
+        caps.add(new Cap("attack", "LMB", 0, row, half, size));
+        caps.add(new Cap("use", "RMB", half + pad, row, half, size));
+        row += size + pad;
+        caps.add(new Cap("sneak", "Shift", 0, row, half, size));
+        caps.add(new Cap("sprint", "Sprint", half + pad, row, half, size));
+        return caps;
+    }
+
+    /** The panel's width: the right edge of its widest cap. */
+    static int panelWidth(List<Cap> caps) {
+        int width = 0;
+        for (Cap cap : caps) {
+            width = Math.max(width, cap.x() + cap.width());
         }
-        if (STATE.mouseLit(InputConstants.MOUSE_BUTTON_RIGHT, now)) {
-            graphics.fill(x + half + 1, y, x + MOUSE_WIDTH, buttonBottom, MOUSE_LIT_COLOR);
+        return width;
+    }
+
+    /** The panel's height: the bottom edge of its lowest cap. */
+    static int panelHeight(List<Cap> caps) {
+        int height = 0;
+        for (Cap cap : caps) {
+            height = Math.max(height, cap.y() + cap.height());
         }
-        if (STATE.mouseLit(InputConstants.MOUSE_BUTTON_MIDDLE, now)) {
-            graphics.fill(x + half - 1, y, x + half + 2, y + 3, MOUSE_LIT_COLOR);
+        return height;
+    }
+
+    /** The key mapping a cap shows, from the client's own options, so a rebound key lights its cap. */
+    private static KeyMapping mapping(Minecraft client, String id) {
+        return switch (id) {
+            case "forward" -> client.options.keyUp;
+            case "left" -> client.options.keyLeft;
+            case "back" -> client.options.keyDown;
+            case "right" -> client.options.keyRight;
+            case "jump" -> client.options.keyJump;
+            case "sneak" -> client.options.keyShift;
+            case "sprint" -> client.options.keySprint;
+            case "attack" -> client.options.keyAttack;
+            case "use" -> client.options.keyUse;
+            default -> throw new IllegalArgumentException("No key mapping for cap " + id);
+        };
+    }
+
+    /**
+     * Whether a cap is lit: the game holds its key down, the game received the key and has not
+     * received its release, or the key was released within {@link InputOverlayState#MIN_VISIBLE_MILLIS}.
+     * The mapping is read as well as the events, so a toggle key such as sneak stays lit while it is
+     * toggled on, and a key pressed with a screen open, which the game does not set on its mapping,
+     * still lights.
+     */
+    private static boolean isLit(Minecraft client, Cap cap, long now) {
+        KeyMapping mapping = mapping(client, cap.id());
+        String id = mapping.saveString();
+        return mapping.isDown() || STATE.isDown(id) || STATE.keyLit(id, now);
+    }
+
+    private static void renderCaps(
+            GuiGraphicsExtractor graphics,
+            Minecraft client,
+            List<Cap> caps,
+            int[] origin,
+            long now,
+            long nowNanos) {
+        Font font = client.font;
+        long elapsed = lastNanos == 0L ? 0L : nowNanos - lastNanos;
+        lastNanos = nowNanos;
+        for (int index = 0; index < caps.size(); index++) {
+            Cap cap = caps.get(index);
+            PROGRESS[index] = advance(PROGRESS[index], isLit(client, cap, now), elapsed);
+            float progress = PROGRESS[index];
+            int x = origin[0] + cap.x();
+            int y = origin[1] + cap.y();
+            graphics.fill(x, y, x + cap.width(), y + cap.height(), backdropColour(progress));
+            graphics.text(
+                    font,
+                    cap.label(),
+                    x + (cap.width() - font.width(cap.label())) / 2,
+                    y + (cap.height() - font.lineHeight) / 2,
+                    textColour(progress),
+                    true);
         }
-        graphics.outline(x, y, MOUSE_WIDTH, MOUSE_HEIGHT, MOUSE_OUTLINE_COLOR);
+    }
+
+    /**
+     * How lit a cap is after {@code elapsedNanos}: it moves a hundredth of the way per millisecond,
+     * so a press lights in {@link #TRANSITION_NANOS} and a release dims in the same time.
+     */
+    static float advance(float progress, boolean down, long elapsedNanos) {
+        float amount = Math.min(1.0F, (float) Math.max(0L, elapsedNanos) / TRANSITION_NANOS);
+        return down ? Math.min(1.0F, progress + amount) : Math.max(0.0F, progress - amount);
+    }
+
+    /** A cap's backdrop: black at {@link #BACKDROP_OPACITY}, lit to white at the same opacity. */
+    static int backdropColour(float progress) {
+        return ARGB.srgbLerp(
+                progress,
+                ARGB.color(BACKDROP_OPACITY, 0, 0, 0),
+                ARGB.color(BACKDROP_OPACITY, 255, 255, 255));
+    }
+
+    /** A cap's text: white, lit to black so it reads on the white backdrop. */
+    static int textColour(float progress) {
+        return ARGB.srgbLerp(progress, TEXT_COLOUR, ARGB.opaque(0));
+    }
+
+    /** The text typed into a screen, on a line above the caps, right-aligned to the panel. */
+    private static void renderTyped(
+            GuiGraphicsExtractor graphics, Minecraft client, List<Cap> caps, int[] origin, long now) {
+        String typed = STATE.typedText(now);
+        if (typed.isEmpty()) {
+            return;
+        }
+        Font font = client.font;
+        int maxWidth = maxContentWidth(graphics.guiWidth(), chatColumnWidth(client));
+        String fitted = fitText(font::width, typed, maxWidth);
+        if (fitted.isEmpty()) {
+            return;
+        }
+        String line = "> " + fitted;
+        int x = origin[0] + panelWidth(caps) - font.width(line);
+        int y = Math.max(SCREEN_MARGIN, origin[1] - font.lineHeight - LINE_GAP);
+        graphics.text(font, line, x, y, TYPED_COLOUR, true);
     }
 
     /**
@@ -248,6 +325,11 @@ public final class InputOverlay {
         int tailLeft = cursorRowLeft(CURSOR_HEIGHT - 1);
         graphics.fill(x + tailLeft - 1, y + CURSOR_HEIGHT, x + tailLeft + cursorRowWidth(CURSOR_HEIGHT - 1) + 1,
                 y + CURSOR_HEIGHT + 1, CURSOR_OUTLINE_COLOR);
+    }
+
+    /** Whether a screen has the mouse free, so the overlay draws the cursor. */
+    private static boolean hasFreeCursor(Minecraft client) {
+        return client.gui.screen() != null && !client.mouseHandler.isMouseGrabbed();
     }
 
     /** The cursor's height in GUI pixels. */
@@ -325,35 +407,9 @@ public final class InputOverlay {
         return chatColumnWidth(client.options.chatWidth().get(), client.options.chatScale().get());
     }
 
-    /** The widest the panel's content may be on a GUI {@code guiWidth} wide, so it keeps clear of chat. */
+    /** The widest the typed line may be on a GUI {@code guiWidth} wide, so it keeps clear of chat. */
     static int maxContentWidth(int guiWidth, int chatColumnWidth) {
-        return Math.max(
-                MOUSE_WIDTH + CAP_GAP,
-                guiWidth - SCREEN_MARGIN * 2 - PANEL_PADDING * 2 - chatColumnWidth);
-    }
-
-    private static int capWidth(ToIntFunction<String> textWidth, String label) {
-        return textWidth.applyAsInt(label) + CAP_PADDING * 2;
-    }
-
-    /**
-     * The caps that fit beside the mouse glyph in {@code maxWidth}, in press order. A cap that does not
-     * fit is skipped rather than ending the row, so one wide label does not hide the narrow keys after it.
-     * {@code textWidth} is the font's width of a string, so the rule is tested without a client.
-     */
-    static List<InputOverlayState.Chip> fitChips(
-            ToIntFunction<String> textWidth, List<InputOverlayState.Chip> chips, int maxWidth) {
-        List<InputOverlayState.Chip> fitted = new ArrayList<>();
-        int width = MOUSE_WIDTH + CAP_GAP;
-        for (InputOverlayState.Chip chip : chips) {
-            int capWidth = capWidth(textWidth, chip.label()) + CAP_GAP;
-            if (width + capWidth > maxWidth) {
-                continue;
-            }
-            fitted.add(chip);
-            width += capWidth;
-        }
-        return fitted;
+        return Math.max(0, guiWidth - SCREEN_MARGIN * 2 - chatColumnWidth);
     }
 
     /** The typed text cut to {@code maxWidth}, with an ellipsis when it does not fit. */
