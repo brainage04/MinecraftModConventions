@@ -73,8 +73,11 @@ public final class InputOverlay {
     private static final InputOverlayState STATE = new InputOverlayState();
     private static volatile boolean enabled = true;
 
-    /** How lit each cap is, 0 to 1, in {@link #caps()} order. */
-    private static final float[] PROGRESS = new float[caps().size()];
+    /** The caps' count, which the layout fixes whatever the font's widths are. */
+    private static final int CAP_COUNT = 9;
+
+    /** How lit each cap is, 0 to 1, in {@link #caps} order. */
+    private static final float[] PROGRESS = new float[CAP_COUNT];
 
     private static long lastNanos;
 
@@ -161,7 +164,7 @@ public final class InputOverlay {
         long now = Util.getMillis();
         long nowNanos = System.nanoTime();
         int performanceTop = performancePanelTop(client);
-        List<Cap> caps = caps();
+        List<Cap> caps = caps(client.font::width);
         int[] origin = panelOrigin(
                 graphics.guiWidth(),
                 graphics.guiHeight(),
@@ -185,11 +188,18 @@ public final class InputOverlay {
      * The nine caps, in BrainageHUD's keystrokes layout: W over S, A and D beside it, a space bar
      * three caps wide, then LMB and RMB, then Shift and Sprint. The ids select the client's key
      * mapping in {@link #mapping}, so a rebound key still lights its cap.
+     *
+     * <p>The bottom row is as wide as its labels need: {@code Sprint} is wider than the half-cap
+     * BrainageHUD's LMB and RMB use, and a cap narrower than its label draws the label past the
+     * panel's edge. The panel then widens to hold the row.
      */
-    static List<Cap> caps() {
+    static List<Cap> caps(ToIntFunction<String> textWidth) {
         int size = KEY_SIZE;
         int pad = KEY_PADDING;
         int half = (int) (size * 1.5 + (double) pad / 2);
+        int bottom = Math.max(
+                half,
+                Math.max(textWidth.applyAsInt("Shift"), textWidth.applyAsInt("Sprint")) + pad);
         List<Cap> caps = new ArrayList<>(9);
         caps.add(new Cap("forward", "W", size + pad, 0, size, size));
         int row = size + pad;
@@ -202,8 +212,8 @@ public final class InputOverlay {
         caps.add(new Cap("attack", "LMB", 0, row, half, size));
         caps.add(new Cap("use", "RMB", half + pad, row, half, size));
         row += size + pad;
-        caps.add(new Cap("sneak", "Shift", 0, row, half, size));
-        caps.add(new Cap("sprint", "Sprint", half + pad, row, half, size));
+        caps.add(new Cap("sneak", "Shift", 0, row, bottom, size));
+        caps.add(new Cap("sprint", "Sprint", bottom + pad, row, bottom, size));
         return caps;
     }
 
