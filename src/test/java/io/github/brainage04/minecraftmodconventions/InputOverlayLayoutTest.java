@@ -92,10 +92,12 @@ class InputOverlayLayoutTest {
         int panelWidth = InputOverlay.panelWidth(InputOverlay.caps(FONT_WIDTH));
         int chatColumn = InputOverlay.chatColumnWidth(1.0, 1.0);
 
-        // The narrowest GUI that holds both is the chat column, the panel and a margin either side.
-        int narrowest = chatColumn + 5 + panelWidth + 5;
-        assertTrue(InputOverlay.fitsBesideChat(narrowest, panelWidth, chatColumn));
-        assertFalse(InputOverlay.fitsBesideChat(narrowest - 1, panelWidth, chatColumn));
+        // The chat column is 332 wide and the panel 78, so 332 + 5 + 78 + 5 = 420 is the narrowest
+        // GUI that holds both, and 419 is one short.
+        assertEquals(332, chatColumn);
+        assertEquals(78, panelWidth);
+        assertTrue(InputOverlay.fitsBesideChat(420, panelWidth, chatColumn));
+        assertFalse(InputOverlay.fitsBesideChat(419, panelWidth, chatColumn));
     }
 
     @Test
@@ -141,16 +143,19 @@ class InputOverlayLayoutTest {
         int pad = InputOverlay.KEY_PADDING;
         int half = (int) (size * 1.5 + (double) pad / 2);
         int bottom = 36 + pad;
+        int space = size * 3 + pad * 2;
+        int click = half;
         List<InputOverlay.Cap> caps = InputOverlay.caps(FONT_WIDTH);
 
         assertEquals(new InputOverlay.Cap("forward", "W", size + pad, 0, size, size), caps.get(0));
         assertEquals(new InputOverlay.Cap("left", "A", 0, size + pad, size, size), caps.get(1));
         assertEquals(new InputOverlay.Cap("back", "S", size + pad, size + pad, size, size), caps.get(2));
         assertEquals(new InputOverlay.Cap("right", "D", (size + pad) * 2, size + pad, size, size), caps.get(3));
-        assertEquals(new InputOverlay.Cap("jump", "Space", 0, (size + pad) * 2, size * 3 + pad * 2, size),
+        assertEquals(new InputOverlay.Cap("jump", "Space", 0, (size + pad) * 2, space, size),
                 caps.get(4));
-        assertEquals(new InputOverlay.Cap("attack", "LMB", 0, (size + pad) * 3, half, size), caps.get(5));
-        assertEquals(new InputOverlay.Cap("use", "RMB", half + pad, (size + pad) * 3, half, size), caps.get(6));
+        assertEquals(new InputOverlay.Cap("attack", "LMB", 0, (size + pad) * 3, click, size), caps.get(5));
+        assertEquals(new InputOverlay.Cap("use", "RMB", click + pad, (size + pad) * 3, click, size),
+                caps.get(6));
         assertEquals(new InputOverlay.Cap("sneak", "Shift", 0, (size + pad) * 4, bottom, size), caps.get(7));
         assertEquals(new InputOverlay.Cap("sprint", "Sprint", bottom + pad, (size + pad) * 4, bottom, size),
                 caps.get(8));
@@ -170,9 +175,22 @@ class InputOverlayLayoutTest {
     }
 
     @Test
+    void aWideFontWidensEveryRowThatNeedsIt() {
+        // A resource pack's font can widen any label, so every cap that carries a word is measured,
+        // not only the bottom row's two. The single letters keep BrainageHUD's 20-pixel cap.
+        ToIntFunction<String> wide = label -> label.length() == 1 ? 6 : 80;
+        for (InputOverlay.Cap cap : InputOverlay.caps(wide)) {
+            assertTrue(
+                    wide.applyAsInt(cap.label()) <= cap.width(),
+                    cap.label() + " is " + wide.applyAsInt(cap.label()) + " wide in a "
+                            + cap.width() + "-pixel cap");
+        }
+    }
+
+    @Test
     void everyLabelFitsInsideItsCap() {
-        // A cap narrower than its label draws the label past the panel's right edge, which the
-        // 720p take showed: Sprint is 36 pixels and the half-cap BrainageHUD uses is 31.
+        // A cap narrower than its label draws the label past the panel's right edge: Sprint is 36
+        // pixels and the half-cap BrainageHUD's LMB and RMB use is 31.
         for (InputOverlay.Cap cap : InputOverlay.caps(FONT_WIDTH)) {
             assertTrue(
                     FONT_WIDTH.applyAsInt(cap.label()) <= cap.width(),

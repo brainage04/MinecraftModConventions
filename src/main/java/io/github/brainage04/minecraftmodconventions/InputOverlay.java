@@ -73,7 +73,10 @@ public final class InputOverlay {
     private static final InputOverlayState STATE = new InputOverlayState();
     private static volatile boolean enabled = true;
 
-    /** The caps' count, which the layout fixes whatever the font's widths are. */
+    /**
+     * Nine, because {@link #caps} needs a text width and the client's font does not exist at
+     * class-init; {@code everyKeyTheFilmShowsHasACap} pins the count.
+     */
     private static final int CAP_COUNT = 9;
 
     /** How lit each cap is, 0 to 1, in {@link #caps} order. */
@@ -189,9 +192,9 @@ public final class InputOverlay {
      * three caps wide, then LMB and RMB, then Shift and Sprint. The ids select the client's key
      * mapping in {@link #mapping}, so a rebound key still lights its cap.
      *
-     * <p>The bottom row is as wide as its labels need: {@code Sprint} is wider than the half-cap
-     * BrainageHUD's LMB and RMB use, and a cap narrower than its label draws the label past the
-     * panel's edge. The panel then widens to hold the row.
+     * <p>Every cap is at least as wide as its label plus the padding, so no label draws past the
+     * panel's edge: {@code Sprint} is wider than the half-cap BrainageHUD's LMB and RMB use, and a
+     * resource pack's font can widen any of them. The panel then widens to hold the widest row.
      */
     static List<Cap> caps(ToIntFunction<String> textWidth) {
         int size = KEY_SIZE;
@@ -200,6 +203,9 @@ public final class InputOverlay {
         int bottom = Math.max(
                 half,
                 Math.max(textWidth.applyAsInt("Shift"), textWidth.applyAsInt("Sprint")) + pad);
+        int space = Math.max(size * 3 + pad * 2, textWidth.applyAsInt("Space") + pad);
+        int click = Math.max(half, Math.max(
+                textWidth.applyAsInt("LMB"), textWidth.applyAsInt("RMB")) + pad);
         List<Cap> caps = new ArrayList<>(9);
         caps.add(new Cap("forward", "W", size + pad, 0, size, size));
         int row = size + pad;
@@ -207,10 +213,10 @@ public final class InputOverlay {
         caps.add(new Cap("back", "S", size + pad, row, size, size));
         caps.add(new Cap("right", "D", (size + pad) * 2, row, size, size));
         row += size + pad;
-        caps.add(new Cap("jump", "Space", 0, row, size * 3 + pad * 2, size));
+        caps.add(new Cap("jump", "Space", 0, row, space, size));
         row += size + pad;
-        caps.add(new Cap("attack", "LMB", 0, row, half, size));
-        caps.add(new Cap("use", "RMB", half + pad, row, half, size));
+        caps.add(new Cap("attack", "LMB", 0, row, click, size));
+        caps.add(new Cap("use", "RMB", click + pad, row, click, size));
         row += size + pad;
         caps.add(new Cap("sneak", "Shift", 0, row, bottom, size));
         caps.add(new Cap("sprint", "Sprint", bottom + pad, row, bottom, size));
