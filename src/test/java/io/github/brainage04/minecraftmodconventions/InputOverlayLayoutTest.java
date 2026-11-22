@@ -180,7 +180,7 @@ class InputOverlayLayoutTest {
         // not only the bottom row's two. The single letters keep BrainageHUD's 20-pixel cap.
         ToIntFunction<String> wide = label -> label.length() == 1 ? 6 : 80;
         for (InputOverlay.Cap cap : InputOverlay.caps(wide)) {
-            // Two pixels of slack, because the drop shadow takes the pixel right of the text.
+            // Two pixels of room: the centring shift takes one and the drop shadow the other.
             assertTrue(
                     wide.applyAsInt(cap.label()) + 2 <= cap.width(),
                     cap.label() + " is " + wide.applyAsInt(cap.label()) + " wide in a "
