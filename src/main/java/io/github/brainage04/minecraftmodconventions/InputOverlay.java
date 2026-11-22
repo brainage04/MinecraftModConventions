@@ -192,9 +192,11 @@ public final class InputOverlay {
      * three caps wide, then LMB and RMB, then Shift and Sprint. The ids select the client's key
      * mapping in {@link #mapping}, so a rebound key still lights its cap.
      *
-     * <p>Every cap is at least as wide as its label plus the padding, so no label draws past the
-     * panel's edge: {@code Sprint} is wider than the half-cap BrainageHUD's LMB and RMB use, and a
-     * resource pack's font can widen any of them. The panel then widens to hold the widest row.
+     * <p>Every cap that carries a word is at least as wide as its label plus the padding, so no
+     * label draws past the panel's edge: {@code Sprint} is wider than the half-cap BrainageHUD's LMB
+     * and RMB use, and a resource pack's font can widen any of them. The padding is what leaves room
+     * for the drop shadow, which takes the pixel right of the text. The single letters keep
+     * BrainageHUD's 20-pixel cap.
      */
     static List<Cap> caps(ToIntFunction<String> textWidth) {
         int size = KEY_SIZE;

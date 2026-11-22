@@ -70,7 +70,7 @@ class InputOverlayLayoutTest {
     @Test
     void thePanelKeepsClearOfTheChatColumnAndOnScreen() {
         // The real panel, at the GUI a recording uses and at the narrowest a client can have. The
-        // chat column is 332 wide, so a GUI narrower than 406 cannot hold both: there the panel
+        // chat column is 332 wide, so a GUI narrower than 420 cannot hold both: there the panel
         // stays on screen and covers part of the chat.
         int panelWidth = InputOverlay.panelWidth(InputOverlay.caps(FONT_WIDTH));
         int chatColumn = InputOverlay.chatColumnWidth(1.0, 1.0);
@@ -180,8 +180,9 @@ class InputOverlayLayoutTest {
         // not only the bottom row's two. The single letters keep BrainageHUD's 20-pixel cap.
         ToIntFunction<String> wide = label -> label.length() == 1 ? 6 : 80;
         for (InputOverlay.Cap cap : InputOverlay.caps(wide)) {
+            // Two pixels of slack, because the drop shadow takes the pixel right of the text.
             assertTrue(
-                    wide.applyAsInt(cap.label()) <= cap.width(),
+                    wide.applyAsInt(cap.label()) + 2 <= cap.width(),
                     cap.label() + " is " + wide.applyAsInt(cap.label()) + " wide in a "
                             + cap.width() + "-pixel cap");
         }
