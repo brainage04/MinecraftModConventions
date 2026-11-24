@@ -76,7 +76,7 @@ class InputOverlayLayoutTest {
     @Test
     void thePanelKeepsClearOfTheChatColumnAndOnScreen() {
         // The real panel, at the GUI a recording uses and at the narrowest a client can have. The
-        // chat column is 332 wide, so a GUI narrower than 420 cannot hold both: there the panel
+        // chat column is 332 wide, so a GUI narrower than 406 cannot hold both: there the panel
         // stays on screen and covers part of the chat.
         int panelWidth = InputOverlay.panelWidth(InputOverlay.caps(FONT_WIDTH));
         int chatColumn = InputOverlay.chatColumnWidth(1.0, 1.0);
@@ -98,12 +98,12 @@ class InputOverlayLayoutTest {
         int panelWidth = InputOverlay.panelWidth(InputOverlay.caps(FONT_WIDTH));
         int chatColumn = InputOverlay.chatColumnWidth(1.0, 1.0);
 
-        // The chat column is 332 wide and the panel 66, so 332 + 5 + 66 + 5 = 408 is the narrowest
-        // GUI that holds both, and 407 is one short.
+        // The chat column is 332 wide and the panel 64, so 332 + 5 + 64 + 5 = 406 is the narrowest
+        // GUI that holds both, and 405 is one short.
         assertEquals(332, chatColumn);
-        assertEquals(66, panelWidth);
-        assertTrue(InputOverlay.fitsBesideChat(408, panelWidth, chatColumn));
-        assertFalse(InputOverlay.fitsBesideChat(407, panelWidth, chatColumn));
+        assertEquals(64, panelWidth);
+        assertTrue(InputOverlay.fitsBesideChat(406, panelWidth, chatColumn));
+        assertFalse(InputOverlay.fitsBesideChat(405, panelWidth, chatColumn));
     }
 
     @Test
@@ -147,12 +147,13 @@ class InputOverlayLayoutTest {
     void theCapsSitInBrainageHudsKeystrokesLayout() {
         // KeystrokesHud: 20-pixel caps two pixels apart, W over S, A and D beside it, a space bar
         // three caps wide, then LMB and RMB, then the clicks-per-second row (KeystrokesHud.java:45-148).
-        // Shift and Sprint follow, as wide as LMB and RMB. Sprint is 30 pixels wide, so the four
-        // buttons are 32 wide (label plus the two pixels of room) rather than the half-cap's 31.
+        // Shift and Sprint follow, as wide as LMB and RMB. Sprint is 30 pixels wide and its shadow
+        // takes one more, which the half-cap's 31 holds, so the four buttons are 31 wide and every
+        // row ends at 64.
         int size = InputOverlay.KEY_SIZE;
         int pad = InputOverlay.KEY_PADDING;
         int space = size * 3 + pad * 2;
-        int button = 32;
+        int button = 31;
         List<InputOverlay.Cap> caps = InputOverlay.caps(FONT_WIDTH);
 
         assertEquals(new InputOverlay.Cap("forward", "W", size + pad, 0, size, size), caps.get(0));
@@ -193,10 +194,29 @@ class InputOverlayLayoutTest {
         List<InputOverlay.Cap> caps = InputOverlay.caps(wide);
 
         int width = cap(caps, "sprint").width();
-        assertEquals(52, width);
+        assertEquals(51, width);
         assertEquals(width, cap(caps, "attack").width());
         assertEquals(width, cap(caps, "use").width());
         assertEquals(width, cap(caps, "sneak").width());
+    }
+
+    @Test
+    void everyRowUnderWasdSharesBothEdges() {
+        // BrainageHUD's buttons are 31 wide, so two buttons and the gap are as wide as the space bar
+        // and the clicks-per-second row (KeystrokesHud.java:107-148). A font that widens a button
+        // widens the whole column with it, so the right edge stays straight.
+        ToIntFunction<String> wide = label -> label.equals("Sprint") ? 50 : 18;
+        for (ToIntFunction<String> font : List.<ToIntFunction<String>>of(FONT_WIDTH, wide)) {
+            List<InputOverlay.Cap> caps = InputOverlay.caps(font);
+            int rightEdge = InputOverlay.panelWidth(caps);
+            for (String id : List.of("jump", "cps")) {
+                assertEquals(0, cap(caps, id).x());
+                assertEquals(rightEdge, cap(caps, id).x() + cap(caps, id).width(), id + " right edge");
+            }
+            for (String id : List.of("use", "sprint")) {
+                assertEquals(rightEdge, cap(caps, id).x() + cap(caps, id).width(), id + " right edge");
+            }
+        }
     }
 
     @Test
@@ -228,9 +248,9 @@ class InputOverlayLayoutTest {
         // BrainageHUD uses (KeystrokesHud.java:224-226) starts at 7.
         assertEquals(8, InputOverlay.labelX(20, 6));
         assertEquals(7, 20 / 2 - 6 / 2);
-        // Sprint (30) in a 32-pixel button and LMB (18) in a 32-pixel button.
-        assertEquals(2, InputOverlay.labelX(32, 30));
-        assertEquals(8, InputOverlay.labelX(32, 18));
+        // Sprint (30) and LMB (18) in a 31-pixel button.
+        assertEquals(1, InputOverlay.labelX(31, 30));
+        assertEquals(7, InputOverlay.labelX(31, 18));
     }
 
     @Test
@@ -264,9 +284,10 @@ class InputOverlayLayoutTest {
         int pad = InputOverlay.KEY_PADDING;
         int half = (int) (size * 1.5 + (double) pad / 2);
 
-        // The button rows are the widest: two caps as wide as Sprint's label plus its room.
-        int button = 32;
+        // Every row under W/A/S/D ends at the same edge, three caps wide: two buttons and the gap.
+        int button = 31;
         assertEquals(button * 2 + pad, InputOverlay.panelWidth(InputOverlay.caps(FONT_WIDTH)));
+        assertEquals(size * 3 + pad * 2, InputOverlay.panelWidth(InputOverlay.caps(FONT_WIDTH)));
         assertEquals((size + pad) * 5 + size, InputOverlay.panelHeight(InputOverlay.caps(FONT_WIDTH)));
         assertTrue(half + pad + half <= size * 3 + pad * 2, "LMB and RMB at BrainageHUD's width fit the space bar");
     }
@@ -277,9 +298,10 @@ class InputOverlayLayoutTest {
         // not only the button rows. The single letters keep BrainageHUD's 20-pixel cap.
         ToIntFunction<String> wide = label -> label.length() == 1 ? 6 : 80;
         for (InputOverlay.Cap cap : InputOverlay.caps(wide)) {
-            // Two pixels of room: the centring shift takes one and the drop shadow the other.
+            // One pixel of room: the drop shadow takes the pixel after the ink, and the label's
+            // advance already ends one pixel after its ink.
             assertTrue(
-                    wide.applyAsInt(cap.label()) + 2 <= cap.width(),
+                    wide.applyAsInt(cap.label()) + InputOverlay.SHADOW_ROOM <= cap.width(),
                     cap.label() + " is " + wide.applyAsInt(cap.label()) + " wide in a "
                             + cap.width() + "-pixel cap");
         }
@@ -300,7 +322,7 @@ class InputOverlayLayoutTest {
     void theClicksPerSecondRowFitsTwoDigitCountsOnBothSides() {
         InputOverlay.Cap cps = cap(InputOverlay.caps(FONT_WIDTH), "cps");
 
-        assertTrue(FONT_WIDTH.applyAsInt(InputOverlay.cpsLabel(99, 99)) + 2 <= cps.width());
+        assertTrue(FONT_WIDTH.applyAsInt(InputOverlay.cpsLabel(99, 99)) + InputOverlay.SHADOW_ROOM <= cps.width());
     }
 
     private static InputOverlay.Cap cap(List<InputOverlay.Cap> caps, String id) {

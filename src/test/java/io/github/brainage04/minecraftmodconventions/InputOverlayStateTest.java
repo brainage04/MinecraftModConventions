@@ -89,6 +89,21 @@ class InputOverlayStateTest {
     }
 
     @Test
+    void aClickThatOpensAScreenCountsOnceAndAnotherAfterItCountsAgain() {
+        InputOverlayState state = new InputOverlayState();
+        state.keyDown("key.mouse.left", 1000L);
+        state.releaseAll(1000L);
+        state.keyUp("key.mouse.left", 1050L);
+
+        assertEquals(1, state.clicksPerSecond("key.mouse.left", 1050L));
+        assertTrue(state.keyLit("key.mouse.left", 1050L));
+
+        state.keyDown("key.mouse.left", 1100L);
+
+        assertEquals(2, state.clicksPerSecond("key.mouse.left", 1100L));
+    }
+
+    @Test
     void typedTextShowsForTwoSeconds() {
         InputOverlayState state = new InputOverlayState();
         state.typed("m", 1000L);
