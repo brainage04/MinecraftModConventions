@@ -124,4 +124,61 @@ class InputOverlayStateTest {
         assertFalse(state.keyLit("key.keyboard.w", 1000L));
         assertEquals("", state.typedText(1000L));
     }
+
+    @Test
+    void theCountIsZeroBeforeAnyClick() {
+        InputOverlayState state = new InputOverlayState();
+
+        assertEquals(0, state.clicksPerSecond("key.mouse.left", 1000L));
+    }
+
+    @Test
+    void aClickCountsForOneSecondAndThenDecays() {
+        // BrainageHUD's ClickRateTracker: a click stays for 1000 ms and is dropped once
+        // now - click >= 1000 (ClickRateTracker.java:6, :21).
+        InputOverlayState state = new InputOverlayState();
+        state.keyDown("key.mouse.left", 1000L);
+        state.keyUp("key.mouse.left", 1050L);
+        state.keyDown("key.mouse.left", 1100L);
+        state.keyUp("key.mouse.left", 1150L);
+
+        assertEquals(2, state.clicksPerSecond("key.mouse.left", 1100L));
+        assertEquals(2, state.clicksPerSecond("key.mouse.left", 1999L));
+        assertEquals(1, state.clicksPerSecond("key.mouse.left", 2000L));
+        assertEquals(1, state.clicksPerSecond("key.mouse.left", 2099L));
+        assertEquals(0, state.clicksPerSecond("key.mouse.left", 2100L));
+    }
+
+    @Test
+    void eachButtonCountsItsOwnClicks() {
+        InputOverlayState state = new InputOverlayState();
+        state.keyDown("key.mouse.left", 1000L);
+        state.keyUp("key.mouse.left", 1010L);
+        state.keyDown("key.mouse.left", 1020L);
+        state.keyUp("key.mouse.left", 1030L);
+        state.keyDown("key.mouse.right", 1040L);
+
+        assertEquals(2, state.clicksPerSecond("key.mouse.left", 1040L));
+        assertEquals(1, state.clicksPerSecond("key.mouse.right", 1040L));
+    }
+
+    @Test
+    void aHeldButtonIsOneClick() {
+        InputOverlayState state = new InputOverlayState();
+        state.keyDown("key.mouse.left", 1000L);
+        state.keyDown("key.mouse.left", 1100L);
+        state.keyDown("key.mouse.left", 1200L);
+
+        assertEquals(1, state.clicksPerSecond("key.mouse.left", 1200L));
+    }
+
+    @Test
+    void clearForgetsTheClicks() {
+        InputOverlayState state = new InputOverlayState();
+        state.keyDown("key.mouse.left", 1000L);
+
+        state.clear();
+
+        assertEquals(0, state.clicksPerSecond("key.mouse.left", 1000L));
+    }
 }
