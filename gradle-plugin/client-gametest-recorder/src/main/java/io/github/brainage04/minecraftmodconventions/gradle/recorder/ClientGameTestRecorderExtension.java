@@ -91,7 +91,7 @@ public abstract class ClientGameTestRecorderExtension {
     }
 
     /**
-     * Whether a recording draws the input overlay: the nine keystrokes caps, and a cursor wherever a
+     * Whether a recording draws the input overlay: the keystrokes caps and a clicks-per-second row, and a cursor wherever a
      * screen has the mouse free. On by default; {@code -PinputOverlay=false} turns it off for one run.
      */
     public Property<Boolean> getInputOverlay() {

@@ -52,6 +52,12 @@ public final class InputOverlay {
 
     static final int KEY_PADDING = 2;
 
+    /**
+     * The room a label needs beyond its width: its drop shadow takes the pixel after the ink, and the
+     * label's advance already ends one pixel after its ink ({@link #labelX}).
+     */
+    static final int SHADOW_ROOM = 1;
+
     /** The hotbar's top edge is 22 pixels above the bottom of the GUI ({@code Hud.java:575}). */
     static final int HOTBAR_HEIGHT = 22;
 
@@ -199,11 +205,12 @@ public final class InputOverlay {
      * client's key mapping in {@link #mapping}, so a rebound key still lights its cap.
      *
      * <p>LMB, RMB, Shift and Sprint are one width, so Shift and Sprint sit exactly under LMB and RMB:
-     * BrainageHUD's half-cap, or the widest of their labels plus the padding when {@code Sprint} does
-     * not fit it. Every other cap that carries a word is at least as wide as its label plus the
-     * padding, so no label draws past the panel's edge, and a resource pack's font can widen any of
-     * them. The padding is what leaves room for the drop shadow, which takes the pixel right of the
-     * text. The single letters keep BrainageHUD's 20-pixel cap.
+     * BrainageHUD's half-cap (31), or the widest of their labels plus {@link #SHADOW_ROOM} when that
+     * is wider. Two buttons and the gap are then as wide as the space bar and the clicks row (64), so
+     * every row under W/A/S/D shares both edges; a font that widens a button widens the space bar
+     * and the clicks row to the same span. Every cap that carries a word is at least as wide as its
+     * label plus {@link #SHADOW_ROOM}, so no label or shadow draws past the panel's edge. The single
+     * letters keep BrainageHUD's 20-pixel cap.
      */
     static List<Cap> caps(ToIntFunction<String> textWidth) {
         int size = KEY_SIZE;
@@ -212,10 +219,12 @@ public final class InputOverlay {
         int widestButton = Math.max(
                 Math.max(textWidth.applyAsInt("LMB"), textWidth.applyAsInt("RMB")),
                 Math.max(textWidth.applyAsInt("Shift"), textWidth.applyAsInt("Sprint")));
-        int button = Math.max(half, widestButton + pad);
-        int wide = size * 3 + pad * 2;
-        int space = Math.max(wide, textWidth.applyAsInt("Space") + pad);
-        int counter = Math.max(wide, textWidth.applyAsInt(cpsLabel(99, 99)) + pad);
+        int button = Math.max(half, widestButton + SHADOW_ROOM);
+        int span = Math.max(
+                Math.max(size * 3 + pad * 2, button * 2 + pad),
+                Math.max(
+                        textWidth.applyAsInt("Space") + SHADOW_ROOM,
+                        textWidth.applyAsInt(cpsLabel(99, 99)) + SHADOW_ROOM));
         List<Cap> caps = new ArrayList<>(CAP_COUNT);
         caps.add(new Cap("forward", "W", size + pad, 0, size, size));
         int row = size + pad;
@@ -223,15 +232,15 @@ public final class InputOverlay {
         caps.add(new Cap("back", "S", size + pad, row, size, size));
         caps.add(new Cap("right", "D", (size + pad) * 2, row, size, size));
         row += size + pad;
-        caps.add(new Cap("jump", "Space", 0, row, space, size));
+        caps.add(new Cap("jump", "Space", 0, row, span, size));
         row += size + pad;
         caps.add(new Cap("attack", "LMB", 0, row, button, size));
-        caps.add(new Cap("use", "RMB", button + pad, row, button, size));
+        caps.add(new Cap("use", "RMB", span - button, row, button, size));
         row += size + pad;
-        caps.add(new Cap(CPS_ID, cpsLabel(0, 0), 0, row, counter, size));
+        caps.add(new Cap(CPS_ID, cpsLabel(0, 0), 0, row, span, size));
         row += size + pad;
         caps.add(new Cap("sneak", "Shift", 0, row, button, size));
-        caps.add(new Cap("sprint", "Sprint", button + pad, row, button, size));
+        caps.add(new Cap("sprint", "Sprint", span - button, row, button, size));
         return caps;
     }
 
@@ -325,14 +334,16 @@ public final class InputOverlay {
     }
 
     /**
-     * Where a label starts inside its cap, from the cap's left edge. The glyphs advance by their ink
-     * width plus one ({@code BitmapProvider.java}, {@code (int) (0.5 + inkWidth) + 1}), so a label's ink
-     * is {@code labelWidth - 1} pixels wide and its drop shadow takes the pixel after it. The ink is
-     * centred and rounded up when a pixel is left over: a 5-pixel {@code W} in a 20-pixel cap starts
-     * at 8, where BrainageHUD's {@code width / 2 - labelWidth / 2} ({@code KeystrokesHud.java:224-225})
-     * starts it at 7, so the ink does not sit left of the middle.
-     * The ink and its shadow end at {@code labelX + labelWidth}, which is inside the cap whenever the
-     * cap is as wide as the label plus the two pixels {@link #caps} leaves.
+     * Where a label starts inside its cap, from the cap's left edge: one pixel right of where
+     * {@code (capWidth - labelWidth) / 2} puts it, the pixel Thomas asked for on 24 Nov. With the
+     * default font's glyphs, which advance by their ink width plus one ({@code BitmapProvider.java},
+     * {@code (int) (0.5 + inkWidth) + 1}), the ink is {@code labelWidth - 1} pixels wide, so this
+     * centres the ink with an odd leftover pixel going to the left: a 5-pixel {@code W} in a 20-pixel
+     * cap starts at 8, where BrainageHUD's {@code width / 2 - labelWidth / 2}
+     * ({@code KeystrokesHud.java:224-225}) starts it at 7. The label and its one-pixel shadow
+     * ({@code GlyphInfo.java:14-15}) end at {@code labelX + labelWidth}, which is inside the cap
+     * whenever the cap is at least {@code labelWidth + }{@link #SHADOW_ROOM} wide; that holds for
+     * any font, since it only uses the width {@link #caps} measured.
      */
     static int labelX(int capWidth, int labelWidth) {
         return Math.ceilDiv(capWidth - labelWidth + 1, 2);
