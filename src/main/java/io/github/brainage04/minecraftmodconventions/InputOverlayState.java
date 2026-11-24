@@ -37,11 +37,17 @@ public final class InputOverlayState {
     }
 
     /**
-     * Forgets every key that is down, for a screen opening: the game releases every mapping there
+     * Releases every key that is down, for a screen opening: the game releases every mapping there
      * without sending a release event ({@code Gui.java:263} in 26.3), so a key held at that moment
-     * would otherwise stay lit for the rest of the recording.
+     * would otherwise stay lit for the rest of the recording. Each key gets the afterglow of a normal
+     * release: a click on a chat link opens the chat screen again from inside the press
+     * ({@code ClientPacketListener.java:2686-2690}), so the click's own release is ignored and the
+     * afterglow from here is the only frame the click lights.
      */
-    public void releaseAll() {
+    public void releaseAll(long nowMillis) {
+        for (String id : down) {
+            releasedAt.put(id, nowMillis);
+        }
         down.clear();
     }
 

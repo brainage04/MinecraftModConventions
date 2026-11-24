@@ -11,7 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * The overlay's own event handling, without a client: a press is kept whether or not a screen had
- * the keyboard, and a screen opening forgets the keys that are down.
+ * the keyboard, and a screen opening releases the keys that are down.
  */
 class InputOverlayTest {
     private static final InputConstants.Key W = InputConstants.Type.KEYBOARD.getOrCreate(InputConstants.KEY_W);
@@ -40,12 +40,13 @@ class InputOverlayTest {
     }
 
     @Test
-    void aScreenOpeningForgetsTheKeysThatAreDown() {
+    void aScreenOpeningReleasesTheKeysThatAreDownAfterTheirAfterglow() {
         InputOverlay.onKey(W, InputConstants.PRESS);
         assertTrue(InputOverlay.keyLit(W.getName(), Util.getMillis()));
 
         InputOverlay.releaseAll();
 
-        assertFalse(InputOverlay.keyLit(W.getName(), Util.getMillis()));
+        assertTrue(InputOverlay.keyLit(W.getName(), Util.getMillis()));
+        assertFalse(InputOverlay.keyLit(W.getName(), Util.getMillis() + InputOverlayState.MIN_VISIBLE_MILLIS));
     }
 }

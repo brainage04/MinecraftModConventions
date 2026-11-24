@@ -74,6 +74,21 @@ class InputOverlayStateTest {
     }
 
     @Test
+    void aClickThatOpensAScreenStaysLitForTheMinimum() {
+        InputOverlayState state = new InputOverlayState();
+        // A click on a chat link runs its command inside the press, and the command opens the chat
+        // screen again, which releases every key before the click's own release arrives.
+        state.keyDown("key.mouse.left", 1000L);
+        state.releaseAll(1000L);
+        state.keyUp("key.mouse.left", 1050L);
+
+        assertFalse(state.isDown("key.mouse.left"));
+        assertTrue(state.keyLit("key.mouse.left", 1050L));
+        assertTrue(state.keyLit("key.mouse.left", 1000L + MIN_VISIBLE - 1));
+        assertFalse(state.keyLit("key.mouse.left", 1000L + MIN_VISIBLE));
+    }
+
+    @Test
     void typedTextShowsForTwoSeconds() {
         InputOverlayState state = new InputOverlayState();
         state.typed("m", 1000L);

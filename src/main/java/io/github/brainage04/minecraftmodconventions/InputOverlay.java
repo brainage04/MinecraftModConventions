@@ -134,12 +134,13 @@ public final class InputOverlay {
     }
 
     /**
-     * Forgets every key that is down, for a screen opening. The game releases every mapping there
-     * without sending a release event ({@code Gui.java:263} in 26.3), so a key held at that moment
-     * would otherwise stay lit for the rest of the recording.
+     * Releases every key that is down, for a screen opening, each with the afterglow of a normal
+     * release. The game releases every mapping there without sending a release event
+     * ({@code Gui.java:263} in 26.3), so a key held at that moment would otherwise stay lit for the
+     * rest of the recording.
      */
     public static void releaseAll() {
-        STATE.releaseAll();
+        STATE.releaseAll(Util.getMillis());
     }
 
     /** A mouse button the game received, with the same actions as {@link #onKey}. */

@@ -9,7 +9,8 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
- * Tells the recording's input overlay when a screen opens, so a key held at that moment goes dark.
+ * Tells the recording's input overlay when a screen opens, so a key held at that moment goes dark
+ * after the afterglow of a normal release.
  *
  * <p>{@code Gui.setScreen} releases every key mapping when a screen opens ({@code Gui.java:261-263} in
  * 26.3) and no release event reaches the overlay, so without this a key held as chat opens would stay
