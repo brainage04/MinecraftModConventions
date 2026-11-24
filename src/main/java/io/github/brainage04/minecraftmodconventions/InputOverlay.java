@@ -17,13 +17,14 @@ import java.util.function.ToIntFunction;
 
 /**
  * The recording's keystrokes overlay: the nine keys a film is watched for, always on screen in the
- * bottom-right corner, each lit while it is down.
+ * bottom-right corner, each lit while it is down, and the clicks per second of LMB and RMB.
  *
  * <p>The layout and colours follow BrainageHUD's keystrokes HUD ({@code KeystrokesHud}): 20-pixel
- * caps two pixels apart, W over S, A and D beside it, a space bar three caps wide, then LMB and RMB,
- * black at 100/255 with white text, lit to white at the same opacity with black text over 100 ms.
- * Shift and Sprint take the place of that HUD's clicks-per-second row, and the space bar is labelled
- * {@code Space} rather than drawn as a bar.
+ * caps two pixels apart, W over S, A and D beside it, a space bar three caps wide, then LMB and RMB
+ * with the clicks-per-second row under them, black at 100/255 with white text, lit to white at the
+ * same opacity with black text over 100 ms. The row reads {@code 3 | 5 CPS} (LMB, RMB), counting
+ * the presses of the last second as that HUD does. Shift and Sprint come last, as wide as LMB and
+ * RMB, and the space bar is labelled {@code Space} rather than drawn as a bar.
  *
  * <p>A recording is watched to see what a player did, and a client GameTest presses a key for one
  * tick, shorter than two frames of a 30 fps recording. A cap therefore stays lit for
@@ -74,10 +75,10 @@ public final class InputOverlay {
     private static volatile boolean enabled = true;
 
     /**
-     * Nine, because {@link #caps} needs a text width and the client's font does not exist at
+     * Ten, because {@link #caps} needs a text width and the client's font does not exist at
      * class-init; {@code everyKeyTheFilmShowsHasACap} pins the count.
      */
-    private static final int CAP_COUNT = 9;
+    private static final int CAP_COUNT = 10;
 
     /** How lit each cap is, 0 to 1, in {@link #caps} order. */
     private static final float[] PROGRESS = new float[CAP_COUNT];
@@ -188,28 +189,34 @@ public final class InputOverlay {
     record Cap(String id, String label, int x, int y, int width, int height) {
     }
 
+    /** The id of the clicks-per-second row, the one cap that shows no key. */
+    static final String CPS_ID = "cps";
+
     /**
-     * The nine caps, in BrainageHUD's keystrokes layout: W over S, A and D beside it, a space bar
-     * three caps wide, then LMB and RMB, then Shift and Sprint. The ids select the client's key
-     * mapping in {@link #mapping}, so a rebound key still lights its cap.
+     * The ten caps, in BrainageHUD's keystrokes layout: W over S, A and D beside it, a space bar
+     * three caps wide, LMB and RMB, the clicks-per-second row under them (three caps wide, as
+     * {@code KeystrokesHud.java:147-148} draws it), then Shift and Sprint. The ids select the
+     * client's key mapping in {@link #mapping}, so a rebound key still lights its cap.
      *
-     * <p>Every cap that carries a word is at least as wide as its label plus the padding, so no
-     * label draws past the panel's edge: {@code Sprint} is wider than the half-cap BrainageHUD's LMB
-     * and RMB use, and a resource pack's font can widen any of them. The padding is what leaves room
-     * for the drop shadow, which takes the pixel right of the text. The single letters keep
-     * BrainageHUD's 20-pixel cap.
+     * <p>LMB, RMB, Shift and Sprint are one width, so Shift and Sprint sit exactly under LMB and RMB:
+     * BrainageHUD's half-cap, or the widest of their labels plus the padding when {@code Sprint} does
+     * not fit it. Every other cap that carries a word is at least as wide as its label plus the
+     * padding, so no label draws past the panel's edge, and a resource pack's font can widen any of
+     * them. The padding is what leaves room for the drop shadow, which takes the pixel right of the
+     * text. The single letters keep BrainageHUD's 20-pixel cap.
      */
     static List<Cap> caps(ToIntFunction<String> textWidth) {
         int size = KEY_SIZE;
         int pad = KEY_PADDING;
         int half = (int) (size * 1.5 + (double) pad / 2);
-        int bottom = Math.max(
-                half,
-                Math.max(textWidth.applyAsInt("Shift"), textWidth.applyAsInt("Sprint")) + pad);
-        int space = Math.max(size * 3 + pad * 2, textWidth.applyAsInt("Space") + pad);
-        int click = Math.max(half, Math.max(
-                textWidth.applyAsInt("LMB"), textWidth.applyAsInt("RMB")) + pad);
-        List<Cap> caps = new ArrayList<>(9);
+        int widestButton = Math.max(
+                Math.max(textWidth.applyAsInt("LMB"), textWidth.applyAsInt("RMB")),
+                Math.max(textWidth.applyAsInt("Shift"), textWidth.applyAsInt("Sprint")));
+        int button = Math.max(half, widestButton + pad);
+        int wide = size * 3 + pad * 2;
+        int space = Math.max(wide, textWidth.applyAsInt("Space") + pad);
+        int counter = Math.max(wide, textWidth.applyAsInt(cpsLabel(99, 99)) + pad);
+        List<Cap> caps = new ArrayList<>(CAP_COUNT);
         caps.add(new Cap("forward", "W", size + pad, 0, size, size));
         int row = size + pad;
         caps.add(new Cap("left", "A", 0, row, size, size));
@@ -218,11 +225,13 @@ public final class InputOverlay {
         row += size + pad;
         caps.add(new Cap("jump", "Space", 0, row, space, size));
         row += size + pad;
-        caps.add(new Cap("attack", "LMB", 0, row, click, size));
-        caps.add(new Cap("use", "RMB", click + pad, row, click, size));
+        caps.add(new Cap("attack", "LMB", 0, row, button, size));
+        caps.add(new Cap("use", "RMB", button + pad, row, button, size));
         row += size + pad;
-        caps.add(new Cap("sneak", "Shift", 0, row, bottom, size));
-        caps.add(new Cap("sprint", "Sprint", bottom + pad, row, bottom, size));
+        caps.add(new Cap(CPS_ID, cpsLabel(0, 0), 0, row, counter, size));
+        row += size + pad;
+        caps.add(new Cap("sneak", "Shift", 0, row, button, size));
+        caps.add(new Cap("sprint", "Sprint", button + pad, row, button, size));
         return caps;
     }
 
@@ -293,19 +302,60 @@ public final class InputOverlay {
         lastNanos = nowNanos;
         for (int index = 0; index < caps.size(); index++) {
             Cap cap = caps.get(index);
-            PROGRESS[index] = advance(PROGRESS[index], isLit(client, cap, now), elapsed);
+            boolean counter = cap.id().equals(CPS_ID);
+            // The clicks-per-second row has no key: it never lights, as BrainageHUD's (key null).
+            PROGRESS[index] = counter ? 0.0F : advance(PROGRESS[index], isLit(client, cap, now), elapsed);
             float progress = PROGRESS[index];
+            String label = counter
+                    ? cpsLabel(
+                            clicksPerSecond(client.options.keyAttack, now),
+                            clicksPerSecond(client.options.keyUse, now))
+                    : cap.label();
             int x = origin[0] + cap.x();
             int y = origin[1] + cap.y();
             graphics.fill(x, y, x + cap.width(), y + cap.height(), backdropColour(progress));
             graphics.text(
                     font,
-                    cap.label(),
-                    x + (cap.width() - font.width(cap.label())) / 2,
-                    y + (cap.height() - font.lineHeight) / 2,
+                    label,
+                    x + labelX(cap.width(), font.width(label)),
+                    y + labelY(cap.height(), font.lineHeight),
                     textColour(progress),
                     true);
         }
+    }
+
+    /**
+     * Where a label starts inside its cap, from the cap's left edge. The glyphs advance by their ink
+     * width plus one ({@code BitmapProvider.java}, {@code (int) (0.5 + inkWidth) + 1}), so a label's ink
+     * is {@code labelWidth - 1} pixels wide and its drop shadow takes the pixel after it. The ink is
+     * centred and rounded up when a pixel is left over: a 5-pixel {@code W} in a 20-pixel cap starts
+     * at 8, where BrainageHUD's {@code width / 2 - labelWidth / 2} ({@code KeystrokesHud.java:224-225})
+     * starts it at 7, so the ink does not sit left of the middle.
+     * The ink and its shadow end at {@code labelX + labelWidth}, which is inside the cap whenever the
+     * cap is as wide as the label plus the two pixels {@link #caps} leaves.
+     */
+    static int labelX(int capWidth, int labelWidth) {
+        return Math.ceilDiv(capWidth - labelWidth + 1, 2);
+    }
+
+    /**
+     * Where a label's line starts inside its cap, from the cap's top edge: BrainageHUD's
+     * {@code height / 2 - lineHeight / 2} ({@code KeystrokesHud.java:228-229}), 6 for a 20-pixel cap
+     * and the 9-pixel line. A capital's 7 rows of ink and the shadow's row below them are then 6
+     * pixels from the top and 6 from the bottom of the cap.
+     */
+    static int labelY(int capHeight, int lineHeight) {
+        return capHeight / 2 - lineHeight / 2;
+    }
+
+    /** The clicks-per-second row's text: BrainageHUD's {@code BOTH} format ({@code KeystrokesHud.java:139}). */
+    static String cpsLabel(int attackClicks, int useClicks) {
+        return "%d | %d CPS".formatted(attackClicks, useClicks);
+    }
+
+    /** How many presses the mapping's key had in the last second. */
+    private static int clicksPerSecond(KeyMapping mapping, long now) {
+        return STATE.clicksPerSecond(mapping.saveString(), now);
     }
 
     /**

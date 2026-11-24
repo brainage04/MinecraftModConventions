@@ -1,5 +1,8 @@
 package io.github.brainage04.minecraftmodconventions;
 
+import java.util.ArrayDeque;
+import java.util.Deque;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -24,15 +27,25 @@ public final class InputOverlayState {
     public static final long TYPED_VISIBLE_MILLIS = 2000L;
     /** The most typed characters kept, so a long command does not fill the frame. */
     public static final int MAX_TYPED_CHARS = 40;
+    /** How long a click counts towards the clicks per second: BrainageHUD's {@code ClickRateTracker.WINDOW_MILLIS}. */
+    public static final long CLICK_WINDOW_MILLIS = 1000L;
 
     private final Set<String> down = new HashSet<>();
     private final Map<String, Long> releasedAt = new LinkedHashMap<>();
+    private final Map<String, Deque<Long>> clicks = new HashMap<>();
     private final StringBuilder typed = new StringBuilder();
     private long typedAt = Long.MIN_VALUE;
 
-    /** Records a key going down. A repeat of a key that is already down changes nothing. */
+    /**
+     * Records a key going down, and counts it as a click. A repeat of a key that is already down
+     * changes nothing.
+     */
     public void keyDown(String id, long nowMillis) {
-        down.add(id);
+        if (down.add(id)) {
+            Deque<Long> times = clicks.computeIfAbsent(id, key -> new ArrayDeque<>());
+            times.addLast(nowMillis);
+            expireClicks(times, nowMillis);
+        }
         releasedAt.remove(id);
     }
 
@@ -90,10 +103,32 @@ public final class InputOverlayState {
         return typed.toString();
     }
 
-    /** Forgets every key and typed character, for the start of a recording. */
+    /**
+     * How many times a key went down in the last {@link #CLICK_WINDOW_MILLIS}, counted as BrainageHUD's
+     * {@code ClickRateTracker} does: a click stays for the whole window and is dropped once
+     * {@code now - click >= window}, and the count is the number of clicks left (a whole number, 0
+     * with none).
+     */
+    public int clicksPerSecond(String id, long nowMillis) {
+        Deque<Long> times = clicks.get(id);
+        if (times == null) {
+            return 0;
+        }
+        expireClicks(times, nowMillis);
+        return times.size();
+    }
+
+    private static void expireClicks(Deque<Long> times, long nowMillis) {
+        while (!times.isEmpty() && nowMillis - times.peekFirst() >= CLICK_WINDOW_MILLIS) {
+            times.pollFirst();
+        }
+    }
+
+    /** Forgets every key, click and typed character, for the start of a recording. */
     public void clear() {
         down.clear();
         releasedAt.clear();
+        clicks.clear();
         typed.setLength(0);
         typedAt = Long.MIN_VALUE;
     }
