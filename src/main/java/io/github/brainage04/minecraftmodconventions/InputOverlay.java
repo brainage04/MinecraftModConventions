@@ -70,6 +70,13 @@ public final class InputOverlay {
     /** The text on an unlit cap; a lit cap's backdrop takes its RGB at {@link #BACKDROP_OPACITY}. */
     static final int TEXT_COLOUR = 0xFFFFFFFF;
 
+    /**
+     * The text colour a fully lit cap fades to over {@link #TRANSITION_NANOS}. BrainageHUD fades to black
+     * too ({@code KeystrokesHud.java:209-210}); the alternatives drawn in {@code held-colours.png}
+     * are a one-line change here.
+     */
+    static final int HELD_TEXT_COLOUR = 0xFF000000;
+
     /** How long a cap takes to light or dim, as BrainageHUD's keystrokes HUD does. */
     static final long TRANSITION_NANOS = 100_000_000L;
 
@@ -334,19 +341,19 @@ public final class InputOverlay {
     }
 
     /**
-     * Where a label starts inside its cap, from the cap's left edge: one pixel right of where
-     * {@code (capWidth - labelWidth) / 2} puts it, the pixel Thomas asked for on 24 Nov. With the
-     * default font's glyphs, which advance by their ink width plus one ({@code BitmapProvider.java},
-     * {@code (int) (0.5 + inkWidth) + 1}), the ink is {@code labelWidth - 1} pixels wide, so this
-     * centres the ink with an odd leftover pixel going to the left: a 5-pixel {@code W} in a 20-pixel
-     * cap starts at 8, where BrainageHUD's {@code width / 2 - labelWidth / 2}
-     * ({@code KeystrokesHud.java:224-225}) starts it at 7. The label and its one-pixel shadow
-     * ({@code GlyphInfo.java:14-15}) end at {@code labelX + labelWidth}, which is inside the cap
-     * whenever the cap is at least {@code labelWidth + }{@link #SHADOW_ROOM} wide; that holds for
-     * any font, since it only uses the width {@link #caps} measured.
+     * Where a label starts inside its cap, from the cap's left edge: it centres the label's ink and
+     * its drop shadow as one box and rounds toward the left. With the default font's glyphs, which
+     * advance by their ink width plus one ({@code BitmapProvider.java}, {@code (int) (0.5 +
+     * inkWidth) + 1}), the ink is {@code labelWidth - 1} pixels wide and its shadow
+     * ({@code GlyphInfo.java:14-15}, one pixel right and down) takes the next column, so the box is
+     * {@code labelWidth} wide and starts at {@code labelX}. A 5-pixel {@code W} in a 20-pixel cap
+     * starts at 7 (7 pixels each side of the box), the same x as BrainageHUD's
+     * {@code width / 2 - labelWidth / 2} ({@code KeystrokesHud.java:224-225}); an odd leftover pixel
+     * goes to the right. The box ends at {@code labelX + labelWidth}, inside the cap whenever the cap is
+     * at least that wide, so a cap sized by {@link #caps} never clips the shadow.
      */
     static int labelX(int capWidth, int labelWidth) {
-        return Math.ceilDiv(capWidth - labelWidth + 1, 2);
+        return Math.floorDiv(capWidth - labelWidth, 2);
     }
 
     /**
@@ -386,9 +393,9 @@ public final class InputOverlay {
                 ARGB.color(BACKDROP_OPACITY, 255, 255, 255));
     }
 
-    /** A cap's text: white, lit to black so it reads on the white backdrop. */
+    /** A cap's text: {@link #TEXT_COLOUR}, lit to {@link #HELD_TEXT_COLOUR}. */
     static int textColour(float progress) {
-        return ARGB.srgbLerp(progress, TEXT_COLOUR, ARGB.opaque(0));
+        return ARGB.srgbLerp(progress, TEXT_COLOUR, HELD_TEXT_COLOUR);
     }
 
     /** The text typed into a screen, on a line above the caps, right-aligned to the panel. */
