@@ -53,10 +53,13 @@ public final class InputOverlay {
     static final int KEY_PADDING = 2;
 
     /**
-     * The room a label needs beyond its width: its drop shadow takes the pixel after the ink, and the
-     * label's advance already ends one pixel after its ink ({@link #labelX}).
+     * One spare pixel a widened cap keeps to the right of its label. The label's ink and its drop
+     * shadow already sit inside the label's advance (the ink is one pixel narrower, the shadow takes
+     * that pixel, {@link #labelX}), so this pixel is not needed to avoid clipping: it keeps a cap
+     * from being exactly as wide as its text. Without it Sprint, 30 wide, would make the buttons 30,
+     * with its shadow in the cap's last column and no margin on that side.
      */
-    static final int SHADOW_ROOM = 1;
+    static final int SPARE_PIXEL = 1;
 
     /** The hotbar's top edge is 22 pixels above the bottom of the GUI ({@code Hud.java:575}). */
     static final int HOTBAR_HEIGHT = 22;
@@ -71,9 +74,9 @@ public final class InputOverlay {
     static final int TEXT_COLOUR = 0xFFFFFFFF;
 
     /**
-     * The text colour a fully lit cap fades to over {@link #TRANSITION_NANOS}. BrainageHUD fades to black
-     * too ({@code KeystrokesHud.java:209-210}); the alternatives drawn in {@code held-colours.png}
-     * are a one-line change here.
+     * The text colour a fully lit cap fades to over {@link #TRANSITION_NANOS}. BrainageHUD fades to
+     * black too ({@code KeystrokesHud.java:209-210} at BrainageHUD 88d8cc0). Changing it is this one
+     * line.
      */
     static final int HELD_TEXT_COLOUR = 0xFF000000;
 
@@ -212,12 +215,12 @@ public final class InputOverlay {
      * client's key mapping in {@link #mapping}, so a rebound key still lights its cap.
      *
      * <p>LMB, RMB, Shift and Sprint are one width, so Shift and Sprint sit exactly under LMB and RMB:
-     * BrainageHUD's half-cap (31), or the widest of their labels plus {@link #SHADOW_ROOM} when that
+     * BrainageHUD's half-cap (31), or the widest of their labels plus {@link #SPARE_PIXEL} when that
      * is wider. Two buttons and the gap are then as wide as the space bar and the clicks row (64), so
      * every row under W/A/S/D shares both edges; a font that widens a button widens the space bar
      * and the clicks row to the same span. Every cap that carries a word is at least as wide as its
-     * label plus {@link #SHADOW_ROOM}, so no label or shadow draws past the panel's edge. The single
-     * letters keep BrainageHUD's 20-pixel cap.
+     * label plus {@link #SPARE_PIXEL}, so a label and its shadow stay inside the cap with a pixel to
+     * spare. The single letters keep BrainageHUD's 20-pixel cap.
      */
     static List<Cap> caps(ToIntFunction<String> textWidth) {
         int size = KEY_SIZE;
@@ -226,12 +229,12 @@ public final class InputOverlay {
         int widestButton = Math.max(
                 Math.max(textWidth.applyAsInt("LMB"), textWidth.applyAsInt("RMB")),
                 Math.max(textWidth.applyAsInt("Shift"), textWidth.applyAsInt("Sprint")));
-        int button = Math.max(half, widestButton + SHADOW_ROOM);
+        int button = Math.max(half, widestButton + SPARE_PIXEL);
         int span = Math.max(
                 Math.max(size * 3 + pad * 2, button * 2 + pad),
                 Math.max(
-                        textWidth.applyAsInt("Space") + SHADOW_ROOM,
-                        textWidth.applyAsInt(cpsLabel(99, 99)) + SHADOW_ROOM));
+                        textWidth.applyAsInt("Space") + SPARE_PIXEL,
+                        textWidth.applyAsInt(cpsLabel(99, 99)) + SPARE_PIXEL));
         List<Cap> caps = new ArrayList<>(CAP_COUNT);
         caps.add(new Cap("forward", "W", size + pad, 0, size, size));
         int row = size + pad;

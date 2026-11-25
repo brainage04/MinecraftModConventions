@@ -36,6 +36,17 @@ class InputOverlayLayoutTest {
                 : 6 * label.length();
     };
 
+    /** The side of a glyph cell in {@code ascii.png}. */
+    private static final int ATLAS_CELL = 8;
+    /** A space's advance ({@code include/space.json} in the client jar). */
+    private static final int SPACE_ADVANCE = 4;
+    /** A glyph's advance is its last ink column plus this: the ink's width, one pixel for the gap. */
+    private static final int INK_TO_ADVANCE = 2;
+    /** The drop shadow's pixel offset from the ink ({@code GlyphInfo.java:14-15}). */
+    private static final int SHADOW_OFFSET = 1;
+    /** How far the margin left of a label's ink may differ from the margin right of its shadow. */
+    private static final int MAX_MARGIN_DIFFERENCE = 1;
+
     @Test
     void thePanelSitsAboveTheHotbarInTheBottomRight() {
         int[] origin = InputOverlay.panelOrigin(
@@ -153,9 +164,9 @@ class InputOverlayLayoutTest {
     void theCapsSitInBrainageHudsKeystrokesLayout() {
         // KeystrokesHud: 20-pixel caps two pixels apart, W over S, A and D beside it, a space bar
         // three caps wide, then LMB and RMB, then the clicks-per-second row (KeystrokesHud.java:45-148).
-        // Shift and Sprint follow, as wide as LMB and RMB. Sprint is 30 pixels wide and its shadow
-        // takes one more, which the half-cap's 31 holds, so the four buttons are 31 wide and every
-        // row ends at 64.
+        // Shift and Sprint follow, as wide as LMB and RMB. Sprint is 30 pixels wide, ink and shadow
+        // included, and the half-cap's 31 leaves it one spare pixel, so the four buttons are 31 wide
+        // and every row ends at 64.
         int size = InputOverlay.KEY_SIZE;
         int pad = InputOverlay.KEY_PADDING;
         int space = size * 3 + pad * 2;
@@ -272,13 +283,8 @@ class InputOverlayLayoutTest {
             assertNotNull(in, "ascii.png is not on the test classpath");
             atlas = ImageIO.read(in);
         }
-        List<String> labels = new ArrayList<>();
         for (InputOverlay.Cap cap : InputOverlay.caps(FONT_WIDTH)) {
-            labels.add(cap.id().equals(InputOverlay.CPS_ID) ? InputOverlay.cpsLabel(3, 5) : cap.label());
-        }
-        List<InputOverlay.Cap> caps = InputOverlay.caps(FONT_WIDTH);
-        for (int i = 0; i < caps.size(); i++) {
-            String label = labels.get(i);
+            String label = cap.id().equals(InputOverlay.CPS_ID) ? InputOverlay.cpsLabel(3, 5) : cap.label();
             int advance = 0;
             int firstInk = Integer.MAX_VALUE;
             int lastInk = -1;
@@ -288,17 +294,17 @@ class InputOverlayLayoutTest {
                     firstInk = Math.min(firstInk, advance + ink[0]);
                     lastInk = Math.max(lastInk, advance + ink[1]);
                 }
-                advance += ink == null ? 4 : ink[1] + 2;
+                advance += ink == null ? SPACE_ADVANCE : ink[1] + INK_TO_ADVANCE;
             }
             assertEquals(FONT_WIDTH.applyAsInt(label), advance, label + " advance in the test's font widths");
-            int start = InputOverlay.labelX(caps.get(i).width(), advance);
+            int start = InputOverlay.labelX(cap.width(), advance);
             int left = start + firstInk;
-            int right = caps.get(i).width() - 1 - (start + lastInk + 1);
+            int right = cap.width() - 1 - (start + lastInk + SHADOW_OFFSET);
             assertTrue(left >= 0, label + " ink starts left of its cap");
             assertTrue(right >= 0, label + " shadow ends right of its cap");
             assertTrue(
-                    left <= right && right - left <= 1,
-                    label + " in a " + caps.get(i).width() + "-pixel cap has " + left + " pixels left and "
+                    left <= right && right - left <= MAX_MARGIN_DIFFERENCE,
+                    label + " in a " + cap.width() + "-pixel cap has " + left + " pixels left and "
                             + right + " right of its ink and shadow");
         }
     }
@@ -313,11 +319,11 @@ class InputOverlayLayoutTest {
         for (int row = 0; row < rows.length; row++) {
             int column = rows[row].indexOf(ch);
             if (column >= 0) {
-                int first = 8;
+                int first = ATLAS_CELL;
                 int last = -1;
-                for (int y = 0; y < 8; y++) {
-                    for (int x = 0; x < 8; x++) {
-                        if ((atlas.getRGB(column * 8 + x, row * 8 + y) >>> 24) != 0) {
+                for (int y = 0; y < ATLAS_CELL; y++) {
+                    for (int x = 0; x < ATLAS_CELL; x++) {
+                        if ((atlas.getRGB(column * ATLAS_CELL + x, row * ATLAS_CELL + y) >>> 24) != 0) {
                             first = Math.min(first, x);
                             last = Math.max(last, x);
                         }
@@ -374,10 +380,10 @@ class InputOverlayLayoutTest {
         // not only the button rows. The single letters keep BrainageHUD's 20-pixel cap.
         ToIntFunction<String> wide = label -> label.length() == 1 ? 6 : 80;
         for (InputOverlay.Cap cap : InputOverlay.caps(wide)) {
-            // One pixel of room: the drop shadow takes the pixel after the ink, and the label's
-            // advance already ends one pixel after its ink.
+            // The spare pixel: the label's ink and shadow already fit its advance, and the cap keeps
+            // one column more.
             assertTrue(
-                    wide.applyAsInt(cap.label()) + InputOverlay.SHADOW_ROOM <= cap.width(),
+                    wide.applyAsInt(cap.label()) + InputOverlay.SPARE_PIXEL <= cap.width(),
                     cap.label() + " is " + wide.applyAsInt(cap.label()) + " wide in a "
                             + cap.width() + "-pixel cap");
         }
@@ -398,7 +404,7 @@ class InputOverlayLayoutTest {
     void theClicksPerSecondRowFitsTwoDigitCountsOnBothSides() {
         InputOverlay.Cap cps = cap(InputOverlay.caps(FONT_WIDTH), "cps");
 
-        assertTrue(FONT_WIDTH.applyAsInt(InputOverlay.cpsLabel(99, 99)) + InputOverlay.SHADOW_ROOM <= cps.width());
+        assertTrue(FONT_WIDTH.applyAsInt(InputOverlay.cpsLabel(99, 99)) + InputOverlay.SPARE_PIXEL <= cps.width());
     }
 
     private static InputOverlay.Cap cap(List<InputOverlay.Cap> caps, String id) {
