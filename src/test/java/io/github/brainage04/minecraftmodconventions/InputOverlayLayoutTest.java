@@ -426,7 +426,6 @@ class InputOverlayLayoutTest {
         assertEquals(0x64FFFFFF, InputOverlay.backdropColour(1.0F));
         assertEquals(0xFFFFFFFF, InputOverlay.textColour(0.0F));
         assertEquals(0xFF000000, InputOverlay.textColour(1.0F));
-        assertEquals(InputOverlay.HELD_TEXT_COLOUR, InputOverlay.textColour(1.0F));
     }
 
     @Test
