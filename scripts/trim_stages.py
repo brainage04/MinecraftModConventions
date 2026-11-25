@@ -59,16 +59,45 @@ for begin, finish, stage in windows:
     else:
         merged.append([begin, finish, stage])
 
+def frame_count(video):
+    return int(subprocess.run([
+        "ffprobe", "-v", "error", "-count_frames", "-select_streams", "v:0",
+        "-show_entries", "stream=nb_read_frames", "-of", "csv=p=0", str(video),
+    ], check=True, capture_output=True, text=True).stdout.strip())
+
+
+def source_frame_times(video):
+    output = subprocess.run([
+        "ffprobe", "-v", "error", "-select_streams", "v:0",
+        "-show_entries", "frame=best_effort_timestamp_time", "-of", "csv=p=0", str(video),
+    ], check=True, capture_output=True, text=True).stdout
+    return [float(line.split(",")[0]) for line in output.splitlines()
+            if line and line.split(",")[0].replace(".", "", 1).isdigit()]
+
+
+source_times = source_frame_times(video_path)
+
 parts = []
 for index, (begin, finish, stage) in enumerate(merged):
-    print(f"clip {index}: {begin:.2f}s - {finish:.2f}s ({finish - begin:.2f}s) {stage}")
+    expected = sum(1 for t in source_times if begin <= t < finish)
+    print(f"clip {index}: {begin:.2f}s - {finish:.2f}s ({finish - begin:.2f}s) {stage}; "
+          f"source frames {expected}")
     part = out_path.with_name(f"{out_path.stem}-part{index}.mp4")
+    # Input seeking with -ss/-to left the first two PTS of some parts at 0.000 and 0.0667,
+    # dropping the frame between them. The trim filter takes the same source frames without a gap.
     subprocess.run([
         "ffmpeg", "-v", "error", "-y",
-        "-ss", f"{begin:.3f}", "-to", f"{finish:.3f}", "-i", str(video_path),
+        "-i", str(video_path),
+        "-vf", f"trim=start={begin:.3f}:end={finish:.3f},setpts=PTS-STARTPTS",
+        "-af", f"atrim=start={begin:.3f}:end={finish:.3f},asetpts=PTS-STARTPTS",
+        "-fps_mode", "passthrough",
         "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p",
         "-c:a", "aac", "-b:a", "128k", str(part),
     ], check=True)
+    actual = frame_count(part)
+    print(f"  part {index}: {actual} frames")
+    if actual != expected:
+        raise SystemExit(f"clip {index} has {actual} frames but the source window has {expected}")
     parts.append(part)
 
 listing = out_path.with_name(f"{out_path.stem}-concat.txt")
@@ -80,11 +109,6 @@ subprocess.run([
 ], check=True)
 
 
-def frame_count(video):
-    return int(subprocess.run([
-        "ffprobe", "-v", "error", "-count_frames", "-select_streams", "v:0",
-        "-show_entries", "stream=nb_read_frames", "-of", "csv=p=0", str(video),
-    ], check=True, capture_output=True, text=True).stdout.strip())
 
 
 stages = []
