@@ -2,11 +2,17 @@ package io.github.brainage04.minecraftmodconventions;
 
 import org.junit.jupiter.api.Test;
 
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.function.ToIntFunction;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class InputOverlayLayoutTest {
@@ -241,16 +247,86 @@ class InputOverlayLayoutTest {
     }
 
     @Test
-    void aLabelIsCentredByItsInkAndRoundedTowardsTheRight() {
-        // A glyph's advance is its ink width plus one (BitmapProvider.java), so a label's ink is one
-        // pixel narrower than Font.width and its drop shadow takes that pixel back. Centring the ink:
-        // a 6-wide W (5 pixels of ink) in a 20-pixel cap starts at 8, where the width/2 - width/2
-        // BrainageHUD uses (KeystrokesHud.java:224-226) starts at 7.
-        assertEquals(8, InputOverlay.labelX(20, 6));
-        assertEquals(7, 20 / 2 - 6 / 2);
-        // Sprint (30) and LMB (18) in a 31-pixel button.
-        assertEquals(1, InputOverlay.labelX(31, 30));
-        assertEquals(7, InputOverlay.labelX(31, 18));
+    void aLabelsInkAndShadowAreCentredAsOneBoxRoundedTowardsTheLeft() {
+        // The label's ink is labelWidth - 1 wide and its drop shadow takes the next column, so the
+        // box is labelWidth wide. A 5-pixel W in a 20-pixel cap has 7 pixels each side; BrainageHUD's
+        // width / 2 - labelWidth / 2 (KeystrokesHud.java:224-225) gives the same 7.
+        assertEquals(7, InputOverlay.labelX(20, 6));
+        assertEquals(20 / 2 - 6 / 2, InputOverlay.labelX(20, 6));
+        // Sprint (30), Shift (23) and LMB (18) in a 31-pixel button: the odd pixel goes to the right.
+        assertEquals(0, InputOverlay.labelX(31, 30));
+        assertEquals(4, InputOverlay.labelX(31, 23));
+        assertEquals(6, InputOverlay.labelX(31, 18));
+        // A label wider than its cap spills evenly, rounding toward the left.
+        assertEquals(-2, InputOverlay.labelX(64, 68));
+        assertEquals(-2, InputOverlay.labelX(64, 67));
+    }
+
+    @Test
+    void everyCapsInkAndShadowBoxHasTheSameMarginOnBothSidesToOnePixel() throws IOException {
+        // Measured from ascii.png (the default font's glyphs): the ink of the last glyph ends one
+        // column before its advance, and the shadow sits in the column after the ink.
+        BufferedImage atlas;
+        try (InputStream in = InputOverlayLayoutTest.class.getClassLoader()
+                .getResourceAsStream("assets/minecraft/textures/font/ascii.png")) {
+            assertNotNull(in, "ascii.png is not on the test classpath");
+            atlas = ImageIO.read(in);
+        }
+        List<String> labels = new ArrayList<>();
+        for (InputOverlay.Cap cap : InputOverlay.caps(FONT_WIDTH)) {
+            labels.add(cap.id().equals(InputOverlay.CPS_ID) ? InputOverlay.cpsLabel(3, 5) : cap.label());
+        }
+        List<InputOverlay.Cap> caps = InputOverlay.caps(FONT_WIDTH);
+        for (int i = 0; i < caps.size(); i++) {
+            String label = labels.get(i);
+            int advance = 0;
+            int firstInk = Integer.MAX_VALUE;
+            int lastInk = -1;
+            for (char ch : label.toCharArray()) {
+                int[] ink = glyphInk(atlas, ch);
+                if (ink != null) {
+                    firstInk = Math.min(firstInk, advance + ink[0]);
+                    lastInk = Math.max(lastInk, advance + ink[1]);
+                }
+                advance += ink == null ? 4 : ink[1] + 2;
+            }
+            assertEquals(FONT_WIDTH.applyAsInt(label), advance, label + " advance in the test's font widths");
+            int start = InputOverlay.labelX(caps.get(i).width(), advance);
+            int left = start + firstInk;
+            int right = caps.get(i).width() - 1 - (start + lastInk + 1);
+            assertTrue(left >= 0, label + " ink starts left of its cap");
+            assertTrue(right >= 0, label + " shadow ends right of its cap");
+            assertTrue(
+                    left <= right && right - left <= 1,
+                    label + " in a " + caps.get(i).width() + "-pixel cap has " + left + " pixels left and "
+                            + right + " right of its ink and shadow");
+        }
+    }
+
+    /** The first and last column of a glyph's ink in {@code ascii.png}, or null for a space. */
+    private static int[] glyphInk(BufferedImage atlas, char ch) {
+        String[] rows = {"", "", " !\"#$%&'()*+,-./", "0123456789:;<=>?", "@ABCDEFGHIJKLMNO",
+                "PQRSTUVWXYZ[\\]^_", "`abcdefghijklmno", "pqrstuvwxyz{|}~ "};
+        if (ch == ' ') {
+            return null;
+        }
+        for (int row = 0; row < rows.length; row++) {
+            int column = rows[row].indexOf(ch);
+            if (column >= 0) {
+                int first = 8;
+                int last = -1;
+                for (int y = 0; y < 8; y++) {
+                    for (int x = 0; x < 8; x++) {
+                        if ((atlas.getRGB(column * 8 + x, row * 8 + y) >>> 24) != 0) {
+                            first = Math.min(first, x);
+                            last = Math.max(last, x);
+                        }
+                    }
+                }
+                return new int[] {first, last};
+            }
+        }
+        throw new IllegalArgumentException("no glyph for " + ch);
     }
 
     @Test
@@ -350,6 +426,7 @@ class InputOverlayLayoutTest {
         assertEquals(0x64FFFFFF, InputOverlay.backdropColour(1.0F));
         assertEquals(0xFFFFFFFF, InputOverlay.textColour(0.0F));
         assertEquals(0xFF000000, InputOverlay.textColour(1.0F));
+        assertEquals(InputOverlay.HELD_TEXT_COLOUR, InputOverlay.textColour(1.0F));
     }
 
     @Test
