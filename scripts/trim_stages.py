@@ -102,13 +102,14 @@ for index, (begin, finish, stage) in enumerate(merged):
 
 listing = out_path.with_name(f"{out_path.stem}-concat.txt")
 listing.write_text("".join(f"file '{part.name}'\n" for part in parts))
+# A part's container duration can be one frame longer than its frame count, which leaves a 66.7 ms
+# step at a join. Renumber the joined video's PTS from the frame count so every join steps 33.3 ms.
 subprocess.run([
     "ffmpeg", "-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", str(listing),
+    "-vf", "setpts=N/30/TB", "-fps_mode", "passthrough",
     "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p",
     "-c:a", "aac", "-b:a", "128k", str(out_path),
 ], check=True)
-
-
 
 
 stages = []
