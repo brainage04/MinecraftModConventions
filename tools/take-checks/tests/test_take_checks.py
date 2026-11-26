@@ -203,6 +203,36 @@ class TakeChecksTest(unittest.TestCase):
         verdicts = self.run_case(rows, events)[1]
         self.assert_verdict(verdicts, "P4", "FAIL")
 
+    def test_p4_two_static_hud_elements_do_not_hide_dead_time(self):
+        rows = steady_rows(6.0)
+        events = [*boundaries(6.0),
+                  hud(0, 0.0, element="panel"),
+                  hud(0, 0.0, element="status", rect=[200, 0, 100, 20]),
+                  hud(12, 3.0, element="panel"),
+                  hud(12, 3.0, element="status", rect=[200, 0, 100, 20]),
+                  hud(24, 6.0, element="panel", text="done"),
+                  hud(24, 6.0, element="status", rect=[200, 0, 100, 20], text="done")]
+        self.assert_verdict(self.run_case(rows, events)[1], "P4", "FAIL")
+
+    def test_p5_command_at_zero_without_effect_fails(self):
+        command = event("command_sent", 0, 0.0, command_id="c", command="/x", source="hud")
+        self.assert_verdict(self.run_case(steady_rows(), [*boundaries(), command])[1], "P5", "FAIL")
+
+    def test_p5_repeated_chat_line_counts_as_a_visible_change(self):
+        command = event("command_sent", 8, 2.0, command_id="c", command="/x", source="hud")
+        events = [*boundaries(4.0), event("chat", 1, 0.25, text="go"),
+                  event("chat", 10, 2.5, text="go"), command]
+        self.assert_verdict(self.run_case(steady_rows(4.0), events)[1], "P5", "PASS")
+
+    def test_p5_no_op_block_change_is_not_a_visible_effect(self):
+        command = event("command_sent", 8, 2.0, command_id="c", command="/x", source="hud")
+        real = event("block_change", 1, 0.25, action="place", x=1, y=-60, z=0,
+                     before="minecraft:air", after="minecraft:obsidian")
+        no_op = event("block_change", 10, 2.5, action="place", x=2, y=-60, z=0,
+                      before="minecraft:air", after="minecraft:air")
+        verdicts = self.run_case(steady_rows(4.0), [*boundaries(4.0), real, no_op, command])[1]
+        self.assert_verdict(verdicts, "P5", "FAIL")
+
     def test_p5_ignores_an_effect_after_the_stage_ends(self):
         rows = steady_rows()
         rows[4]["pos_x"] = 1.0
