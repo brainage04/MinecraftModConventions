@@ -631,5 +631,28 @@ class TakeChecksTest(unittest.TestCase):
                             "M5", "NOT EVALUATED")
 
 
+    def test_m1_rotation_jitter_inside_deadband_passes(self):
+        rows = [tick(index, index * 0.25, yaw_delta=(1e-7 if index == 1 else -1e-7 if index == 2 else 0.0))
+                for index in range(5)]
+        self.assert_verdict(self.run_case(rows, boundaries())[1], "M1", "PASS")
+        stricter = CONFIG.read_text(encoding="utf-8").replace("deadband = 0.01", "deadband = 0.0", 1)
+        self.assert_verdict(self.run_case(rows, boundaries(), config_text=stricter)[1], "M1", "FAIL")
+
+    def test_m1_sprint_jump_and_air_drag_pass(self):
+        rows = [tick(0, 0.0), tick(1, 0.25, vel_x=1.0, jump=1, on_ground=0),
+                tick(2, 0.5, vel_x=0.99, on_ground=0, vel_y=-0.1)]
+        self.assert_verdict(self.run_case(rows, boundaries())[1], "M1", "PASS")
+
+    def test_m1_stage_cut_does_not_count_as_a_flip(self):
+        rows = steady_rows()
+        rows[2]["yaw_delta"] = 1.0
+        rows[3]["yaw_delta"] = -1.0
+        events = [event("stage_start", 0, 0.0, stage_id="one"),
+                  event("stage_end", 2, 0.5, stage_id="one"),
+                  event("stage_start", 2, 0.5, stage_id="two"),
+                  event("stage_end", 8, 2.0, stage_id="two")]
+        self.assert_verdict(self.run_case(rows, events)[1], "M1", "PASS")
+
+
 if __name__ == "__main__":
     unittest.main()
