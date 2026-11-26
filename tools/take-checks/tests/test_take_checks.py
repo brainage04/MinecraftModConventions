@@ -597,5 +597,39 @@ class TakeChecksTest(unittest.TestCase):
         self.assert_verdict(self.run_case(steady_rows(), [*boundaries(), *steps])[1], "P6", "NOT EVALUATED")
 
 
+    def test_i3_baritone_and_dot_stop_commands_from_chat_fail(self):
+        for command_text in ("#stop", ".cancel", "/release"):
+            command = event("command_sent", 1, 0.25, command_id="c", command=command_text, source="chat")
+            self.assert_verdict(self.run_case(steady_rows(), [*boundaries(), command])[1], "I3", "FAIL")
+
+    def test_i1_and_i3_need_a_command_text(self):
+        command = event("command_sent", 1, 0.25, command_id="c")
+        verdicts = self.run_case(steady_rows(), [*boundaries(), command])[1]
+        self.assert_verdict(verdicts, "I1", "NOT EVALUATED")
+        self.assert_verdict(verdicts, "I3", "NOT EVALUATED")
+
+    def test_i1_typing_after_command_sent_fails(self):
+        sent = event("command_sent", 2, 0.5, command_id="c", command="/x", source="hud")
+        typed = [event("command_typed", 1, 0.25, command_id="c", text="/"),
+                 event("command_typed", 3, 0.75, command_id="c", text="/x")]
+        self.assert_verdict(self.run_case(steady_rows(), [*boundaries(), sent, *typed])[1], "I1", "FAIL")
+
+    def test_m5_action_without_intent_is_not_evaluated(self):
+        action = event("action", 1, 0.25, action_id="a")
+        self.assert_verdict(self.run_case(steady_rows(), [*boundaries(), action])[1], "M5", "NOT EVALUATED")
+
+    def test_m5_target_missing_coordinates_is_not_evaluated(self):
+        intent = event("action_intent", 1, 0.25, action_id="a", target={"type": "block"})
+        action = event("action", 2, 0.5, action_id="a")
+        self.assert_verdict(self.run_case(steady_rows(), [*boundaries(), intent, action])[1],
+                            "M5", "NOT EVALUATED")
+
+    def test_m5_duplicate_action_id_is_not_evaluated(self):
+        intent = event("action_intent", 1, 0.25, action_id="a", target={"type": "entity", "entity_type": "minecraft:zombie"})
+        actions = [event("action", 2, 0.5, action_id="a"), event("action", 3, 0.75, action_id="a")]
+        self.assert_verdict(self.run_case(steady_rows(), [*boundaries(), intent, *actions])[1],
+                            "M5", "NOT EVALUATED")
+
+
 if __name__ == "__main__":
     unittest.main()
