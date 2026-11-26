@@ -59,6 +59,16 @@ for begin, finish, stage in windows:
     else:
         merged.append([begin, finish, stage])
 
+
+def source_fps(video):
+    rate = subprocess.run([
+        "ffprobe", "-v", "error", "-select_streams", "v:0",
+        "-show_entries", "stream=avg_frame_rate", "-of", "csv=p=0", str(video),
+    ], check=True, capture_output=True, text=True).stdout.strip()
+    numerator, denominator = rate.split("/")
+    return float(numerator) / float(denominator)
+
+
 def frame_count(video):
     return int(subprocess.run([
         "ffprobe", "-v", "error", "-count_frames", "-select_streams", "v:0",
@@ -76,6 +86,11 @@ def source_frame_times(video):
 
 
 source_times = source_frame_times(video_path)
+source_fps_value = source_fps(video_path)
+MAX_SOURCE_GAP_FRAMES = 1.5
+source_gaps = [later - earlier for earlier, later in zip(source_times, source_times[1:])]
+if any(gap > MAX_SOURCE_GAP_FRAMES / source_fps_value for gap in source_gaps):
+    raise SystemExit("the source has a PTS gap wider than one frame; renumbering would hide it")
 
 parts = []
 for index, (begin, finish, stage) in enumerate(merged):
@@ -102,11 +117,11 @@ for index, (begin, finish, stage) in enumerate(merged):
 
 listing = out_path.with_name(f"{out_path.stem}-concat.txt")
 listing.write_text("".join(f"file '{part.name}'\n" for part in parts))
-# A part's container duration can be one frame longer than its frame count, which leaves a 66.7 ms
-# step at a join. Renumber the joined video's PTS from the frame count so every join steps 33.3 ms.
+# A part's container duration can be one frame longer than its frame count, which leaves an extra
+# PTS step at a join. Renumber the joined video at the source frame rate so every join steps once.
 subprocess.run([
     "ffmpeg", "-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", str(listing),
-    "-vf", "setpts=N/30/TB", "-fps_mode", "passthrough",
+    "-vf", f"setpts=N/{source_fps_value}/TB", "-fps_mode", "passthrough",
     "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p",
     "-c:a", "aac", "-b:a", "128k", str(out_path),
 ], check=True)
