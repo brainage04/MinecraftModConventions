@@ -667,13 +667,23 @@ def check_p6(take: Take, config: Config) -> Result:
     open_steps: dict[tuple[str, str], Event] = {}
     durations: list[float] = []
     for event in take.events_of("screen_step"):
-        key = (str(event.get("sequence", "")), str(event.get("step", "")))
+        sequence, step = event.get("sequence"), event.get("step")
+        if not all(isinstance(value, str) and value.strip() for value in (sequence, step)):
+            return result("P6", "NOT EVALUATED", f"screen step at {event.seconds:.2f}s has no sequence and step", take,
+                          "screen_step needs sequence and step")
         phase = event.get("phase")
+        if phase not in {"start", "end"}:
+            return result("P6", "NOT EVALUATED", f"screen step at {event.seconds:.2f}s has phase {phase!r}", take,
+                          "screen_step phase must be start or end")
+        key = (sequence, step)
         if phase == "start":
+            if key in open_steps:
+                return result("P6", "NOT EVALUATED", f"screen step {key} starts twice", take,
+                              "screen_step has a duplicate open start")
             open_steps[key] = event
-        elif phase == "end" and key in open_steps:
+        elif key in open_steps:
             durations.append(event.seconds - open_steps.pop(key).seconds)
-        elif phase == "end":
+        else:
             return result("P6", "FAIL", f"screen step {key} ends at {event.seconds:.2f}s without a start", take)
     shortest = min(durations, default=math.inf)
     if shortest < threshold:
@@ -732,16 +742,26 @@ def check_i4(take: Take, config: Config) -> Result:
         return missing(take, "missing on-screen hud or chat stream")
     changes = take.events_of("setting_change")
     for change in changes:
-        setting = str(change.get("setting", ""))
+        setting = change.get("setting")
+        if not isinstance(setting, str) or not setting.strip():
+            return result("I4", "NOT EVALUATED", f"setting change at {change.seconds:.2f}s has no setting name", take,
+                          "setting_change.setting is missing")
         shown = False
+        wrong_value = False
         for event in take.events:
             if event.tick != change.tick:
                 continue
             if event.type == "hud":
                 values = event.get("values", {})
-                shown = shown or setting in values or setting in str(event.get("text", ""))
+                if isinstance(values, dict) and setting in values:
+                    shown = True
+                    if "value" in change.data and values[setting] != change.get("value"):
+                        wrong_value = True
+                shown = shown or setting in str(event.get("text", ""))
             elif event.type == "chat":
                 shown = shown or setting in str(event.get("text", ""))
+        if wrong_value:
+            return result("I4", "FAIL", f"HUD value for {setting!r} at {change.seconds:.2f}s does not match the setting change", take)
         if not shown:
             return result("I4", "FAIL", f"setting {setting!r} at {change.seconds:.2f}s has no same-tick on-screen line", take)
     return result("I4", "PASS", f"checked {len(changes)} setting changes", take)
@@ -944,7 +964,11 @@ def check_work_size(take: Take, config: Config) -> Result:
     plans = {str(event.get("stage_id", "")): event for event in take.events_of("work_plan")}
     placed: dict[str, list[Event]] = {}
     for event in take.events_of("block_change"):
-        if event.get("action") != "place":
+        action = event.get("action")
+        if action not in {"place", "break"}:
+            return result("Work size", "NOT EVALUATED", f"block_change at {event.seconds:.2f}s has action {action!r}", take,
+                          "block_change.action must be place or break")
+        if action != "place":
             continue
         stage_id = str(event.get("stage_id", ""))
         if not stage_id:
@@ -961,7 +985,10 @@ def check_work_size(take: Take, config: Config) -> Result:
             return result("Work size", "NOT EVALUATED", f"stage {stage_id} work_plan has no lava position", take,
                           f"stage {stage_id} lava position is missing")
         lava_position = tuple(map(float, lava))
-        required = int(plan.get("required_blocks", len(events)))
+        if "required_blocks" not in plan.data:
+            return result("Work size", "NOT EVALUATED", f"stage {stage_id} work_plan has no required_blocks", take,
+                          f"stage {stage_id} required_blocks is missing")
+        required = int(plan.get("required_blocks"))
         if len(events) > required + extra:
             return result("Work size", "FAIL", f"stage {stage_id} placed {len(events)} blocks, job needs {required}", take)
         for event in events:
@@ -1036,7 +1063,11 @@ def check_h2(take: Take, config: Config) -> Result:
     if not events:
         return missing(take, "hud stream declared but contains no HUD samples")
     for event in events:
-        if event.get("truncated") is True:
+        truncated = event.get("truncated")
+        if not isinstance(truncated, bool):
+            return result("H2", "NOT EVALUATED", f"HUD event at {event.seconds:.2f}s has no boolean truncated flag", take,
+                          "hud.truncated is missing or is not a boolean")
+        if truncated:
             return result("H2", "FAIL", f"HUD element {event.get('element')!r} is truncated at {event.seconds:.2f}s", take)
     return result("H2", "PASS", f"checked {len(hud_events(take))} HUD text samples", take)
 
