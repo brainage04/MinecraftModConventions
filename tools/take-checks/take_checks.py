@@ -462,23 +462,32 @@ def event_signature(event: Event) -> str:
 
 
 def visible_change_times(take: Take) -> list[float]:
-    changes = [take.start_seconds]
+    changes: list[float] = []
     previous = None
-    last_event_signatures: dict[str, str] = {}
+    last_event_signatures: dict[tuple[str, str], str] = {}
     for tick in take.ticks:
         signature = tick_signature(tick)
         if previous is not None and signature != previous:
             changes.append(tick.seconds)
         previous = signature
     for event in take.events:
-        if event.type not in {"chat", "hud", "block_change", "inventory"}:
-            continue
-        if event.type == "chat" and is_command_echo(event):
-            continue
-        signature = event_signature(event)
-        if last_event_signatures.get(event.type) != signature:
+        if event.type == "chat":
+            if not is_command_echo(event):
+                changes.append(event.seconds)
+        elif event.type == "hud":
+            key = ("hud", str(event.get("element", "")))
+            signature = event_signature(event)
+            if last_event_signatures.get(key) != signature:
+                changes.append(event.seconds)
+                last_event_signatures[key] = signature
+        elif event.type == "inventory":
+            signature = event_signature(event)
+            key = ("inventory", "")
+            if last_event_signatures.get(key) != signature:
+                changes.append(event.seconds)
+                last_event_signatures[key] = signature
+        elif event.type == "block_change" and event.get("before") != event.get("after"):
             changes.append(event.seconds)
-            last_event_signatures[event.type] = signature
     return sorted(set(changes))
 
 
