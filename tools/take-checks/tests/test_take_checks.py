@@ -553,5 +553,49 @@ class TakeChecksTest(unittest.TestCase):
         self.assert_verdict(verdicts, "H1", "FAIL")
 
 
+    def test_h2_missing_or_null_truncated_flag_is_not_evaluated(self):
+        missing_flag = hud()
+        del missing_flag["truncated"]
+        self.assert_verdict(self.run_case(steady_rows(), [*boundaries(), missing_flag])[1], "H2", "NOT EVALUATED")
+        self.assert_verdict(self.run_case(steady_rows(), [*boundaries(), hud(truncated=None)])[1], "H2", "NOT EVALUATED")
+
+    def test_work_size_missing_required_blocks_is_not_evaluated(self):
+        plan = event("work_plan", 0, 0.0, stage_id="stage", lava=[0, -60, 0])
+        place = event("block_change", 1, 0.25, stage_id="stage", action="place", x=1, y=-60, z=0,
+                      before="minecraft:air", after="minecraft:obsidian")
+        self.assert_verdict(self.run_case(steady_rows(), [*boundaries(), plan, place])[1],
+                            "Work size", "NOT EVALUATED")
+
+    def test_work_size_invalid_block_action_is_not_evaluated(self):
+        plan = event("work_plan", 0, 0.0, stage_id="stage", lava=[0, -60, 0], required_blocks=1)
+        change = event("block_change", 1, 0.25, stage_id="stage", action="destroyed", x=1, y=-60, z=0,
+                       before="minecraft:obsidian", after="minecraft:air")
+        self.assert_verdict(self.run_case(steady_rows(), [*boundaries(), plan, change])[1],
+                            "Work size", "NOT EVALUATED")
+
+    def test_i4_empty_setting_is_not_evaluated(self):
+        change = event("setting_change", 1, 0.25, setting="", value=True)
+        self.assert_verdict(self.run_case(steady_rows(), [*boundaries(), change, hud(1, 0.25)])[1],
+                            "I4", "NOT EVALUATED")
+
+    def test_i4_wrong_hud_setting_value_fails(self):
+        change = event("setting_change", 1, 0.25, setting="sprint", value=True)
+        shown = hud(1, 0.25, values={"sprint": False})
+        self.assert_verdict(self.run_case(steady_rows(), [*boundaries(), change, shown])[1], "I4", "FAIL")
+
+    def test_p6_malformed_steps_are_not_evaluated(self):
+        missing = [event("screen_step", 0, 0.0, step="1", phase="start"),
+                   event("screen_step", 4, 1.0, step="1", phase="end")]
+        unknown = [event("screen_step", 0, 0.0, sequence="craft", step="1", phase="middle")]
+        for steps in (missing, unknown):
+            self.assert_verdict(self.run_case(steady_rows(), [*boundaries(), *steps])[1], "P6", "NOT EVALUATED")
+
+    def test_p6_duplicate_open_start_is_not_evaluated(self):
+        steps = [event("screen_step", 0, 0.0, sequence="craft", step="1", phase="start"),
+                 event("screen_step", 1, 0.25, sequence="craft", step="1", phase="start"),
+                 event("screen_step", 4, 1.0, sequence="craft", step="1", phase="end")]
+        self.assert_verdict(self.run_case(steady_rows(), [*boundaries(), *steps])[1], "P6", "NOT EVALUATED")
+
+
 if __name__ == "__main__":
     unittest.main()
