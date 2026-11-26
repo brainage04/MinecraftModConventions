@@ -128,7 +128,7 @@ MMC's stage helper prints `STAGE_START <epoch ms> <id>` and `STAGE_END <epoch ms
 | I4 | Every setting change has a same-tick on-screen line | Implemented. Needs `setting_change` plus HUD or chat. |
 | C4 | No turn over 30 degrees followed by 1 s without activity | Implemented from tick rotation, movement, actions and crosshair target. |
 | M5 | Crosshair holds the intended target at intent and action | Implemented. Needs `action_intent`, `action` and crosshair samples. |
-| M1 | No rotation or speed sign flip within 3 ticks | Implemented from tick deltas. |
+| M1 | No rotation or speed sign flip within 3 ticks | Implemented from tick deltas. The config deadband ignores small deltas, each stage is checked separately, and speed loss while airborne is not a reversal. |
 | M2 | Moving feet keep more than 1 block clearance from nearby hazards | Implemented. Needs the three measured hazard-distance columns from step 2/3. |
 | M3 | Sneaking matches an adjacent drop on every tick | Implemented. Needs `drop_adjacent` from step 2/3. |
 | Path | Path length stays within 1.5 times the optimum | Implemented. Uses `planned_path` when present, otherwise the straight-line distance. |

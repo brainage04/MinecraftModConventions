@@ -873,10 +873,10 @@ def check_m5(take: Take, config: Config) -> Result:
     return result("M5", "PASS", f"checked {len(intents)} action intents", take)
 
 
-def sign_flip(series: list[tuple[int, float]], window_ticks: int) -> tuple[int, float] | None:
+def sign_flip(series: list[tuple[int, float]], window_ticks: int, deadband: float) -> tuple[int, float] | None:
     previous: tuple[int, float] | None = None
     for item in series:
-        if item[1] == 0.0:
+        if abs(item[1]) <= deadband:
             continue
         if previous and (previous[1] > 0.0) != (item[1] > 0.0) and item[0] - previous[0] <= window_ticks:
             return item[0], item[1]
@@ -884,13 +884,31 @@ def sign_flip(series: list[tuple[int, float]], window_ticks: int) -> tuple[int, 
     return None
 
 
+def stage_tick_groups(take: Take) -> list[list[Tick]]:
+    if not take.stages:
+        return [take.ticks]
+    groups: list[list[Tick]] = [[] for _ in take.stages]
+    for tick in take.ticks:
+        index = next((position for position, stage in enumerate(take.stages)
+                      if stage.start.seconds <= tick.seconds <= stage.end_seconds), None)
+        if index is not None:
+            groups[index].append(tick)
+    return groups
+
+
 def check_m1(take: Take, config: Config) -> Result:
     window = int(config.value("M1"))
-    yaw = [(tick.tick, tick.yaw_delta) for tick in take.ticks]
-    pitch = [(tick.tick, tick.pitch_delta) for tick in take.ticks]
-    speed = [(take.ticks[index].tick, take.ticks[index].speed - take.ticks[index - 1].speed)
-             for index in range(1, len(take.ticks))]
-    flips = [flip for flip in (sign_flip(yaw, window), sign_flip(pitch, window), sign_flip(speed, window)) if flip]
+    deadband = config.value("M1", "deadband")
+    flips: list[tuple[int, float]] = []
+    for ticks in stage_tick_groups(take):
+        yaw = [(tick.tick, tick.yaw_delta) for tick in ticks]
+        pitch = [(tick.tick, tick.pitch_delta) for tick in ticks]
+        speed = [(current.tick, current.speed - previous.speed)
+                 for previous, current in zip(ticks, ticks[1:])
+                 if not (not previous.on_ground and not current.on_ground and current.speed < previous.speed)]
+        flips.extend(flip for flip in (sign_flip(yaw, window, deadband),
+                                       sign_flip(pitch, window, deadband),
+                                       sign_flip(speed, window, deadband)) if flip)
     if flips:
         tick_number, value = min(flips, key=lambda item: item[0])
         return result("M1", "FAIL", f"rotation or speed sign flip at tick {tick_number} ({value:.6f}) within {window} ticks", take)

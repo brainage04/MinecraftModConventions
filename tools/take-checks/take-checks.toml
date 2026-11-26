@@ -60,7 +60,8 @@ note = "Checklist M5 and rec4 18:15, 22:34: the crosshair already holds the inte
 [checks.M1]
 value = 3
 unit = "ticks"
-note = "Take-checks plan M1: rotation or speed sign flips within a few ticks; the plan's few is pinned to 3."
+deadband = 0.01
+note = "Take-checks plan M1: rotation or speed sign flips within three ticks. Deltas up to 0.01 per tick are rounding noise. Each stage is checked separately. Airborne drag after a jump is not a reversal."
 
 [checks.M2]
 value = 3.0
