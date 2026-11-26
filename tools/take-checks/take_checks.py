@@ -563,8 +563,8 @@ def missing(take: Take, reason: str) -> Result:
 def check_p1(take: Take, config: Config) -> Result:
     if not take.stages:
         return missing(take, "missing stream stage_start")
-    if not take.has_streams("chat", "command_typed", "command_sent", "marker"):
-        return missing(take, "missing event manifest streams chat, command_typed, command_sent, marker")
+    if not take.has_streams("chat", "command_typed", "command_sent"):
+        return missing(take, "missing event manifest streams chat, command_typed, command_sent")
     threshold = config.value("P1")
     worst_delay = -1.0
     worst_stage = ""
@@ -1202,6 +1202,8 @@ def check_h5(take: Take, config: Config) -> Result:
     if not take.has_streams("damage", "hud"):
         return missing(take, "missing damage or hud stream")
     damage = take.events_of("damage")
+    if not hud_events(take):
+        return missing(take, "hud stream declared but contains no HUD samples")
     hud_by_tick: dict[int, list[dict[str, Any]]] = {}
     for event in hud_events(take):
         values = event.get("values", {})
@@ -1209,7 +1211,7 @@ def check_h5(take: Take, config: Config) -> Result:
             hud_by_tick.setdefault(event.tick, []).append(values)
     for event in damage:
         expected = event.get("values")
-        if not isinstance(expected, dict):
+        if not isinstance(expected, dict) or not expected:
             return result("H5", "NOT EVALUATED", f"damage at {event.seconds:.2f}s has no expected HUD values", take,
                           "damage event values are missing")
         actual: dict[str, Any] = {}

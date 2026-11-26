@@ -43,13 +43,13 @@ The first event is a `manifest` with `streams`, the names of the event streams t
 | Type | Fields beyond `tick`, `seconds`, `type` | Used by |
 | --- | --- | --- |
 | `manifest` | `streams`, optional `role`, `take_id`, `pair_id` | Stream completeness, B4, B5 |
-| `stage_start`, `stage_end` | `stage_id` | P1-P6, Path, Work size |
+| `stage_start`, `stage_end` | `stage_id` | P1-P5, Path, Work size |
 | `chat` | `text` | P1, P4, P5, I4, N3 |
 | `command_typed` | `command_id`, growing `text` prefix | P1, I1 |
 | `command_sent` | `command_id`, `command`, `source` (`chat` or `hud`), optional `target` | P1, P5, I1, I3, N3 |
 | `block_change` | `stage_id`, `x`, `y`, `z`, `before`, `after`, `action` (`place` or `break`) | P4, P5, Work size |
 | `hud` | `element`, `rect`, `screen`, `text`, `scale`, `truncated`, `values` | P4, P5, I4, H1-H5 |
-| `marker` | `reason`, `pause_s` | P1, P4, N3 |
+| `marker` | `reason`, `pause_s` | P4, N3 |
 | `goal_reached`, `failure` | `stage_id`, `reason` | P2, P3 |
 | `inventory` | `stage_id`, `slots` or changed item fields | P4, P5 |
 | `screen_step` | `sequence`, `step`, `phase` (`start` or `end`) | P6 |
@@ -138,7 +138,7 @@ MMC's stage helper prints `STAGE_START <epoch ms> <id>` and `STAGE_END <epoch ms
 | H2 | HUD text wraps instead of truncating | Implemented. Needs `hud.truncated`. |
 | H3 | Same-tick HUD rectangles do not overlap | Implemented. Needs `hud` rectangles. |
 | H4 | All HUD samples use one GUI scale | Implemented. Needs `hud.scale`. |
-| H5 | HUD values change on the damage event's tick | Implemented. Needs `damage.values` and `hud.values`. |
+| H5 | HUD values change on the damage event's tick | Implemented. Needs non-empty `damage.values` and HUD samples with `values`. |
 | B1 | Before and after takes start from the same blocks | Not implemented. Needs paired start snapshots and a pair runner from step 3. |
 | B6 | Before and after takes use the same position and command | Not implemented. Needs paired start positions and commands from step 3. |
 | B3 | Before and after takes have different visible outcomes | Not implemented. Needs paired outcomes from step 3. |
