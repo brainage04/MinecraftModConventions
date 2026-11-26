@@ -174,6 +174,41 @@ class TakeChecksTest(unittest.TestCase):
         self.assert_verdict(late, "P3", "FAIL")
         self.assert_verdict(early, "P3", "PASS")
 
+    def test_p2_p3_match_stage_id_at_a_shared_boundary(self):
+        events = [event("stage_start", 0, 0.0, stage_id="one"),
+                  event("stage_end", 4, 1.0, stage_id="one"),
+                  event("stage_start", 4, 1.0, stage_id="two"),
+                  event("stage_end", 8, 2.0, stage_id="two"),
+                  event("failure", 4, 1.0, stage_id="two", reason="boom"),
+                  event("goal_reached", 4, 1.0, stage_id="two", reason="lit")]
+        verdicts = self.run_case(steady_rows(2.0), events)[1]
+        self.assert_verdict(verdicts, "P2", "FAIL")
+        self.assert_verdict(verdicts, "P3", "FAIL")
+
+    def test_p2_p3_need_a_stage_end(self):
+        events = [event("stage_start", 0, 0.0, stage_id="stage"),
+                  event("failure", 7, 1.75, reason="boom"),
+                  event("goal_reached", 7, 1.75, reason="lit")]
+        streams = set(BASE_STREAMS) - {"stage_end"}
+        verdicts = self.run_case(steady_rows(2.0), events, streams=streams)[1]
+        self.assert_verdict(verdicts, "P2", "NOT EVALUATED")
+        self.assert_verdict(verdicts, "P3", "NOT EVALUATED")
+
+    def test_p2_ignores_a_stage_end_that_precedes_its_start(self):
+        events = [event("stage_end", 0, 1.0, stage_id="stage"),
+                  event("stage_start", 1, 1.0, stage_id="stage"),
+                  event("failure", 2, 0.5, stage_id="stage", reason="boom")]
+        self.assert_verdict(self.run_case(steady_rows(2.0), events)[1], "P2", "NOT EVALUATED")
+
+    def test_p5_uses_stage_id_at_a_shared_boundary(self):
+        events = [event("stage_start", 0, 0.0, stage_id="one"),
+                  event("stage_end", 4, 1.0, stage_id="one"),
+                  event("stage_start", 4, 1.0, stage_id="two"),
+                  event("stage_end", 8, 2.0, stage_id="two"),
+                  event("command_sent", 4, 1.0, command_id="c", command="/x", source="hud", stage_id="two"),
+                  hud(6, 1.5, text="done")]
+        self.assert_verdict(self.run_case(steady_rows(2.0), events)[1], "P5", "PASS")
+
     def test_p4_dead_time_fails_and_visible_change_passes(self):
         rows = steady_rows(6.0)
         late = self.run_case(rows, [*boundaries(6.0), hud(0, 0.0), hud(24, 6.0, text="done")])[1]
