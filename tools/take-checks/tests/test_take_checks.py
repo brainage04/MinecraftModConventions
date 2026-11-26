@@ -702,5 +702,27 @@ class TakeChecksTest(unittest.TestCase):
             self.assertEqual(2, completed.returncode, completed.stdout + completed.stderr)
 
 
+    def test_invalid_secondary_config_key_exits_two(self):
+        broken = CONFIG.read_text(encoding="utf-8").replace("follow_s = 1.0", "folow_s = 1.0", 1)
+        completed, _ = self.run_case(steady_rows(), boundaries(), config_text=broken)
+        self.assertEqual(2, completed.returncode, completed.stdout + completed.stderr)
+
+    def test_unsorted_tick_rows_derive_deltas_in_time_order(self):
+        rows = [tick(2, 0.5, yaw=1.0), tick(0, 0.0, yaw=-1.0), tick(1, 0.25, yaw=0.0)]
+        self.assert_verdict(self.run_case(rows, boundaries())[1], "M1", "PASS")
+
+    def test_nan_hazard_distance_is_invalid(self):
+        rows = self.hazard_rows(1.0)
+        for row in rows:
+            row["drop_distance_blocks"] = "nan"
+        completed, _ = self.run_case(rows, boundaries())
+        self.assertEqual(2, completed.returncode, completed.stdout + completed.stderr)
+
+    def test_null_frame_present_id_is_invalid(self):
+        frame = event("frame", 0, 0.0, capture_index=0, present_id=None)
+        completed, _ = self.run_case(steady_rows(), [*boundaries(), frame])
+        self.assertEqual(2, completed.returncode, completed.stdout + completed.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()
