@@ -561,7 +561,7 @@ A mod that depends on an owned library that is not on Maven Central (BrainageLib
 
 ```yaml
     with:
-      prepare_siblings: BrainageLib@release/2.0.0 MinecraftModConventions@v3.5.1
+      prepare_siblings: BrainageLib@release/2.0.0 MinecraftModConventions@v3.5.0
 ```
 
 A pinned entry is fetched at depth 1 and checked out detached, so the build sees exactly that commit; a bare `Name` clones the default branch as before. Pinning this repository's own plugin works when the consumer's `settings.gradle` resolves it from `../MinecraftModConventions/build/local-repo` (every mod generated from the templates lists it in `pluginManagement`), because the step publishes both the runtime library and the Gradle plugins into that repository.
