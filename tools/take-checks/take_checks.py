@@ -371,12 +371,16 @@ def build_stages(events: list[Event], take_end: float) -> list[Stage]:
     starts = events_of_type(events, "stage_start")
     ends = events_of_type(events, "stage_end")
     stages: list[Stage] = []
+    used_ends: set[int] = set()
     for start in starts:
         stage_id = str(start.get("stage_id", ""))
         if not stage_id:
             raise InputError(f"stage_start event {start.index} needs stage_id")
-        end = next((event for event in ends if event.seconds >= start.seconds
+        end = next((event for event in ends if event.index not in used_ends
+                    and event.index > start.index and event.seconds >= start.seconds
                     and str(event.get("stage_id", "")) == stage_id), None)
+        if end is not None:
+            used_ends.add(end.index)
         stages.append(Stage(stage_id, start, end, end.seconds if end else take_end))
     return stages
 
@@ -563,8 +567,17 @@ def check_p1(take: Take, config: Config) -> Result:
     return result("P1", "PASS", f"slowest first action {worst_delay:.2f}s in stage {worst_stage}, limit {threshold:.2f}s", take)
 
 
+def matching_stage(take: Take, event: Event) -> Stage | None:
+    stage_id = event.get("stage_id")
+    candidates = ([stage for stage in take.stages if stage_id is not None
+                   and stage.stage_id == str(stage_id)]
+                  or [stage for stage in take.stages
+                      if stage.start.seconds <= event.seconds <= stage.end_seconds])
+    return max(candidates, key=lambda stage: (stage.start.seconds, stage.start.index), default=None)
+
+
 def stop_delay(take: Take, event: Event, threshold: float) -> tuple[str, float, float]:
-    stage = next((stage for stage in take.stages if stage.start.seconds <= event.seconds <= stage.end_seconds), None)
+    stage = matching_stage(take, event)
     stop = stage.end if stage and stage.end else None
     stop_time = stop.seconds if stop else take.end_seconds
     delay = stop_time - event.seconds
@@ -573,8 +586,10 @@ def stop_delay(take: Take, event: Event, threshold: float) -> tuple[str, float, 
 
 
 def check_stop(take: Take, config: Config, check_id: str, event_type: str, stream_name: str) -> Result:
-    if not take.has_streams(stream_name):
-        return missing(take, f"missing stream {stream_name}")
+    if not take.has_streams(stream_name, "stage_end"):
+        return missing(take, f"missing stream {stream_name} or stage_end")
+    if not take.stages or any(stage.end is None for stage in take.stages):
+        return missing(take, "stage_end is missing for a stage")
     threshold = config.value(check_id)
     events = take.events_of(event_type)
     if not events:
@@ -623,7 +638,7 @@ def check_p5(take: Take, config: Config) -> Result:
     worst_delay = -1.0
     worst_command = ""
     for command in commands:
-        stage = next((stage for stage in take.stages if stage.start.seconds <= command.seconds <= stage.end_seconds), None)
+        stage = matching_stage(take, command)
         available_end = stage.end_seconds if stage else take.end_seconds
         effect = next((time for time in changes if command.seconds <= time <= available_end), None)
         if effect is None:
