@@ -88,7 +88,7 @@ note = "Checklist rec4 18:15: portal scaffold is 1-2 blocks from lava and places
 [checks.N3]
 value = 1
 unit = "ticks"
-note = "Checklist N3 and 18nov A-1419: movement has input or an explanation; one tick allows input-to-motion delay."
+note = "Checklist N3 and 18nov A-1419: movement has input or an explanation within one tick. A movement key on the previous tick explains the delay."
 
 [checks.H1]
 value = 1

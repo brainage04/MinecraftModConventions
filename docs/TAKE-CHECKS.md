@@ -54,7 +54,7 @@ The first event is a `manifest` with `streams`, the names of the event streams t
 | `inventory` | `stage_id`, `slots` or changed item fields | P4, P5 |
 | `screen_step` | `sequence`, `step`, `phase` (`start` or `end`) | P6 |
 | `setting_change` | `stage_id`, `setting`, `value` | I4 |
-| `action_intent`, `action` | `action_id`, `stage_id`; intent also has `target` | M5 |
+| `action_intent`, `action` | `action_id`, `stage_id`. The intent also has `target` | M5 |
 | `damage` | `stage_id`, `amount`, `values` | H5, B4 |
 | `retry` | `stage_id`, `reason` | B5 |
 | `landing` | `stage_id`, `x`, `y`, `z` | B5 |
@@ -118,24 +118,24 @@ MMC's stage helper prints `STAGE_START <epoch ms> <id>` and `STAGE_END <epoch ms
 | Id | Requirement | Implementation and data |
 | --- | --- | --- |
 | P1 | First movement, command or chat line within 0.5 s of stage start | Implemented. Needs ticks, stage boundaries and the manifest's action streams. |
-| P2 | Stop within 0.5 s of a failure line | Implemented. Needs `failure` and stage end. |
-| P3 | Stop within 0.5 s of goal reached | Implemented. Needs `goal_reached` and stage end. |
-| P4 | No unmarked stretch over 5 s without visible change | Implemented. Needs ticks plus chat, HUD text, inventory and block-change streams. Prints marked pauses. |
-| P5 | First visible command effect within 1 s | Implemented. Needs `command_sent` and visible-change streams. |
-| P6 | Each craft, anvil or place step stays visible for at least 0.5 s | Implemented. Needs paired `screen_step` events. |
-| I1 | Every command grows one visible character per tick | Implemented. Needs `command_typed` and `command_sent`. |
-| I3 | Stop, release and cancel commands use the HUD | Implemented. Needs `command_sent.source`. |
-| I4 | Every setting change has a same-tick on-screen line | Implemented. Needs `setting_change` plus HUD or chat. |
+| P2 | Stop within 0.5 s of a failure line | Implemented. Needs `failure` and a matched `stage_end` for every stage. `stage_id` selects the stage at a shared boundary. |
+| P3 | Stop within 0.5 s of goal reached | Implemented. Needs `goal_reached` and a matched `stage_end` for every stage. `stage_id` selects the stage at a shared boundary. |
+| P4 | No unmarked stretch over 5 s without visible change | Implemented. A change is a new HUD element state, chat line, inventory snapshot or block change whose before and after differ. Prints marked pauses. |
+| P5 | First visible command effect within 1 s | Implemented. Compares `command_sent` with the next real visible change in the command's stage. An earlier failure stays a FAIL when a later command has an incomplete window. |
+| P6 | Each craft, anvil or place step stays visible for at least 0.5 s | Implemented. Needs paired, well-formed `screen_step` events. An earlier short step stays a FAIL when a later step is still open. |
+| I1 | Every command grows one visible character per tick | Implemented. Needs `command_typed` and `command_sent`. Typing must finish by the send tick. |
+| I3 | Stop, release and cancel commands use the HUD | Implemented. Needs `command_sent.source`. Leading `/`, `#` and `.` are stripped before matching stop words. |
+| I4 | Every setting change has a same-tick on-screen line | Implemented. Needs `setting_change` plus HUD or chat. A shown HUD value must match `setting_change.value`. |
 | C4 | No turn over 30 degrees followed by 1 s without activity | Implemented from tick rotation, movement, actions and crosshair target. A follow window past the last tick sample is NOT EVALUATED, even when a later event extends the take. |
-| M5 | Crosshair holds the intended target at intent and action | Implemented. Needs `action_intent`, `action` and crosshair samples. |
+| M5 | Crosshair holds the intended target at intent and action | Implemented. Needs `action_intent`, `action` and crosshair samples. Missing or duplicate action ids and incomplete targets are NOT EVALUATED. |
 | M1 | No rotation or speed sign flip within 3 ticks | Implemented from tick deltas. The config deadband ignores small deltas, each stage is checked separately, and speed loss while airborne is not a reversal. |
 | M2 | Moving feet keep more than 1 block clearance from nearby hazards | Implemented. Needs the three measured hazard-distance columns from step 2/3. |
 | M3 | Sneaking matches an adjacent drop on every tick | Implemented. Needs `drop_adjacent` from step 2/3. |
-| Path | Path length stays within 1.5 times the optimum | Implemented. Uses `planned_path` when present, otherwise the straight-line distance. |
-| Work size | Scaffold stays within 2 blocks of lava and adds no more blocks than needed | Implemented. Needs `work_plan` and `block_change`. |
-| N3 | Movement has input or an explanation within 1 tick | Implemented. Needs ticks and explanation streams. |
+| Path | Path length stays within 1.5 times the optimum | Implemented. Uses `planned_path` when present, otherwise the straight-line distance. An earlier failing stage stays a FAIL when a later stage is incomplete. |
+| Work size | Scaffold stays within 2 blocks of lava and adds no more blocks than needed | Implemented. Needs `work_plan.required_blocks` and `place` or `break` on every `block_change`. |
+| N3 | Movement has input or an explanation within 1 tick | Implemented. A movement key within the configured window explains delayed motion. Command, intent and `movement_cause` events explain other motion. Pause markers, chat and attack or use do not. |
 | H1 | Every HUD rectangle stays inside the screen | Implemented. Needs `hud` rectangles. |
-| H2 | HUD text wraps instead of truncating | Implemented. Needs `hud.truncated`. |
+| H2 | HUD text wraps instead of truncating | Implemented. Needs a boolean `hud.truncated` on every sample. |
 | H3 | Same-tick HUD rectangles do not overlap | Implemented. Needs `hud` rectangles. |
 | H4 | All HUD samples use one GUI scale | Implemented. Needs `hud.scale`. |
 | H5 | HUD values change on the damage event's tick | Implemented. Needs non-empty `damage.values` and HUD samples with `values`. |
