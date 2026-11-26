@@ -654,5 +654,31 @@ class TakeChecksTest(unittest.TestCase):
         self.assert_verdict(self.run_case(rows, events)[1], "M1", "PASS")
 
 
+    def test_b5_treading_water_is_not_a_final_fall(self):
+        rows = steady_rows()
+        rows[-1].update(on_ground=0, vel_y=-0.1, fall_distance=2.0, in_water=1, swimming=0)
+        self.assert_verdict(self.run_case(rows, boundaries(), role="after")[1], "B5", "PASS")
+
+    def test_b5_final_fall_in_an_earlier_stage_fails(self):
+        rows = [tick(0, 0.0), tick(1, 0.25), tick(3, 0.75, on_ground=0, vel_y=-1.0, fall_distance=2.0),
+                tick(4, 1.0)]
+        events = [event("stage_start", 0, 0.0, stage_id="one"),
+                  event("stage_end", 3, 0.75, stage_id="one"),
+                  event("stage_start", 3, 0.75, stage_id="two"),
+                  event("stage_end", 4, 1.0, stage_id="two")]
+        self.assert_verdict(self.run_case(rows, events, role="after")[1], "B5", "FAIL")
+
+    def test_b5_landing_without_coordinates_is_invalid(self):
+        landing = event("landing", 1, 0.25)
+        completed, _ = self.run_case(steady_rows(), [*boundaries(), landing], role="after")
+        self.assertEqual(2, completed.returncode, completed.stdout + completed.stderr)
+
+    def test_b5_repeated_landings_in_one_block_fail(self):
+        landings = [event("landing", 1, 0.25, x=0.1, y=-60.2, z=0.9),
+                    event("landing", 2, 0.5, x=0.8, y=-60.8, z=0.2)]
+        self.assert_verdict(self.run_case(steady_rows(), [*boundaries(), *landings], role="after")[1],
+                            "B5", "FAIL")
+
+
 if __name__ == "__main__":
     unittest.main()
