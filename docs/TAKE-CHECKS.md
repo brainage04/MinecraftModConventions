@@ -15,7 +15,7 @@ A check with missing data never passes. The event file's `manifest` declares whi
 
 ## Configuration
 
-Every threshold lives in `tools/take-checks/take-checks.toml`. Each check has one entry with `value`, `unit` and `note`. Checks with two thresholds keep both in that entry, such as C4's `value` in degrees and `follow_s` in seconds. Changing a threshold is a one-line edit. Rule checks use `value = 1` and `unit = "rule"` because they have no numeric threshold.
+Every threshold lives in `tools/take-checks/take-checks.toml`. Each check has one entry with `value`, `unit` and `note`. Checks with two thresholds keep both in that entry, such as C4's `value` in degrees and `follow_s` in seconds. Changing a threshold is a one-line edit. Rule checks use `value = 1` and `unit = "rule"` because they have no numeric threshold. Missing or misspelled secondary keys, non-finite numbers and missing numeric event fields exit 2.
 
 P1, P2 and P3 use 0.5 s. Thomas approved that trial on 26 Nov 2026. The other plan values remain 5 s, 30 degrees, 1 block and a 1.5 path-length ratio.
 

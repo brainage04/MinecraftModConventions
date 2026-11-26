@@ -47,6 +47,13 @@ HAZARD_COLUMNS = {
 }
 MOVEMENT_KEYS = ("forward", "back", "left", "right", "jump")
 STOP_WORDS = {"stop", "cancel", "release"}
+SECONDARY_CONFIG = {
+    "C4": ("follow_s",),
+    "M1": ("deadband",),
+    "M2": ("clearance_blocks",),
+    "Work size": ("max_extra_blocks",),
+    "B5": ("max_landings",),
+}
 
 
 class InputError(ValueError):
@@ -183,14 +190,31 @@ class Config:
         return float(self.checks[check_id][key])
 
 
+def finite_float(value: Any, label: str) -> float:
+    try:
+        result = float(value)
+    except (TypeError, ValueError) as error:
+        raise InputError(f"{label} must be numeric") from error
+    if not math.isfinite(result):
+        raise InputError(f"{label} must be finite")
+    return result
+
+
+def event_number(event: Event, key: str, default: Any = None) -> float:
+    value = event.get(key, default)
+    if value is None:
+        raise InputError(f"event {event.index} needs numeric {key}")
+    return finite_float(value, f"event {event.index} {key}")
+
+
 def number(row: dict[str, str], key: str, default: float = 0.0) -> float:
     value = row.get(key, "")
-    return default if value == "" else float(value)
+    return default if value == "" else finite_float(value, f"tick column {key}")
 
 
 def integer(row: dict[str, str], key: str, default: int = 0) -> int:
     value = row.get(key, "")
-    return default if value == "" else int(float(value))
+    return default if value == "" else int(finite_float(value, f"tick column {key}"))
 
 
 def boolean(row: dict[str, str], key: str, default: bool = False) -> bool:
@@ -206,12 +230,12 @@ def boolean(row: dict[str, str], key: str, default: bool = False) -> bool:
 
 def optional_number(row: dict[str, str], key: str) -> float | None:
     value = row.get(key, "")
-    return None if value == "" else float(value)
+    return None if value == "" else finite_float(value, f"tick column {key}")
 
 
 def optional_integer(row: dict[str, str], key: str) -> int | None:
     value = row.get(key, "")
-    return None if value == "" else int(float(value))
+    return None if value == "" else int(finite_float(value, f"tick column {key}"))
 
 
 def load_config(path: Path) -> Config:
@@ -229,15 +253,17 @@ def load_config(path: Path) -> Config:
         for key in ("value", "unit", "note"):
             if key not in row:
                 raise InputError(f"{path}: [checks.{check_id}] is missing {key}")
-        try:
-            float(row["value"])
-        except (TypeError, ValueError) as error:
-            raise InputError(f"{path}: [checks.{check_id}].value must be numeric") from error
+        finite_float(row["value"], f"{path}: [checks.{check_id}].value")
+        for key in SECONDARY_CONFIG.get(check_id, ()):
+            if key not in row:
+                raise InputError(f"{path}: [checks.{check_id}] is missing {key}")
+            finite_float(row[key], f"{path}: [checks.{check_id}].{key}")
     return Config(dict(rows))
 
 
 def event_origin(events: list[Event]) -> float | None:
-    millis = [float(event.data["time_millis"]) for event in events if "time_millis" in event.data]
+    millis = [finite_float(event.data["time_millis"], f"event {event.index} time_millis")
+              for event in events if "time_millis" in event.data]
     return min(millis) if millis else None
 
 
@@ -267,9 +293,9 @@ def load_events(path: Path) -> list[Event]:
     origin = event_origin(events)
     for event in events:
         if "seconds" in event.data:
-            event.seconds = float(event.data["seconds"])
+            event.seconds = finite_float(event.data["seconds"], f"event {event.index} seconds")
         elif "time_millis" in event.data and origin is not None:
-            event.seconds = (float(event.data["time_millis"]) - origin) / 1000.0
+            event.seconds = (finite_float(event.data["time_millis"], f"event {event.index} time_millis") - origin) / 1000.0
         else:
             raise InputError(f"{path}: event {event.index} needs seconds or time_millis")
         if event.type == "marker" and not str(event.get("reason", "")).strip():
@@ -278,7 +304,7 @@ def load_events(path: Path) -> list[Event]:
 
 
 def load_ticks(path: Path, origin_millis: float | None) -> tuple[list[Tick], bool]:
-    ticks: list[Tick] = []
+    parsed_rows: list[tuple[Tick, bool, bool]] = []
     with path.open(newline="", encoding="utf-8") as source:
         reader = csv.DictReader(source)
         columns = set(reader.fieldnames or ())
@@ -288,36 +314,31 @@ def load_ticks(path: Path, origin_millis: float | None) -> tuple[list[Tick], boo
         has_seconds = "seconds" in columns or "time_seconds" in columns
         if not has_seconds and "time_millis" not in columns:
             raise InputError(f"{path}: ticks need seconds, time_seconds or time_millis")
-        first_tick_millis = None
         rows = list(reader)
+        first_tick_millis = None
         if not has_seconds and rows:
-            first_tick_millis = float(rows[0]["time_millis"])
+            first_tick_millis = finite_float(rows[0]["time_millis"], f"{path}: first time_millis")
         clock_origin = origin_millis if origin_millis is not None else first_tick_millis
-        previous_yaw: float | None = None
-        previous_pitch: float | None = None
         for line_number, row in enumerate(rows, 2):
             try:
                 if "seconds" in row:
-                    seconds = float(row["seconds"])
+                    seconds = finite_float(row["seconds"], f"{path}:{line_number}: seconds")
                 elif "time_seconds" in row:
-                    seconds = float(row["time_seconds"])
+                    seconds = finite_float(row["time_seconds"], f"{path}:{line_number}: time_seconds")
                 else:
                     if clock_origin is None:
                         raise InputError(f"{path}:{line_number}: cannot resolve tick seconds")
-                    seconds = (float(row["time_millis"]) - clock_origin) / 1000.0
+                    seconds = (finite_float(row["time_millis"], f"{path}:{line_number}: time_millis")
+                               - clock_origin) / 1000.0
                 yaw = number(row, "yaw")
                 pitch = number(row, "pitch")
                 yaw_delta = optional_number(row, "yaw_delta")
                 pitch_delta = optional_number(row, "pitch_delta")
-                if yaw_delta is None:
-                    yaw_delta = wrap_degrees(yaw - previous_yaw) if previous_yaw is not None else 0.0
-                if pitch_delta is None:
-                    pitch_delta = pitch - previous_pitch if previous_pitch is not None else 0.0
                 hit_x = optional_integer(row, "hit_block_x")
                 hit_y = optional_integer(row, "hit_block_y")
                 hit_z = optional_integer(row, "hit_block_z")
                 drop_adjacent = row.get("drop_adjacent", "")
-                ticks.append(Tick(
+                parsed_rows.append((Tick(
                     tick=integer(row, "tick"),
                     seconds=seconds,
                     x=number(row, "pos_x"),
@@ -328,8 +349,8 @@ def load_ticks(path: Path, origin_millis: float | None) -> tuple[list[Tick], boo
                     vz=number(row, "vel_z"),
                     yaw=yaw,
                     pitch=pitch,
-                    yaw_delta=float(yaw_delta),
-                    pitch_delta=float(pitch_delta),
+                    yaw_delta=yaw_delta if yaw_delta is not None else 0.0,
+                    pitch_delta=pitch_delta if pitch_delta is not None else 0.0,
                     on_ground=boolean(row, "on_ground"),
                     in_water=boolean(row, "in_water"),
                     swimming=boolean(row, "swimming"),
@@ -358,13 +379,19 @@ def load_ticks(path: Path, origin_millis: float | None) -> tuple[list[Tick], boo
                     lava_distance=optional_number(row, "lava_distance_blocks"),
                     void_distance=optional_number(row, "void_distance_blocks"),
                     drop_adjacent=None if drop_adjacent == "" else boolean(row, "drop_adjacent"),
-                ))
+                ), yaw_delta is not None, pitch_delta is not None))
             except (TypeError, ValueError) as error:
                 raise InputError(f"{path}:{line_number}: invalid tick value: {error}") from error
-            previous_yaw = yaw
-            previous_pitch = pitch
-    ticks.sort(key=lambda tick: (tick.seconds, tick.tick))
-    return ticks, HAZARD_COLUMNS <= columns
+    parsed_rows.sort(key=lambda item: (item[0].seconds, item[0].tick))
+    previous_yaw: float | None = None
+    previous_pitch: float | None = None
+    for tick, yaw_explicit, pitch_explicit in parsed_rows:
+        if not yaw_explicit:
+            tick.yaw_delta = wrap_degrees(tick.yaw - previous_yaw) if previous_yaw is not None else 0.0
+        if not pitch_explicit:
+            tick.pitch_delta = tick.pitch - previous_pitch if previous_pitch is not None else 0.0
+        previous_yaw, previous_pitch = tick.yaw, tick.pitch
+    return [item[0] for item in parsed_rows], HAZARD_COLUMNS <= columns
 
 
 def build_stages(events: list[Event], take_end: float) -> list[Stage]:
@@ -507,7 +534,7 @@ def pause_intervals(take: Take) -> list[tuple[float, float, str]]:
         duration = event.get("pause_s", event.get("duration_s"))
         if duration is None:
             raise InputError(f"marker event {event.index} needs pause_s")
-        duration = float(duration)
+        duration = finite_float(duration, f"marker event {event.index} pause_s")
         if duration < 0.0:
             raise InputError(f"marker event {event.index} has a negative pause_s")
         pauses.append((event.seconds, event.seconds + duration, str(event.get("reason", ""))))
@@ -956,11 +983,12 @@ def check_m3(take: Take, config: Config) -> Result:
 
 def planned_length(event: Event) -> float | None:
     if "length_blocks" in event.data:
-        return float(event.data["length_blocks"])
+        return event_number(event, "length_blocks")
     points = event.data.get("points")
     if not isinstance(points, list) or len(points) < 2:
         return None
-    return sum(distance(tuple(map(float, points[index - 1])), tuple(map(float, points[index])))
+    return sum(distance(tuple(finite_float(value, f"planned_path event {event.index} point") for value in points[index - 1]),
+                        tuple(finite_float(value, f"planned_path event {event.index} point") for value in points[index]))
                for index in range(1, len(points)))
 
 
@@ -1004,7 +1032,7 @@ def check_path(take: Take, config: Config) -> Result:
 
 def block_position(event: Event) -> tuple[float, float, float]:
     try:
-        return float(event.data["x"]), float(event.data["y"]), float(event.data["z"])
+        return event_number(event, "x"), event_number(event, "y"), event_number(event, "z")
     except (KeyError, TypeError, ValueError) as error:
         raise InputError(f"block_change event {event.index} needs numeric x, y and z") from error
 
@@ -1037,11 +1065,11 @@ def check_work_size(take: Take, config: Config) -> Result:
         if not isinstance(lava, list) or len(lava) != 3:
             return result("Work size", "NOT EVALUATED", f"stage {stage_id} work_plan has no lava position", take,
                           f"stage {stage_id} lava position is missing")
-        lava_position = tuple(map(float, lava))
+        lava_position = tuple(finite_float(value, f"stage {stage_id} lava coordinate") for value in lava)
         if "required_blocks" not in plan.data:
             return result("Work size", "NOT EVALUATED", f"stage {stage_id} work_plan has no required_blocks", take,
                           f"stage {stage_id} required_blocks is missing")
-        required = int(plan.get("required_blocks"))
+        required = int(event_number(plan, "required_blocks"))
         if len(events) > required + extra:
             return result("Work size", "FAIL", f"stage {stage_id} placed {len(events)} blocks, job needs {required}", take)
         for event in events:
@@ -1164,7 +1192,7 @@ def check_h4(take: Take, config: Config) -> Result:
         return missing(take, "hud stream declared but contains no HUD samples")
     if any("scale" not in event.data for event in events):
         return missing(take, "GUI scale is missing from a HUD sample")
-    scales = {float(event.data["scale"]) for event in events}
+    scales = {event_number(event, "scale") for event in events}
     if len(scales) > 1:
         return result("H4", "FAIL", f"HUD uses GUI scales {sorted(scales)}", take)
     return result("H4", "PASS", f"one GUI scale observed: {next(iter(scales))}", take)
@@ -1200,7 +1228,7 @@ def check_b4(take: Take, config: Config) -> Result:
         return missing(take, "missing harm-event streams")
     harm_types = {"death", "stall", "wrong_result", "failure"}
     for event in take.events:
-        if event.type in harm_types or (event.type == "damage" and float(event.get("amount", 0.0)) > 0.0):
+        if event.type in harm_types or (event.type == "damage" and event_number(event, "amount", 0.0) > 0.0):
             return result("B4", "PASS", f"before take shows {event.type} at {event.seconds:.2f}s", take)
     for previous, current in zip(take.ticks, take.ticks[1:]):
         if current.health < previous.health:
@@ -1252,9 +1280,11 @@ def check_m4(take: Take, config: Config) -> Result:
     for event in frames:
         try:
             index = int(event.data["capture_index"])
-            present = str(event.data["present_id"])
         except (KeyError, TypeError, ValueError) as error:
-            raise InputError(f"frame event {event.index} needs capture_index and present_id") from error
+            raise InputError(f"frame event {event.index} needs capture_index") from error
+        present = event.get("present_id")
+        if not isinstance(present, str) or not present:
+            raise InputError(f"frame event {event.index} needs a non-empty present_id")
         if previous_index is not None and index != previous_index + 1:
             return result("M4", "FAIL", f"capture frame index jumps from {previous_index} to {index} at {event.seconds:.2f}s", take)
         if previous_present is not None and present == previous_present:
