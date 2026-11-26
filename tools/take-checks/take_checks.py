@@ -9,6 +9,7 @@ import json
 import math
 import sys
 import tomllib
+from bisect import bisect_left
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
@@ -940,20 +941,28 @@ def check_work_size(take: Take, config: Config) -> Result:
     return result("Work size", "PASS", f"checked {sum(len(events) for events in placed.values())} placed blocks", take)
 
 
+def has_recent_tick(tick_number: int, samples: list[int], window: int) -> bool:
+    index = bisect_left(samples, tick_number - window)
+    return index < len(samples) and samples[index] <= tick_number
+
+
 def check_n3(take: Take, config: Config) -> Result:
     if not take.has_streams("command_sent", "chat", "marker"):
         return missing(take, "missing command_sent, chat or marker stream")
     window = int(config.value("N3"))
-    explanations = [event for event in take.events
-                    if event.type in {"command_sent", "chat", "marker", "action_intent", "movement_cause"}]
+    input_ticks = sorted({tick.tick for tick in take.ticks if any(tick.keys)})
+    explanation_ticks = sorted({event.tick for event in take.events
+                                if event.type in {"command_sent", "action_intent", "movement_cause"}})
     previous = None
     for tick in take.ticks:
         moving = previous is not None and tick.position != previous.position
         previous = tick
-        if not moving or any(tick.keys) or tick.attack or tick.use:
+        if not moving:
             continue
-        if not any(0 <= tick.tick - event.tick <= window for event in explanations):
-            return result("N3", "FAIL", f"movement at {tick.seconds:.2f}s has no input or marked explanation within {window} ticks", take)
+        if any(has_recent_tick(tick.tick, samples, window)
+               for samples in (input_ticks, explanation_ticks)):
+            continue
+        return result("N3", "FAIL", f"movement at {tick.seconds:.2f}s has no input or marked explanation within {window} ticks", take)
     return result("N3", "PASS", f"all movement has input or an explanation within {window} ticks", take)
 
 
