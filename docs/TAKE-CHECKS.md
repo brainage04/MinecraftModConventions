@@ -126,7 +126,7 @@ MMC's stage helper prints `STAGE_START <epoch ms> <id>` and `STAGE_END <epoch ms
 | I1 | Every command grows one visible character per tick | Implemented. Needs `command_typed` and `command_sent`. |
 | I3 | Stop, release and cancel commands use the HUD | Implemented. Needs `command_sent.source`. |
 | I4 | Every setting change has a same-tick on-screen line | Implemented. Needs `setting_change` plus HUD or chat. |
-| C4 | No turn over 30 degrees followed by 1 s without activity | Implemented from tick rotation, movement, actions and crosshair target. |
+| C4 | No turn over 30 degrees followed by 1 s without activity | Implemented from tick rotation, movement, actions and crosshair target. A follow window past the last tick sample is NOT EVALUATED, even when a later event extends the take. |
 | M5 | Crosshair holds the intended target at intent and action | Implemented. Needs `action_intent`, `action` and crosshair samples. |
 | M1 | No rotation or speed sign flip within 3 ticks | Implemented from tick deltas. The config deadband ignores small deltas, each stage is checked separately, and speed loss while airborne is not a reversal. |
 | M2 | Moving feet keep more than 1 block clearance from nearby hazards | Implemented. Needs the three measured hazard-distance columns from step 2/3. |

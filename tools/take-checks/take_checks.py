@@ -794,7 +794,10 @@ def check_c4(take: Take, config: Config) -> Result:
     for run in qualifying:
         last = run[-1]
         window_end = last.seconds + follow
-        if take.end_seconds < window_end:
+        containing = next((group for group in stage_tick_groups(take)
+                           if group[0].seconds <= last.seconds <= group[-1].seconds), None)
+        available_end = containing[-1].seconds if containing else take.ticks[-1].seconds
+        if available_end < window_end:
             return result("C4", "NOT EVALUATED", f"turn ending at {last.seconds:.2f}s has no complete {follow:.2f}s follow window", take,
                           f"incomplete follow window after turn at {last.seconds:.2f}s")
         active = False
