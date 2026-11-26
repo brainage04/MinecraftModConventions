@@ -302,6 +302,29 @@ class TakeChecksTest(unittest.TestCase):
         self.assert_verdict(self.run_case(rows, [*boundaries(), *short])[1], "P6", "FAIL")
         self.assert_verdict(self.run_case(rows, [*boundaries(), *exact])[1], "P6", "PASS")
 
+    def test_p5_later_incomplete_window_does_not_mask_earlier_fail(self):
+        first = event("command_sent", 0, 0.0, command_id="a", command="/x", source="hud")
+        second = event("command_sent", 7, 1.75, command_id="b", command="/y", source="hud")
+        events = [*boundaries(), first, second, hud(6, 1.5, text="done")]
+        completed, verdicts = self.run_case(steady_rows(), events)
+        self.assertEqual(1, completed.returncode, completed.stdout + completed.stderr)
+        self.assert_verdict(verdicts, "P5", "FAIL")
+
+    def test_p6_open_trailing_step_does_not_mask_short_step(self):
+        steps = [event("screen_step", 0, 0.0, sequence="craft", step="1", phase="start"),
+                 event("screen_step", 1, 0.25, sequence="craft", step="1", phase="end"),
+                 event("screen_step", 7, 1.75, sequence="craft", step="2", phase="start")]
+        self.assert_verdict(self.run_case(steady_rows(), [*boundaries(), *steps])[1], "P6", "FAIL")
+
+    def test_path_short_later_stage_does_not_mask_earlier_fail(self):
+        rows = [tick(0, 0.0), tick(1, 0.5, pos_x=1.0), tick(2, 1.0)]
+        events = [event("stage_start", 0, 0.0, stage_id="one"),
+                  event("stage_end", 2, 1.0, stage_id="one"),
+                  event("stage_start", 2, 1.0, stage_id="two"),
+                  event("stage_end", 8, 2.0, stage_id="two"),
+                  event("planned_path", 0, 0.0, stage_id="one", length_blocks=1.0)]
+        self.assert_verdict(self.run_case(rows, events)[1], "Path", "FAIL")
+
     def test_i1_instant_command_fails_and_character_typing_passes(self):
         rows = steady_rows()
         sent = event("command_sent", 2, 0.5, command_id="c", command="/x", source="chat")
