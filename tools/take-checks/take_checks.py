@@ -708,12 +708,16 @@ def check_i1(take: Take, config: Config) -> Result:
     commands = take.events_of("command_sent")
     for command in commands:
         command_id = str(command.get("command_id", ""))
-        text = str(command.get("command", ""))
+        text = command.get("command")
+        if not isinstance(text, str) or not text:
+            return result("I1", "NOT EVALUATED", f"command {command_id} at {command.seconds:.2f}s has no command text", take,
+                          "command_sent.command is missing")
         events = typed.get(command_id, [])
         expected = [text[:index] for index in range(1, len(text) + 1)]
         actual = [str(event.get("text", "")) for event in events]
         ticks = [event.tick for event in events]
-        if actual != expected or any(right <= left for left, right in zip(ticks, ticks[1:])):
+        if (actual != expected or any(right <= left for left, right in zip(ticks, ticks[1:]))
+                or (ticks and ticks[-1] > command.tick)):
             return result("I1", "FAIL", f"command {command_id} at {command.seconds:.2f}s is not one visible character per tick", take)
     return result("I1", "PASS", f"checked {len(commands)} typed commands", take)
 
@@ -723,7 +727,11 @@ def check_i3(take: Take, config: Config) -> Result:
         return missing(take, "missing stream command_sent")
     commands = take.events_of("command_sent")
     for command in commands:
-        text = str(command.get("command", "")).lstrip("/").lower().split()
+        command_text = command.get("command")
+        if not isinstance(command_text, str) or not command_text.strip():
+            return result("I3", "NOT EVALUATED", f"command at {command.seconds:.2f}s has no command text", take,
+                          "command_sent.command is missing")
+        text = command_text.lstrip("/#.").lower().split()
         if not STOP_WORDS.intersection(text):
             continue
         source = command.get("source")
@@ -816,11 +824,32 @@ def target_matches(tick: Tick, target: dict[str, Any]) -> bool:
     return False
 
 
+def target_complete(target: dict[str, Any]) -> bool:
+    kind = target.get("type")
+    if kind == "block":
+        return all(isinstance(target.get(key), (int, float)) and not isinstance(target.get(key), bool)
+                   for key in ("x", "y", "z"))
+    if kind == "entity":
+        return isinstance(target.get("entity_type"), str) and bool(target["entity_type"])
+    return True
+
+
 def check_m5(take: Take, config: Config) -> Result:
     if not take.has_streams("action_intent", "action"):
         return missing(take, "missing action_intent or action stream")
     intents = take.events_of("action_intent")
-    actions = {str(event.get("action_id", "")): event for event in take.events_of("action")}
+    action_events = take.events_of("action")
+    actions: dict[str, Event] = {}
+    for event in action_events:
+        action_id = event.get("action_id")
+        if not isinstance(action_id, str) or not action_id or action_id in actions:
+            return result("M5", "NOT EVALUATED", f"action at {event.seconds:.2f}s has a missing or duplicate action_id", take,
+                          "action.action_id is missing or duplicated")
+        actions[action_id] = event
+    for action in action_events:
+        if not any(str(intent.get("action_id", "")) == str(action.get("action_id", "")) for intent in intents):
+            return result("M5", "NOT EVALUATED", f"action at {action.seconds:.2f}s has no action_intent", take,
+                          "action has no matching action_intent")
     by_tick = {tick.tick: tick for tick in take.ticks}
     for intent in intents:
         action = actions.get(str(intent.get("action_id", "")))
@@ -834,6 +863,9 @@ def check_m5(take: Take, config: Config) -> Result:
         if not isinstance(target, dict):
             return result("M5", "NOT EVALUATED", f"intent at {intent.seconds:.2f}s has no target", take,
                           "action_intent target is missing")
+        if not target_complete(target):
+            return result("M5", "NOT EVALUATED", f"intent at {intent.seconds:.2f}s has an incomplete target", take,
+                          "action_intent target fields are incomplete")
         if not target_matches(by_tick[intent.tick], target):
             return result("M5", "FAIL", f"target not under the crosshair at intent {intent.seconds:.2f}s", take)
         if not target_matches(by_tick[action.tick], target):
