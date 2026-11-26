@@ -89,6 +89,8 @@ multiLoaderModConventions {
 }
 ```
 
+A mod with no `src/gametest` directory in `common`, `fabric` or `neoforge` applies neither the production GameTest plugin nor the client GameTest recorder, so it has no `gametest` source set, no development or production GameTest run (`:fabric:runProductionClientGameTest` and `:fabric:recordClientGameTest` included) and no GameTest JAR. The three GameTest switches above default to `false`. `runAllGameTests` still exists and has nothing to run.
+
 ### Integration GameTests
 
 GameTests that need other mods loaded (a minigame the mod plugs into, a modpack it must work beside) go in a named integration GameTest suite instead of the ordinary GameTests, so those mods, their mixins and their game rules never reach the ordinary runs:

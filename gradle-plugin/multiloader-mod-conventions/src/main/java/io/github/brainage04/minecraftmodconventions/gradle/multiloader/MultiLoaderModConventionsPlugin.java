@@ -89,6 +89,11 @@ public final class MultiLoaderModConventionsPlugin implements Plugin<Project> {
                 root.getObjects()
         );
         extension.getDevAuth().convention(hasClientSide(root));
+        // A mod without GameTest sources gets no GameTest source set, run or production task.
+        boolean gameTests = hasGameTestSources(common, fabric, neoForge);
+        extension.getFabricClientGameTests().convention(gameTests);
+        extension.getFabricServerGameTests().convention(gameTests);
+        extension.getNeoForgeGameTests().convention(gameTests);
 
         root.getPluginManager().apply("base");
         configureIdentity(root, common, fabric);
@@ -97,7 +102,7 @@ public final class MultiLoaderModConventionsPlugin implements Plugin<Project> {
         }
         root.getPluginManager().apply(JAVA_QUALITY_PLUGIN);
         configureCommon(root, common);
-        configureFabric(root, common, fabric, extension);
+        configureFabric(root, common, fabric, extension, gameTests);
         VanillaIdentityCheck.register(common);
         VanillaIdentityCheck.register(fabric);
         VanillaTagIdentitiesCheck.register(common,
@@ -109,7 +114,7 @@ public final class MultiLoaderModConventionsPlugin implements Plugin<Project> {
         DeprecatedGameTestApiCheck.register(common);
         DeprecatedGameTestApiCheck.register(fabric);
         if (neoForge != null) {
-            configureNeoForge(root, common, fabric, neoForge, extension);
+            configureNeoForge(root, common, fabric, neoForge, extension, gameTests);
             VanillaIdentityCheck.register(neoForge);
             VanillaTagIdentitiesCheck.register(neoForge,
                 neoForge.getExtensions().getByType(LoomGradleExtensionAPI.class).getNamedMinecraftJars());
@@ -200,7 +205,8 @@ public final class MultiLoaderModConventionsPlugin implements Plugin<Project> {
             Project root,
             Project common,
             Project fabric,
-            MultiLoaderModConventionsExtension fleetExtension
+            MultiLoaderModConventionsExtension fleetExtension,
+            boolean gameTests
     ) {
         fabric.getPluginManager().apply(ARCHITECTURY_LOOM_NO_REMAP);
         fabric.getPluginManager().apply(ARCHITECTURY_LOOM);
@@ -208,16 +214,18 @@ public final class MultiLoaderModConventionsPlugin implements Plugin<Project> {
         if (property(root, "mod_side", "both").equalsIgnoreCase("both")) {
             loom.splitEnvironmentSourceSets();
         }
-        fabric.getPluginManager().apply(RECORDER_PLUGIN);
-        // The recorder drives :fabric:runProductionClientGameTest, so loom's development clientGameTest run
-        // (and its :fabric:runClientGameTest task) must never be created.
-        // The root runAllGameTests aggregates every Fabric and NeoForge GameTest run, so the production
-        // plugin's :fabric:runAllProductionGameTests would only duplicate part of it.
-        fabric.getExtensions().getExtraProperties()
-                .set(ProductionGameTestsPlugin.DEVELOPMENT_CLIENT_GAMETEST_RUN_PROPERTY, false);
-        fabric.getExtensions().getExtraProperties()
-                .set(ProductionGameTestsPlugin.AGGREGATE_TASK_PROPERTY, false);
-        fabric.getPluginManager().apply(PRODUCTION_GAMETESTS_PLUGIN);
+        if (gameTests) {
+            fabric.getPluginManager().apply(RECORDER_PLUGIN);
+            // The recorder drives :fabric:runProductionClientGameTest, so loom's development clientGameTest run
+            // (and its :fabric:runClientGameTest task) must never be created.
+            // The root runAllGameTests aggregates every Fabric and NeoForge GameTest run, so the production
+            // plugin's :fabric:runAllProductionGameTests would only duplicate part of it.
+            fabric.getExtensions().getExtraProperties()
+                    .set(ProductionGameTestsPlugin.DEVELOPMENT_CLIENT_GAMETEST_RUN_PROPERTY, false);
+            fabric.getExtensions().getExtraProperties()
+                    .set(ProductionGameTestsPlugin.AGGREGATE_TASK_PROPERTY, false);
+            fabric.getPluginManager().apply(PRODUCTION_GAMETESTS_PLUGIN);
+        }
         configureIntegrationGameTests(common, fabric, fleetExtension, false);
         fabric.getPluginManager().apply(WORKSPACE_DEPENDENCIES_PLUGIN);
         fabric.getPluginManager().apply(MOD_PUBLISHING_PLUGIN);
@@ -267,7 +275,9 @@ public final class MultiLoaderModConventionsPlugin implements Plugin<Project> {
         configureMergedOutputs(common, fabric);
         configureDevAuth(root, fabric, "DevAuth-fabric", fleetExtension);
         configureFabricTests(root, fabric);
-        configureFabricGameTests(root, fabric, fleetExtension);
+        if (gameTests) {
+            configureFabricGameTests(root, fabric, fleetExtension);
+        }
         configureWorkspaceDependency(root, fabric);
         configureFabricPublishing(root, fabric, fleetExtension);
         configureResourceExpansion(root, fabric, "src/main/resources/fabric.mod.json", "fabric.mod.json");
@@ -443,7 +453,8 @@ public final class MultiLoaderModConventionsPlugin implements Plugin<Project> {
             Project common,
             Project fabric,
             Project neoForge,
-            MultiLoaderModConventionsExtension fleetExtension
+            MultiLoaderModConventionsExtension fleetExtension,
+            boolean gameTests
     ) {
         neoForge.getPluginManager().apply(ARCHITECTURY_LOOM_NO_REMAP);
         neoForge.getPluginManager().apply(ARCHITECTURY_LOOM);
@@ -453,17 +464,8 @@ public final class MultiLoaderModConventionsPlugin implements Plugin<Project> {
         neoForge.getExtensions().getByType(BasePluginExtension.class).getArchivesName()
                 .set(requiredProperty(root, "archives_base_name") + "-neoforge");
 
-        SourceSetContainer neoSourceSets = sourceSets(neoForge);
-        SourceSet main = neoSourceSets.getByName(SourceSet.MAIN_SOURCE_SET_NAME);
-        SourceSet gameTest = neoSourceSets.maybeCreate("gametest");
-        gameTest.setCompileClasspath(gameTest.getCompileClasspath()
-                .plus(main.getOutput())
-                .plus(neoForge.getConfigurations().getByName("compileClasspath")));
-        gameTest.setRuntimeClasspath(gameTest.getRuntimeClasspath()
-                .plus(gameTest.getOutput())
-                .plus(gameTest.getCompileClasspath())
-                .plus(neoForge.getConfigurations().getByName("runtimeClasspath")));
-        addSharedGameTests(neoForge, common, gameTest);
+        SourceSet main = sourceSets(neoForge).getByName(SourceSet.MAIN_SOURCE_SET_NAME);
+        SourceSet gameTest = gameTests ? createNeoForgeGameTestSourceSet(neoForge, common, main) : null;
 
         LoomGradleExtensionAPI loom = neoForge.getExtensions().getByType(LoomGradleExtensionAPI.class);
         File accessTransformer = neoForge.file("src/main/resources/META-INF/accesstransformer.cfg");
@@ -474,15 +476,17 @@ public final class MultiLoaderModConventionsPlugin implements Plugin<Project> {
         });
         loom.getMods().maybeCreate("main").sourceSet(main);
         loom.getMods().getByName("main").sourceSet(sourceSets(common).getByName(SourceSet.MAIN_SOURCE_SET_NAME));
-        loom.getMods().getByName("main").sourceSet(gameTest);
-        // Named like Fabric API's dev server GameTest run, so both loaders have :<loader>:runGameTest.
-        loom.getRuns().maybeCreate("gameTest").server();
-        loom.getRuns().named("gameTest").configure(run -> {
-            run.forgeTemplate("gameTestServer");
-            run.name("NeoForge Game Tests");
-            run.source(gameTest);
-            run.runDir("run/gametest");
-        });
+        if (gameTest != null) {
+            loom.getMods().getByName("main").sourceSet(gameTest);
+            // Named like Fabric API's dev server GameTest run, so both loaders have :<loader>:runGameTest.
+            loom.getRuns().maybeCreate("gameTest").server();
+            loom.getRuns().named("gameTest").configure(run -> {
+                run.forgeTemplate("gameTestServer");
+                run.name("NeoForge Game Tests");
+                run.source(gameTest);
+                run.runDir("run/gametest");
+            });
+        }
         configureDefaultRunDirectories(loom);
         useX11ForRuns(neoForge);
 
@@ -506,7 +510,31 @@ public final class MultiLoaderModConventionsPlugin implements Plugin<Project> {
         neoForge.afterEvaluate(_ -> integrationGameTestSuites(neoForge).forEach(suite -> neoForge.getTasks()
                 .named(suite.getRunTaskName())
                 .configure(task -> task.onlyIf(spec -> fleetExtension.getNeoForgeGameTests().get()))));
-        configureNeoForgeProductionGameTests(root, neoForge, gameTest, fleetExtension);
+        if (gameTest != null) {
+            configureNeoForgeProductionGameTests(root, neoForge, gameTest, fleetExtension);
+        }
+    }
+
+    private static SourceSet createNeoForgeGameTestSourceSet(Project neoForge, Project common, SourceSet main) {
+        SourceSet gameTest = sourceSets(neoForge).maybeCreate("gametest");
+        gameTest.setCompileClasspath(gameTest.getCompileClasspath()
+                .plus(main.getOutput())
+                .plus(neoForge.getConfigurations().getByName("compileClasspath")));
+        gameTest.setRuntimeClasspath(gameTest.getRuntimeClasspath()
+                .plus(gameTest.getOutput())
+                .plus(gameTest.getCompileClasspath())
+                .plus(neoForge.getConfigurations().getByName("runtimeClasspath")));
+        addSharedGameTests(neoForge, common, gameTest);
+        return gameTest;
+    }
+
+    private static boolean hasGameTestSources(Project... modules) {
+        for (Project module : modules) {
+            if (module != null && module.file("src/gametest").isDirectory()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static void configureNeoForgeProductionGameTests(
@@ -743,7 +771,8 @@ public final class MultiLoaderModConventionsPlugin implements Plugin<Project> {
      * development runs, the ordinary production runs, then each suite's production runs. {@code :fabric:runGameTest}
      * exists only when Fabric API's server GameTests are on (not for {@code mod_side=client}), and is left out with
      * {@code fabricServerGameTests = false} like the production server run and every Fabric suite run. Every
-     * NeoForge run is always included: with {@code neoForgeGameTests = false} they are skipped.
+     * NeoForge run that exists is included: with {@code neoForgeGameTests = false} they are skipped. A mod with no
+     * {@code src/gametest} directory in {@code common}, {@code fabric} or {@code neoforge} has no GameTest runs.
      */
     private static List<TaskProvider<? extends Task>> gameTestRuns(
             Project fabric,
@@ -760,7 +789,7 @@ public final class MultiLoaderModConventionsPlugin implements Plugin<Project> {
         if (fabricServer) {
             runs.add(fabric.getTasks().named(DEVELOPMENT_GAMETEST_TASK));
         }
-        if (neoForge != null) {
+        if (neoForge != null && neoForge.getTasks().getNames().contains(DEVELOPMENT_GAMETEST_TASK)) {
             runs.add(neoForge.getTasks().named(DEVELOPMENT_GAMETEST_TASK));
         }
         fabricSuites.forEach(suite -> runs.add(fabric.getTasks().named(suite.getRunTaskName())));
@@ -773,7 +802,7 @@ public final class MultiLoaderModConventionsPlugin implements Plugin<Project> {
         fabric.getTasks().withType(ClientGameTestProductionRunTask.class).getNames().stream()
                 .filter(name -> !name.equals(ProductionGameTestsPlugin.VANILLA_SERVER_CLIENT_GAMETEST_TASK))
                 .forEach(name -> runs.add(fabric.getTasks().named(name)));
-        if (neoForge != null) {
+        if (neoForge != null && neoForge.getTasks().getNames().contains(PRODUCTION_SERVER_GAMETEST_TASK)) {
             runs.add(neoForge.getTasks().named(PRODUCTION_SERVER_GAMETEST_TASK));
         }
         fabricRuns.forEach(name -> runs.add(fabric.getTasks().named(name)));

@@ -753,6 +753,7 @@ class MultiLoaderModConventionsTest {
         for (String module : new String[] {"common", "fabric", "neoforge"}) {
             Files.createDirectories(projectDir.resolve(module));
         }
+        Files.createDirectories(projectDir.resolve("common/src/gametest"));
         Files.writeString(projectDir.resolve("neoforge/gradle.properties"), "loom.platform=neoforge\n");
     }
 }
