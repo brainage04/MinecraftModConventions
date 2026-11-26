@@ -1,0 +1,156 @@
+# Automatic requirements (a take that breaks one is rejected).
+# Each check has one named entry. Change a threshold here, not in take_checks.py.
+
+[checks.P1]
+value = 0.5
+unit = "s"
+note = "Thomas, 26 Nov: try 0.5 s from stage start to first movement, command or chat line."
+
+[checks.P2]
+value = 0.5
+unit = "s"
+note = "Thomas, 26 Nov: try 0.5 s from a failure line to the take stopping."
+
+[checks.P3]
+value = 0.5
+unit = "s"
+note = "Thomas, 26 Nov: try 0.5 s from goal reached to the take stopping."
+
+[checks.P4]
+value = 5.0
+unit = "s"
+note = "Take-checks plan P4 and bar G1: no stretch over 5 s without visible change."
+
+[checks.P5]
+value = 1.0
+unit = "s"
+note = "Take-checks plan P5: first visible effect within 1 s of command_sent."
+
+[checks.P6]
+value = 0.5
+unit = "s"
+note = "Checklist P6 and rec4 24:44: each craft, anvil or place step stays visible for about 0.5 s."
+
+[checks.I1]
+value = 1
+unit = "rule"
+note = "Checklist I1 and rec4 0:00: every command grows one character per typed-command event."
+
+[checks.I3]
+value = 1
+unit = "rule"
+note = "Checklist I3 and rec4 12:35: stop, release and cancel commands use the HUD, not chat."
+
+[checks.I4]
+value = 1
+unit = "rule"
+note = "Checklist I4 and 18nov A-1420: every setting change has a same-tick on-screen line."
+
+[checks.C4]
+value = 30.0
+unit = "deg"
+follow_s = 1.0
+note = "Take-checks plan C4: a turn over 30 degrees with no movement, block action or new target for 1 s."
+
+[checks.M5]
+value = 1
+unit = "rule"
+note = "Checklist M5 and rec4 18:15, 22:34: the crosshair already holds the intended target at intent and action."
+
+[checks.M1]
+value = 3
+unit = "ticks"
+note = "Take-checks plan M1: rotation or speed sign flips within a few ticks; the plan's few is pinned to 3."
+
+[checks.M2]
+value = 3.0
+unit = "blocks"
+clearance_blocks = 1.0
+note = "Checklist M2 and rec4 13:55: a hazard within 3 blocks has more than 1 block clearance while moving."
+
+[checks.M3]
+value = 1
+unit = "rule"
+note = "Checklist M3 and rec4 15:40, 16:10, 16:45: sneaking matches an adjacent drop on every tick."
+
+[checks.Path]
+value = 1.5
+unit = "ratio"
+note = "Take-checks plan Path: path length stays within 1.5 times the planned or straight-line optimum."
+
+[checks."Work size"]
+value = 2.0
+unit = "blocks"
+max_extra_blocks = 0
+note = "Checklist rec4 18:15: portal scaffold is 1-2 blocks from lava and places no more blocks than the job needs."
+
+[checks.N3]
+value = 1
+unit = "ticks"
+note = "Checklist N3 and 18nov A-1419: movement has input or an explanation; one tick allows input-to-motion delay."
+
+[checks.H1]
+value = 1
+unit = "rule"
+note = "Checklist H1 and rec4 1:30, 5:46: every HUD rectangle stays inside its screen."
+
+[checks.H2]
+value = 1
+unit = "rule"
+note = "Checklist H2 and rec4 1:30: HUD text wraps instead of truncating."
+
+[checks.H3]
+value = 1
+unit = "rule"
+note = "Checklist H3 and rec4 22:10: HUD rectangles drawn on the same tick do not overlap."
+
+[checks.H4]
+value = 1
+unit = "rule"
+note = "Checklist H4 and rec4 22:10: all HUD samples use one GUI scale."
+
+[checks.H5]
+value = 1
+unit = "rule"
+note = "Checklist H5 and 18nov A-1409, A-1410: HUD values change on the damage event's tick."
+
+[checks.B1]
+value = 1
+unit = "rule"
+note = "Checklist B1 and bar G7, G8, B05-2: paired takes start from the same block snapshot."
+
+[checks.B6]
+value = 1
+unit = "rule"
+note = "Checklist B6 and rec: paired takes start at the same position and use the same command."
+
+[checks.B3]
+value = 1
+unit = "rule"
+note = "Checklist B3 and bar B02-1, B08-1: paired takes have different visible outcomes."
+
+[checks.B4]
+value = 1
+unit = "rule"
+note = "Checklist B4 and bar B08-2: the before take shows damage, death, stall, failure or a wrong result."
+
+[checks.B5]
+value = 1
+unit = "rule"
+max_landings = 1
+note = "Checklist B5 and bar B07-1, B07-2: the after take has no retries, repeated landings or final fall."
+
+[checks.M4]
+value = 1
+unit = "rule"
+note = "Checklist M4 and 18nov A-1415: captured frame indices are contiguous and present ids do not repeat."
+
+[checks.S1]
+value = -50.0
+unit = "dB"
+note = "Baritone harness record.py SILENT_DB: a peak below -50 dB reads as silence to a viewer."
+
+[checks.S2]
+value = 1
+unit = "rule"
+note = "Checklist S2 and 18nov A-1416: audio has no level jump at a cut."

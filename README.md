@@ -457,6 +457,20 @@ clientGameTestRecorder {
 - The client always starts with `SDL_VIDEO_DRIVER=x11`: SDL3 otherwise finds a Wayland compositor through `XDG_RUNTIME_DIR` and opens its window there, where the capture cannot see it and where it may appear on someone's screen. A run whose log names another driver fails.
 - When the job runs in a cgroup of its own with a memory limit (a job runner's slot, such as a systemd scope), the recording sets that cgroup's `memory.low` to the limit for the run, so the kernel reclaims sibling jobs first instead of evicting ffmpeg's and the game's files, whose reads from a busy disk stall the capture. A cgroup without a limit is left alone.
 
+### Take checks before keeping a recording
+
+`tools/take-checks/take_checks.py` reads a take's per-tick CSV and event JSON lines. A `FAIL` rejects the take, so the helper fixes the scenario before recording again.
+
+```shell
+python3 tools/take-checks/take_checks.py --ticks samples.csv --events events.jsonl
+```
+
+Thresholds live in `tools/take-checks/take-checks.toml`. Each check has one named entry with its value, unit and source note. A missing stream prints `NOT EVALUATED` with its reason and never passes silently. The [take-check format and coverage](docs/TAKE-CHECKS.md) describes the event types, TPM mapping, Baritone mapping and instrumentation gaps.
+
+```shell
+python3 -m unittest discover -s tools/take-checks/tests -v
+```
+
 ### Dedicated-server harness
 
 ```java
