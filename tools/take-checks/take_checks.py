@@ -1205,6 +1205,16 @@ def check_b4(take: Take, config: Config) -> Result:
     return result("B4", "FAIL", "before take shows no damage, death, stall, failure or wrong result", take)
 
 
+def landing_block(event: Event) -> tuple[int, int, int]:
+    values: list[int] = []
+    for key in ("x", "y", "z"):
+        value = event.get(key)
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)):
+            raise InputError(f"landing event {event.index} needs numeric {key}")
+        values.append(math.floor(float(value)))
+    return values[0], values[1], values[2]
+
+
 def check_b5(take: Take, config: Config) -> Result:
     if take.role != "after":
         return missing(take, "manifest role is not after")
@@ -1213,17 +1223,18 @@ def check_b5(take: Take, config: Config) -> Result:
     retries = take.events_of("retry")
     if retries:
         return result("B5", "FAIL", f"after take retries at {retries[0].seconds:.2f}s", take)
-    landings: dict[tuple[Any, ...], int] = {}
+    landings: dict[tuple[int, int, int], int] = {}
     for event in take.events_of("landing"):
-        position = tuple(event.get(key) for key in ("x", "y", "z"))
+        position = landing_block(event)
         landings[position] = landings.get(position, 0) + 1
     maximum = int(config.value("B5", "max_landings"))
     for position, count in landings.items():
         if count > maximum:
             return result("B5", "FAIL", f"after take lands {count} times at {position}, maximum {maximum}", take)
-    last = take.ticks[-1]
-    if not last.on_ground and (last.fall_distance > 0.0 or (last.vy < 0.0 and not last.swimming and not last.on_climbable)):
-        return result("B5", "FAIL", f"after take ends in a fall at {last.seconds:.2f}s", take)
+    for last in [group[-1] for group in stage_tick_groups(take) if group] or [take.ticks[-1]]:
+        if (not last.on_ground and not last.in_water
+                and (last.fall_distance > 0.0 or (last.vy < 0.0 and not last.swimming and not last.on_climbable))):
+            return result("B5", "FAIL", f"after take ends in a fall at {last.seconds:.2f}s", take)
     return result("B5", "PASS", "after take has no retries, repeated landings or final fall", take)
 
 
