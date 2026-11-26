@@ -689,5 +689,18 @@ class TakeChecksTest(unittest.TestCase):
         self.assert_verdict(self.run_case(rows, events)[1], "C4", "NOT EVALUATED")
 
 
+    def test_s1_loud_peak_with_quiet_samples_passes(self):
+        samples = [event("audio", 0, 0.0, peak_db=-60.0),
+                   event("audio", 2, 0.5, peak_db=-10.0),
+                   event("audio", 4, 1.0, peak_db=-55.0)]
+        self.assert_verdict(self.run_case(steady_rows(), [*boundaries(), *samples])[1], "S1", "PASS")
+
+    def test_s1_nan_null_and_text_peaks_are_invalid(self):
+        for peak in (float("nan"), None, "loud"):
+            samples = [event("audio", 0, 0.0, peak_db=peak)]
+            completed, _ = self.run_case(steady_rows(), [*boundaries(), *samples])
+            self.assertEqual(2, completed.returncode, completed.stdout + completed.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()
