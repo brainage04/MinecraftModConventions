@@ -133,7 +133,7 @@ MMC's stage helper prints `STAGE_START <epoch ms> <id>` and `STAGE_END <epoch ms
 | M3 | Sneaking matches an adjacent drop on every tick | Implemented. Needs `drop_adjacent` from step 2/3. |
 | Path | Path length stays within 1.5 times the optimum | Implemented. Uses `planned_path` when present, otherwise the straight-line distance. An earlier failing stage stays a FAIL when a later stage is incomplete. |
 | Work size | Scaffold stays within 2 blocks of lava and adds no more blocks than needed | Implemented. Needs `work_plan.required_blocks` and `place` or `break` on every `block_change`. |
-| N3 | Movement has input or an explanation within 1 tick | Implemented. A movement key within the configured window explains delayed motion. Command, intent and `movement_cause` events explain other motion. Pause markers, chat and attack or use do not. |
+| N3 | Movement has input or an explanation within 1 tick | Implemented. A movement key within the configured window explains delayed motion. Command, intent and `movement_cause` events explain other motion. Pause markers, chat and attack or use do not. Emit `movement_cause` for airborne or decelerating motion that lasts beyond the window. |
 | H1 | Every HUD rectangle stays inside the screen | Implemented. Needs `hud` rectangles. |
 | H2 | HUD text wraps instead of truncating | Implemented. Needs a boolean `hud.truncated` on every sample. |
 | H3 | Same-tick HUD rectangles do not overlap | Implemented. Needs `hud` rectangles. |
