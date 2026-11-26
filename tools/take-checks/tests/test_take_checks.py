@@ -724,5 +724,21 @@ class TakeChecksTest(unittest.TestCase):
         self.assertEqual(2, completed.returncode, completed.stdout + completed.stderr)
 
 
+    def test_p1_does_not_require_marker_stream(self):
+        streams = set(BASE_STREAMS) - {"marker"}
+        events = [*boundaries(), event("chat", 1, 0.25, text="hello")]
+        self.assert_verdict(self.run_case(steady_rows(), events, streams=streams)[1], "P1", "PASS")
+
+    def test_h5_empty_hud_stream_is_not_evaluated(self):
+        damage = event("damage", 1, 0.25, amount=2.0, values={"health": 18})
+        self.assert_verdict(self.run_case(steady_rows(), [*boundaries(), damage])[1], "H5", "NOT EVALUATED")
+
+    def test_h5_empty_expected_values_are_not_evaluated(self):
+        damage = event("damage", 1, 0.25, amount=2.0, values={})
+        shown = hud(1, 0.25, values={"health": 18})
+        self.assert_verdict(self.run_case(steady_rows(), [*boundaries(), damage, shown])[1],
+                            "H5", "NOT EVALUATED")
+
+
 if __name__ == "__main__":
     unittest.main()
