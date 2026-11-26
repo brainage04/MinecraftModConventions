@@ -369,10 +369,25 @@ class TakeChecksTest(unittest.TestCase):
     def test_n3_unexplained_movement_fails_and_input_movement_passes(self):
         unexplained = [tick(0, 0.0), tick(1, 0.25, pos_x=1.0)]
         explained = [tick(0, 0.0), tick(1, 0.25, pos_x=1.0, forward=1)]
-        marker = event("marker", 1, 0.25, reason="scripted movement", pause_s=0.0)
+        cause = event("movement_cause", 1, 0.25, reason="scripted movement")
         self.assert_verdict(self.run_case(unexplained, boundaries())[1], "N3", "FAIL")
         self.assert_verdict(self.run_case(explained, boundaries())[1], "N3", "PASS")
-        self.assert_verdict(self.run_case(unexplained, [*boundaries(), marker])[1], "N3", "PASS")
+        self.assert_verdict(self.run_case(unexplained, [*boundaries(), cause])[1], "N3", "PASS")
+
+    def test_n3_movement_one_tick_after_input_passes(self):
+        rows = [tick(0, 0.0, forward=1), tick(1, 0.25, pos_x=1.0)]
+        self.assert_verdict(self.run_case(rows, boundaries())[1], "N3", "PASS")
+
+    def test_n3_attack_use_marker_and_chat_do_not_explain_movement(self):
+        moved = [tick(0, 0.0), tick(1, 0.25, pos_x=1.0)]
+        marker = event("marker", 1, 0.25, reason="paused", pause_s=0.0)
+        chat = event("chat", 1, 0.25, text="unrelated")
+        self.assert_verdict(self.run_case([tick(0, 0.0), tick(1, 0.25, pos_x=1.0, attack=1)],
+                                          boundaries())[1], "N3", "FAIL")
+        self.assert_verdict(self.run_case([tick(0, 0.0), tick(1, 0.25, pos_x=1.0, use=1)],
+                                          boundaries())[1], "N3", "FAIL")
+        self.assert_verdict(self.run_case(moved, [*boundaries(), marker])[1], "N3", "FAIL")
+        self.assert_verdict(self.run_case(moved, [*boundaries(), chat])[1], "N3", "FAIL")
 
     def test_h1_offscreen_element_fails_and_inside_element_passes(self):
         bad = self.run_case(steady_rows(), [*boundaries(), hud(rect=[-1, 0, 100, 20])])[1]
