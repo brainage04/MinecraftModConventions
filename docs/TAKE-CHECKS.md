@@ -145,7 +145,7 @@ MMC's stage helper prints `STAGE_START <epoch ms> <id>` and `STAGE_END <epoch ms
 | B4 | Before take shows harm | Implemented for one take. Needs `role = "before"` and harm events or a health drop. |
 | B5 | After take has no retries, repeated landings or final fall | Implemented for one take. Needs `role = "after"`, retry/landing streams and ticks. Each stage's last tick is checked, treading water is not a final fall, and repeated landings are counted by block coordinates. |
 | M4 | No dropped or repeated frames | Implemented. Needs contiguous `frame.capture_index` and unique consecutive `present_id` values. |
-| S1 | Film has game audio | Implemented. Needs `audio.peak_db`; below -50 dB fails. |
+| S1 | Film has game audio | Implemented. Needs `audio.peak_db`. The loudest sample below -50 dB fails. NaN, null and non-numeric peaks are invalid input. |
 | S2 | Audio has no level jump at a cut | Not implemented. Needs per-cut discontinuity measurements from Baritone step 3. |
 
 ## Tests

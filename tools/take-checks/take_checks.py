@@ -1270,13 +1270,18 @@ def check_s1(take: Take, config: Config) -> Result:
     if not samples:
         return missing(take, "audio stream declared but contains no peak measurements")
     threshold = config.value("S1")
+    peaks: list[float] = []
     for event in samples:
         if "peak_db" not in event.data:
             return missing(take, "audio peak_db is missing")
-        peak = float(event.data["peak_db"])
-        if peak < threshold:
-            return result("S1", "FAIL", f"audio peak {peak:.2f} dB at {event.seconds:.2f}s is below {threshold:.2f} dB", take)
-    return result("S1", "PASS", f"all {len(samples)} audio peaks are above {threshold:.2f} dB", take)
+        value = event.data["peak_db"]
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)):
+            raise InputError(f"audio event {event.index} needs a finite numeric peak_db")
+        peaks.append(float(value))
+    peak = max(peaks)
+    if peak < threshold:
+        return result("S1", "FAIL", f"audio peak {peak:.2f} dB is below {threshold:.2f} dB", take)
+    return result("S1", "PASS", f"loudest of {len(peaks)} audio peaks is {peak:.2f} dB, at least {threshold:.2f} dB", take)
 
 
 CHECKS = {
