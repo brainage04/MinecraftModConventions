@@ -680,5 +680,14 @@ class TakeChecksTest(unittest.TestCase):
                             "B5", "FAIL")
 
 
+    def test_c4_later_event_does_not_complete_the_follow_window(self):
+        rows = steady_rows()
+        rows[7]["yaw"] = 45.0
+        rows[7]["yaw_delta"] = 45.0
+        events = [event("stage_start", 0, 0.0, stage_id="stage"),
+                  event("stage_end", 12, 3.0, stage_id="stage")]
+        self.assert_verdict(self.run_case(rows, events)[1], "C4", "NOT EVALUATED")
+
+
 if __name__ == "__main__":
     unittest.main()
