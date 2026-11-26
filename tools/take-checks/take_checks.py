@@ -637,20 +637,26 @@ def check_p5(take: Take, config: Config) -> Result:
     changes = visible_change_times(take)
     worst_delay = -1.0
     worst_command = ""
+    incomplete: tuple[str, str] | None = None
     for command in commands:
         stage = matching_stage(take, command)
         available_end = stage.end_seconds if stage else take.end_seconds
         effect = next((time for time in changes if command.seconds <= time <= available_end), None)
         if effect is None:
             if available_end - command.seconds < threshold:
-                return result("P5", "NOT EVALUATED", f"take ends before the {threshold:.2f}s effect window at {available_end:.2f}s", take,
-                              f"command at {command.seconds:.2f}s has no complete effect window")
+                if incomplete is None:
+                    incomplete = (f"take ends before the {threshold:.2f}s effect window at {available_end:.2f}s",
+                                  f"command at {command.seconds:.2f}s has no complete effect window")
+                continue
             return result("P5", "FAIL", f"command at {command.seconds:.2f}s has no visible effect by {available_end:.2f}s", take)
         delay = effect - command.seconds
         if delay > worst_delay:
             worst_delay, worst_command = delay, str(command.get("command", ""))
     if worst_delay > threshold:
         return result("P5", "FAIL", f"command {worst_command!r} first effect at {worst_delay:.2f}s, limit {threshold:.2f}s", take)
+    if incomplete is not None:
+        detail, reason = incomplete
+        return result("P5", "NOT EVALUATED", detail, take, reason)
     return result("P5", "PASS", f"slowest command effect {worst_delay:.2f}s, limit {threshold:.2f}s", take)
 
 
@@ -669,6 +675,9 @@ def check_p6(take: Take, config: Config) -> Result:
             durations.append(event.seconds - open_steps.pop(key).seconds)
         elif phase == "end":
             return result("P6", "FAIL", f"screen step {key} ends at {event.seconds:.2f}s without a start", take)
+    shortest = min(durations, default=math.inf)
+    if shortest < threshold:
+        return result("P6", "FAIL", f"shortest screen step {shortest:.2f}s, minimum {threshold:.2f}s", take)
     if open_steps:
         key, event = next(iter(open_steps.items()))
         if take.end_seconds - event.seconds < threshold:
@@ -677,9 +686,7 @@ def check_p6(take: Take, config: Config) -> Result:
         return result("P6", "FAIL", f"screen step {key} never ends after {event.seconds:.2f}s", take)
     if not durations:
         return result("P6", "PASS", "no screen_step events", take)
-    shortest = min(durations)
-    return result("P6", "FAIL" if shortest < threshold else "PASS",
-                  f"shortest screen step {shortest:.2f}s, minimum {threshold:.2f}s", take)
+    return result("P6", "PASS", f"shortest screen step {shortest:.2f}s, minimum {threshold:.2f}s", take)
 
 
 def check_i1(take: Take, config: Config) -> Result:
@@ -892,11 +899,14 @@ def check_path(take: Take, config: Config) -> Result:
     worst_ratio = 0.0
     worst_stage = ""
     worst_kind = "straight line"
+    incomplete: tuple[str, str] | None = None
     for stage in take.stages:
         samples = [tick for tick in take.ticks if stage.start.seconds <= tick.seconds <= stage.end_seconds]
         if len(samples) < 2:
-            return result("Path", "NOT EVALUATED", f"stage {stage.stage_id} has fewer than two tick samples", take,
-                          f"stage {stage.stage_id} has insufficient tick samples")
+            if incomplete is None:
+                incomplete = (f"stage {stage.stage_id} has fewer than two tick samples",
+                              f"stage {stage.stage_id} has insufficient tick samples")
+            continue
         actual = sum(distance(left.position, right.position) for left, right in zip(samples, samples[1:]))
         plan = plans.get(stage.stage_id)
         optimum = planned_length(plan) if plan else distance(samples[0].position, samples[-1].position)
@@ -904,13 +914,18 @@ def check_path(take: Take, config: Config) -> Result:
         if optimum is None or optimum <= 0.0:
             if actual == 0.0:
                 continue
-            return result("Path", "NOT EVALUATED", f"stage {stage.stage_id} has no positive path optimum", take,
-                          f"stage {stage.stage_id} optimum is missing or zero")
+            if incomplete is None:
+                incomplete = (f"stage {stage.stage_id} has no positive path optimum",
+                              f"stage {stage.stage_id} optimum is missing or zero")
+            continue
         ratio = actual / optimum
         if ratio > worst_ratio:
             worst_ratio, worst_stage, worst_kind = ratio, stage.stage_id, stage_kind
     if worst_ratio > limit:
         return result("Path", "FAIL", f"stage {worst_stage} length ratio {worst_ratio:.2f} uses {worst_kind}, limit {limit:.2f}", take)
+    if incomplete is not None:
+        detail, reason = incomplete
+        return result("Path", "NOT EVALUATED", detail, take, reason)
     return result("Path", "PASS", f"worst length ratio {worst_ratio:.2f}, limit {limit:.2f}", take)
 
 
