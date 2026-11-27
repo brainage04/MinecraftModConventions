@@ -88,6 +88,9 @@ public final class InputOverlayState {
         if (text == null || text.isEmpty()) {
             return;
         }
+        if (typedText(nowMillis).isEmpty()) {
+            typed.setLength(0);
+        }
         typed.append(text);
         if (typed.length() > MAX_TYPED_CHARS) {
             typed.delete(0, typed.length() - MAX_TYPED_CHARS);

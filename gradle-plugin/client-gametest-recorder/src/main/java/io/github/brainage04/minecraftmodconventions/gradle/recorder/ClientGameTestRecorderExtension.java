@@ -4,6 +4,7 @@ import org.gradle.api.file.DirectoryProperty;
 import org.gradle.api.file.ProjectLayout;
 import org.gradle.api.model.ObjectFactory;
 import org.gradle.api.provider.Property;
+import org.gradle.api.provider.Provider;
 import org.gradle.api.provider.ProviderFactory;
 
 import javax.inject.Inject;
@@ -23,6 +24,7 @@ public abstract class ClientGameTestRecorderExtension {
     private final Property<Boolean> disableAdvancementToasts;
     private final Property<Boolean> disableAdvancementChatMessages;
     private final Property<Boolean> inputOverlay;
+    private final Provider<Boolean> effectiveInputOverlay;
 
     @Inject
     public ClientGameTestRecorderExtension(ObjectFactory objects, ProjectLayout layout, ProviderFactory providers) {
@@ -39,10 +41,11 @@ public abstract class ClientGameTestRecorderExtension {
         disableRecipeToasts = objects.property(Boolean.class).convention(true);
         disableAdvancementToasts = objects.property(Boolean.class).convention(true);
         disableAdvancementChatMessages = objects.property(Boolean.class).convention(true);
-        inputOverlay = objects.property(Boolean.class).convention(providers
+        inputOverlay = objects.property(Boolean.class).convention(true);
+        effectiveInputOverlay = providers
                 .gradleProperty(INPUT_OVERLAY_PROPERTY)
                 .map(ClientGameTestRecorderPlugin::truthy)
-                .orElse(true));
+                .orElse(inputOverlay);
     }
 
 
@@ -92,9 +95,18 @@ public abstract class ClientGameTestRecorderExtension {
 
     /**
      * Whether a recording draws the input overlay: the keystrokes caps and a clicks-per-second row, and a cursor wherever a
-     * screen has the mouse free. On by default; {@code -PinputOverlay=false} turns it off for one run.
+     * screen has the mouse free. On by default.
      */
     public Property<Boolean> getInputOverlay() {
         return inputOverlay;
+    }
+
+    /**
+     * {@link #getInputOverlay} unless {@code -PinputOverlay} is given, which wins for one run. A Gradle convention only
+     * applies while no value is set, so reading the property through one would lose to {@code inputOverlay = true} in a
+     * build script.
+     */
+    Provider<Boolean> effectiveInputOverlay() {
+        return effectiveInputOverlay;
     }
 }

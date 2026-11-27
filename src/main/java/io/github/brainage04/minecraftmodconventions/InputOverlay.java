@@ -110,6 +110,20 @@ public final class InputOverlay {
 
     private static long lastNanos;
 
+    /** The widest text the clicks-per-second row shows: two-digit counts on both buttons. */
+    private static final String WIDEST_CPS_LABEL = cpsLabel(99, 99);
+
+    /**
+     * Every label whose width {@link #caps} reads, so the layout is a function of these widths alone.
+     * They are measured each frame because a resource reload can change the font's metrics.
+     */
+    private static final String[] LAYOUT_LABELS = {"LMB", "RMB", SNEAK_LABEL, SPRINT_LABEL, "Space", WIDEST_CPS_LABEL};
+
+    private static final int[] layoutWidths = new int[LAYOUT_LABELS.length];
+    private static List<Cap> layout;
+    private static int layoutWidth;
+    private static int layoutHeight;
+
     private InputOverlay() {
     }
 
@@ -148,7 +162,9 @@ public final class InputOverlay {
      * measured from.
      */
     public static void onKey(InputConstants.Key key, int action) {
-        if (!enabled || key == null) {
+        // Tracked while the overlay is hidden too: a release dropped then would leave its cap lit
+        // for good once the overlay is shown again.
+        if (key == null) {
             return;
         }
         long now = Util.getMillis();
@@ -174,11 +190,7 @@ public final class InputOverlay {
         onKey(InputConstants.Type.MOUSE.getOrCreate(button), action);
     }
 
-    /** A character typed into a screen. */
     public static void onChar(int codepoint) {
-        if (!enabled) {
-            return;
-        }
         STATE.typed(Character.toString(codepoint), Util.getMillis());
     }
 
@@ -194,12 +206,12 @@ public final class InputOverlay {
         long now = Util.getMillis();
         long nowNanos = System.nanoTime();
         int performanceTop = performancePanelTop(client);
-        List<Cap> caps = caps(client.font::width);
+        List<Cap> caps = layout(client.font);
         int[] origin = panelOrigin(
                 graphics.guiWidth(),
                 graphics.guiHeight(),
-                panelWidth(caps),
-                panelHeight(caps),
+                layoutWidth,
+                layoutHeight,
                 performanceTop,
                 chatColumnWidth(client));
         graphics.nextStratum();
@@ -210,7 +222,23 @@ public final class InputOverlay {
         }
     }
 
-    /** A key cap: the key it shows, its label, and where it sits in the panel. */
+    private static List<Cap> layout(Font font) {
+        boolean changed = layout == null;
+        for (int index = 0; index < LAYOUT_LABELS.length; index++) {
+            int width = font.width(LAYOUT_LABELS[index]);
+            if (width != layoutWidths[index]) {
+                layoutWidths[index] = width;
+                changed = true;
+            }
+        }
+        if (changed) {
+            layout = caps(font::width);
+            layoutWidth = panelWidth(layout);
+            layoutHeight = panelHeight(layout);
+        }
+        return layout;
+    }
+
     record Cap(String id, String label, int x, int y, int width, int height) {
     }
 
@@ -243,7 +271,7 @@ public final class InputOverlay {
                 Math.max(size * 3 + pad * 2, button * 2 + pad),
                 Math.max(
                         textWidth.applyAsInt("Space") + SPARE_PIXEL,
-                        textWidth.applyAsInt(cpsLabel(99, 99)) + SPARE_PIXEL));
+                        textWidth.applyAsInt(WIDEST_CPS_LABEL) + SPARE_PIXEL));
         List<Cap> caps = new ArrayList<>(CAP_COUNT);
         caps.add(new Cap("forward", "W", size + pad, 0, size, size));
         int row = size + pad;
@@ -263,7 +291,6 @@ public final class InputOverlay {
         return caps;
     }
 
-    /** The panel's width: the right edge of its widest cap. */
     static int panelWidth(List<Cap> caps) {
         int width = 0;
         for (Cap cap : caps) {
@@ -272,7 +299,6 @@ public final class InputOverlay {
         return width;
     }
 
-    /** The panel's height: the bottom edge of its lowest cap. */
     static int panelHeight(List<Cap> caps) {
         int height = 0;
         for (Cap cap : caps) {

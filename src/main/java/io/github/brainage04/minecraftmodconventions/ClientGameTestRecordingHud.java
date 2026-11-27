@@ -103,7 +103,6 @@ public final class ClientGameTestRecordingHud {
         return overlayPlacement;
     }
 
-    /** Records this frame's performance panel, or null when it was not drawn. */
     static void recordPerformancePanelRect(int[] rect) {
         performancePanelRect = rect;
     }

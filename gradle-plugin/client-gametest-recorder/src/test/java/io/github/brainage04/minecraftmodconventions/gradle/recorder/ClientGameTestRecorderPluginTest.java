@@ -52,4 +52,27 @@ class ClientGameTestRecorderPluginTest {
                 )
         );
     }
+
+    @Test
+    void theInputOverlayPropertyWinsOverTheBuildScriptSetting(@TempDir Path temporaryDirectory) throws Exception {
+        Files.writeString(temporaryDirectory.resolve("gradle.properties"), "inputOverlay=false\n");
+        Project project = ProjectBuilder.builder().withProjectDir(temporaryDirectory.toFile()).build();
+        ClientGameTestRecorderExtension extension =
+                project.getObjects().newInstance(ClientGameTestRecorderExtension.class);
+        extension.getInputOverlay().set(true);
+
+        assertFalse(extension.effectiveInputOverlay().get());
+    }
+
+    @Test
+    void withoutTheInputOverlayPropertyTheBuildScriptSettingDecides(@TempDir Path temporaryDirectory) {
+        Project project = ProjectBuilder.builder().withProjectDir(temporaryDirectory.toFile()).build();
+        ClientGameTestRecorderExtension extension =
+                project.getObjects().newInstance(ClientGameTestRecorderExtension.class);
+        assertTrue(extension.effectiveInputOverlay().get());
+
+        extension.getInputOverlay().set(false);
+
+        assertFalse(extension.effectiveInputOverlay().get());
+    }
 }

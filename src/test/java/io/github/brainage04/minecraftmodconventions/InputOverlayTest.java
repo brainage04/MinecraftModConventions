@@ -49,4 +49,14 @@ class InputOverlayTest {
         assertTrue(InputOverlay.keyLit(W.getName(), Util.getMillis()));
         assertFalse(InputOverlay.keyLit(W.getName(), Util.getMillis() + InputOverlayState.MIN_VISIBLE_MILLIS));
     }
+
+    @Test
+    void aKeyReleasedWhileTheOverlayIsHiddenGoesDarkOnceShown() {
+        InputOverlay.onKey(W, InputConstants.PRESS);
+        InputOverlay.setEnabled(false);
+        InputOverlay.onKey(W, InputConstants.RELEASE);
+        InputOverlay.setEnabled(true);
+
+        assertFalse(InputOverlay.keyLit(W.getName(), Util.getMillis() + InputOverlayState.MIN_VISIBLE_MILLIS));
+    }
 }

@@ -115,6 +115,17 @@ class InputOverlayStateTest {
     }
 
     @Test
+    void textTypedAfterTheLastHasExpiredShowsAlone() {
+        InputOverlayState state = new InputOverlayState();
+        state.typed("/first", 1000L);
+        long later = 1000L + InputOverlayState.TYPED_VISIBLE_MILLIS + 1000L;
+
+        state.typed("/second", later);
+
+        assertEquals("/second", state.typedText(later));
+    }
+
+    @Test
     void typedTextKeepsTheLastFortyCharacters() {
         InputOverlayState state = new InputOverlayState();
         for (int index = 0; index < 50; index++) {

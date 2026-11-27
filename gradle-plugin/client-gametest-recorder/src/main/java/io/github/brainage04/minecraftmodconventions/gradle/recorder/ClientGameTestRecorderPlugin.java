@@ -109,7 +109,7 @@ public final class ClientGameTestRecorderPlugin implements Plugin<Project> {
             task.getGpuRendering().set(gpuRendering(project));
         });
         project.getTasks().withType(ClientGameTestProductionRunTask.class).configureEach(task -> {
-            task.getJvmArgs().add(runtimeProperty("inputOverlay", extension.getInputOverlay().get()));
+            task.getJvmArgs().add(runtimeProperty("inputOverlay", extension.effectiveInputOverlay().get()));
             ClientStartupDeadline.install(
                     task,
                     readyFile(project, task),
@@ -215,7 +215,7 @@ public final class ClientGameTestRecorderPlugin implements Plugin<Project> {
                 runtimeProperty("disableRecipeToasts", extension.getDisableRecipeToasts().get()),
                 runtimeProperty("disableAdvancementToasts", extension.getDisableAdvancementToasts().get()),
                 runtimeProperty("disableAdvancementChatMessages", extension.getDisableAdvancementChatMessages().get()),
-                runtimeProperty("inputOverlay", extension.getInputOverlay().get())
+                runtimeProperty("inputOverlay", extension.effectiveInputOverlay().get())
         ));
 
         String openAlDrivers = project.getProviders()
