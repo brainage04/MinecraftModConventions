@@ -85,10 +85,8 @@ public final class InputOverlay {
      */
     static final float HELD_SHADOW_OFF_PROGRESS = 0.5F;
 
-    /** The label of the sneak key's cap: the key's name is "Left Shift", which does not fit. */
     static final String SNEAK_LABEL = "Shift";
 
-    /** The label of the sprint key's cap, whose vanilla binding is the left control key. */
     static final String SPRINT_LABEL = "Ctrl";
 
     /** How long a cap takes to light or dim, as BrainageHUD's keystrokes HUD does. */
