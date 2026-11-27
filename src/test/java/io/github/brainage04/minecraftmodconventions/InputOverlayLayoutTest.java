@@ -445,6 +445,14 @@ class InputOverlayLayoutTest {
     }
 
     @Test
+    void aLitCapsTextMovesRightExactlyWhenItsShadowGoes() {
+        assertEquals(0, InputOverlay.heldTextOffset(0.0F));
+        assertEquals(0, InputOverlay.heldTextOffset(Math.nextDown(InputOverlay.HELD_SHADOW_OFF_PROGRESS)));
+        assertEquals(InputOverlay.HELD_TEXT_OFFSET, InputOverlay.heldTextOffset(InputOverlay.HELD_SHADOW_OFF_PROGRESS));
+        assertEquals(InputOverlay.HELD_TEXT_OFFSET, InputOverlay.heldTextOffset(1.0F));
+    }
+
+    @Test
     void typedTextIsCutWithAnEllipsisWhenItDoesNotFit() {
         ToIntFunction<String> width = text -> text.length() * 6;
 

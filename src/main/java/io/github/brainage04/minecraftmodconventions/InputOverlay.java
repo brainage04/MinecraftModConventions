@@ -378,10 +378,13 @@ public final class InputOverlay {
         }
     }
 
-    /** A lit cap's text starts this many pixels further right, so its shadowless ink is centred. */
+    /**
+     * How far right a lit cap's text moves once its shadow goes: {@link #labelX} centres the ink and
+     * the shadow's extra column as one box, so the ink alone sits half a pixel left of centre, and
+     * this rounds it right.
+     */
     static final int HELD_TEXT_OFFSET = 1;
 
-    /** The shift of a cap's text: {@link #HELD_TEXT_OFFSET} from the progress where its shadow goes. */
     static int heldTextOffset(float progress) {
         return textShadow(progress) ? 0 : HELD_TEXT_OFFSET;
     }
