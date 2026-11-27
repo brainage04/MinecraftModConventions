@@ -371,11 +371,19 @@ public final class InputOverlay {
             graphics.text(
                     font,
                     label,
-                    x + labelX(cap.width(), font.width(label)),
+                    x + labelX(cap.width(), font.width(label)) + heldTextOffset(progress),
                     y + labelY(cap.height(), font.lineHeight),
                     textColour(progress),
                     textShadow(progress));
         }
+    }
+
+    /** A lit cap's text starts this many pixels further right, so its shadowless ink is centred. */
+    static final int HELD_TEXT_OFFSET = 1;
+
+    /** The shift of a cap's text: {@link #HELD_TEXT_OFFSET} from the progress where its shadow goes. */
+    static int heldTextOffset(float progress) {
+        return textShadow(progress) ? 0 : HELD_TEXT_OFFSET;
     }
 
     /**
