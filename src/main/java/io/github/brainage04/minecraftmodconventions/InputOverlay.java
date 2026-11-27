@@ -22,9 +22,9 @@ import java.util.function.ToIntFunction;
  * <p>The layout and colours follow BrainageHUD's keystrokes HUD ({@code KeystrokesHud}): 20-pixel
  * caps two pixels apart, W over S, A and D beside it, a space bar three caps wide, then LMB and RMB
  * with the clicks-per-second row under them, black at 100/255 with white text, lit to white at the
- * same opacity with black text over 100 ms. The row reads {@code 3 | 5 CPS} (LMB, RMB), counting
- * the presses of the last second as that HUD does. Shift and Sprint come last, as wide as LMB and
- * RMB, and the space bar is labelled {@code Space} rather than drawn as a bar.
+ * same opacity with black text, drawn without a shadow, over 100 ms. The row reads {@code 3 | 5 CPS}
+ * (LMB, RMB), counting the presses of the last second as that HUD does. Shift and Ctrl come last,
+ * as wide as LMB and RMB, and the space bar is labelled {@code Space} rather than drawn as a bar.
  *
  * <p>A recording is watched to see what a player did, and a client GameTest presses a key for one
  * tick, shorter than two frames of a 30 fps recording. A cap therefore stays lit for
@@ -56,8 +56,7 @@ public final class InputOverlay {
      * One spare pixel a widened cap keeps to the right of its label. The label's ink and its drop
      * shadow already sit inside the label's advance (the ink is one pixel narrower, the shadow takes
      * that pixel, {@link #labelX}), so this pixel is not needed to avoid clipping: it keeps a cap
-     * from being exactly as wide as its text. Without it Sprint, 30 wide, would make the buttons 30,
-     * with its shadow in the cap's last column and no margin on that side.
+     * from being exactly as wide as its text.
      */
     static final int SPARE_PIXEL = 1;
 
@@ -79,6 +78,18 @@ public final class InputOverlay {
      * line.
      */
     static final int HELD_TEXT_COLOUR = 0xFF000000;
+
+    /**
+     * The progress from which a lit cap's text draws no shadow: halfway through the fade, so the
+     * shadow is gone while the cap is still lit and the glyph is thin as soon as the key reads as held.
+     */
+    static final float HELD_SHADOW_OFF_PROGRESS = 0.5F;
+
+    /** The label of the sneak key's cap: the key's name is "Left Shift", which does not fit. */
+    static final String SNEAK_LABEL = "Shift";
+
+    /** The label of the sprint key's cap, whose vanilla binding is the left control key. */
+    static final String SPRINT_LABEL = "Ctrl";
 
     /** How long a cap takes to light or dim, as BrainageHUD's keystrokes HUD does. */
     static final long TRANSITION_NANOS = 100_000_000L;
@@ -211,10 +222,10 @@ public final class InputOverlay {
     /**
      * The ten caps, in BrainageHUD's keystrokes layout: W over S, A and D beside it, a space bar
      * three caps wide, LMB and RMB, the clicks-per-second row under them (three caps wide, as
-     * {@code KeystrokesHud.java:147-148} draws it), then Shift and Sprint. The ids select the
+     * {@code KeystrokesHud.java:147-148} draws it), then Shift and Ctrl. The ids select the
      * client's key mapping in {@link #mapping}, so a rebound key still lights its cap.
      *
-     * <p>LMB, RMB, Shift and Sprint are one width, so Shift and Sprint sit exactly under LMB and RMB:
+     * <p>LMB, RMB, Shift and Ctrl are one width, so Shift and Ctrl sit exactly under LMB and RMB:
      * BrainageHUD's half-cap (31), or the widest of their labels plus {@link #SPARE_PIXEL} when that
      * is wider. Two buttons and the gap are then as wide as the space bar and the clicks row (64), so
      * every row under W/A/S/D shares both edges; a font that widens a button widens the space bar
@@ -228,7 +239,7 @@ public final class InputOverlay {
         int half = (int) (size * 1.5 + (double) pad / 2);
         int widestButton = Math.max(
                 Math.max(textWidth.applyAsInt("LMB"), textWidth.applyAsInt("RMB")),
-                Math.max(textWidth.applyAsInt("Shift"), textWidth.applyAsInt("Sprint")));
+                Math.max(textWidth.applyAsInt(SNEAK_LABEL), textWidth.applyAsInt(SPRINT_LABEL)));
         int button = Math.max(half, widestButton + SPARE_PIXEL);
         int span = Math.max(
                 Math.max(size * 3 + pad * 2, button * 2 + pad),
@@ -249,8 +260,8 @@ public final class InputOverlay {
         row += size + pad;
         caps.add(new Cap(CPS_ID, cpsLabel(0, 0), 0, row, span, size));
         row += size + pad;
-        caps.add(new Cap("sneak", "Shift", 0, row, button, size));
-        caps.add(new Cap("sprint", "Sprint", span - button, row, button, size));
+        caps.add(new Cap("sneak", SNEAK_LABEL, 0, row, button, size));
+        caps.add(new Cap("sprint", SPRINT_LABEL, span - button, row, button, size));
         return caps;
     }
 
@@ -339,7 +350,7 @@ public final class InputOverlay {
                     x + labelX(cap.width(), font.width(label)),
                     y + labelY(cap.height(), font.lineHeight),
                     textColour(progress),
-                    true);
+                    textShadow(progress));
         }
     }
 
@@ -399,6 +410,15 @@ public final class InputOverlay {
     /** A cap's text: {@link #TEXT_COLOUR}, lit to {@link #HELD_TEXT_COLOUR}. */
     static int textColour(float progress) {
         return ARGB.srgbLerp(progress, TEXT_COLOUR, HELD_TEXT_COLOUR);
+    }
+
+    /**
+     * Whether a cap's text draws its drop shadow. The shadow of black text is black, one pixel right
+     * and down ({@code Font.java:357}, {@code GlyphInfo.java:14-15}), which doubles every stroke, so
+     * the text drops it from {@link #HELD_SHADOW_OFF_PROGRESS} on.
+     */
+    static boolean textShadow(float progress) {
+        return progress < HELD_SHADOW_OFF_PROGRESS;
     }
 
     /** The text typed into a screen, on a line above the caps, right-aligned to the panel. */
