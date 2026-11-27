@@ -88,7 +88,7 @@ public final class InputOverlayState {
         if (text == null || text.isEmpty()) {
             return;
         }
-        if (typedText(nowMillis).isEmpty()) {
+        if (typedExpired(nowMillis)) {
             typed.setLength(0);
         }
         typed.append(text);
@@ -100,10 +100,11 @@ public final class InputOverlayState {
 
     /** The text typed recently, or an empty string when nothing was typed in the last two seconds. */
     public String typedText(long nowMillis) {
-        if (typedAt == Long.MIN_VALUE || nowMillis - typedAt >= TYPED_VISIBLE_MILLIS) {
-            return "";
-        }
-        return typed.toString();
+        return typedExpired(nowMillis) ? "" : typed.toString();
+    }
+
+    private boolean typedExpired(long nowMillis) {
+        return typedAt == Long.MIN_VALUE || nowMillis - typedAt >= TYPED_VISIBLE_MILLIS;
     }
 
     /**

@@ -110,7 +110,7 @@ public final class InputOverlay {
 
     private static long lastNanos;
 
-    /** The widest text the clicks-per-second row shows: two-digit counts on both buttons. */
+    /** The sample the clicks-per-second row is sized from, which leaves room for two-digit counts. */
     private static final String WIDEST_CPS_LABEL = cpsLabel(99, 99);
 
     /**
