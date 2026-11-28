@@ -110,12 +110,12 @@ def hud(number: int = 0, seconds: float = 0.0, **changes) -> dict[str, object]:
 
 
 class TakeChecksTest(unittest.TestCase):
-    def run_case(self, rows, events, *, streams=None, role=None, config_text=None):
+    def run_case(self, rows, events, *, streams=None, role=None, config_text=None, manifest=True):
         stream_names = set(BASE_STREAMS if streams is None else streams)
-        manifest = event("manifest", 0, 0.0, streams=sorted(stream_names), take_id="take")
+        manifest_event = event("manifest", 0, 0.0, streams=sorted(stream_names), take_id="take")
         if role:
-            manifest["role"] = role
-        all_events = [manifest, *events]
+            manifest_event["role"] = role
+        all_events = [manifest_event, *events] if manifest else list(events)
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             ticks_path = root / "ticks.csv"
@@ -403,8 +403,9 @@ class TakeChecksTest(unittest.TestCase):
     def test_path_detour_fails_and_direct_path_passes(self):
         detour = [tick(0, 0.0), tick(1, 0.5, pos_x=1.0), tick(2, 1.0), tick(3, 1.5, pos_x=2.0)]
         direct = [tick(0, 0.0), tick(1, 0.5, pos_x=1.0), tick(2, 1.0, pos_x=2.0)]
-        self.assert_verdict(self.run_case(detour, boundaries(2.0))[1], "Path", "FAIL")
-        self.assert_verdict(self.run_case(direct, boundaries(2.0))[1], "Path", "PASS")
+        straight_line = set(BASE_STREAMS) - {"planned_path"}
+        self.assert_verdict(self.run_case(detour, boundaries(2.0), streams=straight_line)[1], "Path", "FAIL")
+        self.assert_verdict(self.run_case(direct, boundaries(2.0), streams=straight_line)[1], "Path", "PASS")
 
     def test_rec4_far_portal_scaffold_fails_and_near_scaffold_passes(self):
         rows = steady_rows()
@@ -519,10 +520,15 @@ class TakeChecksTest(unittest.TestCase):
         streams = {"stage_start", "stage_end"}
         completed, verdicts = self.run_case(steady_rows(), boundaries(), streams=streams)
         self.assertEqual(0, completed.returncode, completed.stdout + completed.stderr)
-        for check_id in ("P2", "P3", "P4", "P5", "P6", "I1", "I3", "I4", "M5", "M2", "M3",
-                         "Work size", "N3", "H1", "H2", "H3", "H4", "H5", "M4", "S1"):
+        for check_id in ("P1", "P2", "P3", "P4", "P5", "P6", "I1", "I3", "I4", "M5", "M2", "M3",
+                         "Work size", "N3", "H1", "H2", "H3", "H4", "H5", "B1", "B3", "B4", "B5",
+                         "B6", "M4", "S1", "S2"):
             self.assert_verdict(verdicts, check_id, "NOT EVALUATED")
         self.assertIn("NOT EVALUATED:", completed.stdout)
+        for check_id in ("B1", "B3", "B6", "S2"):
+            self.assertRegex(completed.stdout, rf"\n  {check_id}: needs ")
+        self.assertRegex(completed.stdout, r"\n  B4: manifest role is not before")
+        self.assertRegex(completed.stdout, r"\n  B5: manifest role is not after")
 
     def test_config_change_changes_the_verdict(self):
         rows = steady_rows()
@@ -543,7 +549,7 @@ class TakeChecksTest(unittest.TestCase):
             {"tick": 0, "time_millis": 1_000_000, "event": "start", "label": "legacy"},
             {"tick": 8, "time_millis": 1_002_000, "event": "finish", "label": "legacy"},
         ]
-        completed, verdicts = self.run_case(rows, events, streams={"stage_start", "stage_end"})
+        completed, verdicts = self.run_case(rows, events, manifest=False)
         self.assertEqual(0, completed.returncode, completed.stdout + completed.stderr)
         self.assert_verdict(verdicts, "Path", "PASS")
 
@@ -738,6 +744,119 @@ class TakeChecksTest(unittest.TestCase):
         shown = hud(1, 0.25, values={"health": 18})
         self.assert_verdict(self.run_case(steady_rows(), [*boundaries(), damage, shown])[1],
                             "H5", "NOT EVALUATED")
+
+
+    def test_hazard_columns_accept_the_documented_inf_sentinel(self):
+        rows = self.hazard_rows(2.0)
+        for row in rows:
+            row.update(lava_distance_blocks="inf", void_distance_blocks="inf")
+        completed, verdicts = self.run_case(rows, boundaries())
+        self.assertEqual(0, completed.returncode, completed.stdout + completed.stderr)
+        self.assert_verdict(verdicts, "M2", "PASS")
+
+    def test_hazard_columns_reject_negative_infinity(self):
+        rows = self.hazard_rows(2.0)
+        for row in rows:
+            row["lava_distance_blocks"] = "-inf"
+        completed, _ = self.run_case(rows, boundaries())
+        self.assertEqual(2, completed.returncode, completed.stdout + completed.stderr)
+
+    def test_blank_hazard_cell_is_not_evaluated(self):
+        rows = self.hazard_rows(2.0)
+        rows[1]["void_distance_blocks"] = ""
+        verdicts = self.run_case(rows, boundaries())[1]
+        self.assert_verdict(verdicts, "M2", "NOT EVALUATED")
+
+    def test_c4_empty_earlier_stage_does_not_crash(self):
+        rows = steady_rows()
+        rows[1]["yaw"] = 45.0
+        rows[1]["yaw_delta"] = 45.0
+        events = [event("stage_start", 0, 0.1, stage_id="one"),
+                  event("stage_end", 0, 0.2, stage_id="one"),
+                  event("stage_start", 0, 0.2, stage_id="two"),
+                  event("stage_end", 8, 2.0, stage_id="two")]
+        completed, verdicts = self.run_case(rows, events)
+        self.assertEqual(1, completed.returncode, completed.stdout + completed.stderr)
+        self.assert_verdict(verdicts, "C4", "FAIL")
+
+    def test_p1_boundary_action_belongs_to_the_stage_that_ends(self):
+        events = [event("stage_start", 0, 0.0, stage_id="one"),
+                  event("chat", 1, 0.25, stage_id="one", text="early"),
+                  event("chat", 4, 1.0, stage_id="one", text="last line of one"),
+                  event("stage_end", 4, 1.0, stage_id="one"),
+                  event("stage_start", 4, 1.0, stage_id="two"),
+                  event("stage_end", 12, 3.0, stage_id="two")]
+        self.assert_verdict(self.run_case(steady_rows(3.0), events)[1], "P1", "FAIL")
+
+    def test_m1_rotation_cut_between_stages_is_not_a_flip(self):
+        rows = steady_rows()
+        rows[2]["yaw"] = 90.0
+        for row in rows[3:]:
+            row["yaw"] = 89.0
+        events = [event("stage_start", 0, 0.0, stage_id="one"),
+                  event("stage_end", 1, 0.25, stage_id="one"),
+                  event("stage_start", 2, 0.5, stage_id="two"),
+                  event("stage_end", 8, 2.0, stage_id="two")]
+        self.assert_verdict(self.run_case(rows, events)[1], "M1", "PASS")
+
+    def test_p5_hash_and_dot_command_echoes_are_not_effects(self):
+        for command_text in ("#goto 1 2 3", ".goto 1 2 3"):
+            sent = event("command_sent", 8, 2.0, command_id="c", command=command_text, source="hud")
+            echo = event("chat", 8, 2.0, text=command_text)
+            self.assert_verdict(self.run_case(steady_rows(4.0), [*boundaries(4.0), sent, echo])[1], "P5", "FAIL")
+            moving = steady_rows(4.0)
+            moving[10]["pos_x"] = 1.0
+            self.assert_verdict(self.run_case(moving, [*boundaries(4.0), sent, echo])[1], "P5", "PASS")
+
+    def test_i4_setting_change_without_a_value_is_not_evaluated(self):
+        change = event("setting_change", 1, 0.25, setting="sprint")
+        shown = hud(1, 0.25, values={"sprint": False})
+        self.assert_verdict(self.run_case(steady_rows(), [*boundaries(), change, shown])[1],
+                            "I4", "NOT EVALUATED")
+
+    def test_scalar_check_table_in_config_exits_two(self):
+        original = CONFIG.read_text(encoding="utf-8")
+        start = original.index("[checks.P1]")
+        end = original.index("[checks.P2]")
+        broken = original[:start] + "[checks]\nP1 = 1\n\n" + original[end:]
+        completed, _ = self.run_case(steady_rows(), boundaries(), config_text=broken)
+        self.assertEqual(2, completed.returncode, completed.stdout + completed.stderr)
+        self.assertNotIn("Traceback", completed.stderr)
+
+    def test_planned_path_with_a_null_point_exits_two(self):
+        plan = event("planned_path", 0, 0.0, stage_id="stage", points=[None, [0, 0, 0]])
+        completed, _ = self.run_case([tick(0, 0.0), tick(1, 0.5, pos_x=1.0), tick(2, 1.0, pos_x=2.0)],
+                                     [*boundaries(2.0), plan])
+        self.assertEqual(2, completed.returncode, completed.stdout + completed.stderr)
+        self.assertNotIn("Traceback", completed.stderr)
+
+    def test_m2_range_below_clearance_exits_two(self):
+        original = CONFIG.read_text(encoding="utf-8")
+        changed = original.replace('value = 3.0\nunit = "blocks"\nclearance_blocks = 1.0',
+                                   'value = 0.5\nunit = "blocks"\nclearance_blocks = 1.0', 1)
+        self.assertNotEqual(original, changed)
+        completed, _ = self.run_case(self.hazard_rows(0.75), boundaries(), config_text=changed)
+        self.assertEqual(2, completed.returncode, completed.stdout + completed.stderr)
+
+    def test_path_with_declared_planner_stream_needs_a_plan_for_a_moving_stage(self):
+        detour = [tick(0, 0.0), tick(1, 0.5, pos_x=1.0), tick(2, 1.0), tick(3, 1.5, pos_x=2.0)]
+        self.assert_verdict(self.run_case(detour, boundaries(2.0))[1], "Path", "NOT EVALUATED")
+
+    def test_path_with_a_plan_uses_the_plan_length(self):
+        detour = [tick(0, 0.0), tick(1, 0.5, pos_x=1.0), tick(2, 1.0), tick(3, 1.5, pos_x=2.0)]
+        plan = event("planned_path", 0, 0.0, stage_id="stage", length_blocks=4.0)
+        self.assert_verdict(self.run_case(detour, [*boundaries(2.0), plan])[1], "Path", "PASS")
+
+    def test_non_finite_hud_rectangles_exit_two(self):
+        for fields in ({"rect": [float("nan"), 0, 100, 20]}, {"screen": [0, 0, "nan", 360]},
+                       {"rect": [0, 0, -5, 20]}):
+            completed, _ = self.run_case(steady_rows(), [*boundaries(), hud(**fields)])
+            self.assertEqual(2, completed.returncode, completed.stdout + completed.stderr)
+
+    def test_declared_empty_frame_and_audio_streams_are_not_evaluated(self):
+        verdicts = self.run_case(steady_rows(), boundaries())[1]
+        self.assert_verdict(verdicts, "M4", "NOT EVALUATED")
+        self.assert_verdict(verdicts, "S1", "NOT EVALUATED")
 
 
 if __name__ == "__main__":
