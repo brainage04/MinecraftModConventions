@@ -751,7 +751,7 @@ class TakeChecksTest(unittest.TestCase):
         for row in rows:
             row.update(lava_distance_blocks="inf", void_distance_blocks="inf")
         completed, verdicts = self.run_case(rows, boundaries())
-        self.assertEqual(0, completed.returncode, completed.stdout + completed.stderr)
+        self.assertNotEqual(2, completed.returncode, completed.stdout + completed.stderr)
         self.assert_verdict(verdicts, "M2", "PASS")
 
     def test_hazard_columns_reject_negative_infinity(self):

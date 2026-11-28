@@ -15,7 +15,7 @@ A check with missing data never passes. The event file's `manifest` declares whi
 
 ## Configuration
 
-Every threshold lives in `tools/take-checks/take-checks.toml`. Each check has one entry with `value`, `unit` and `note`. Checks with two thresholds keep both in that entry, such as C4's `value` in degrees and `follow_s` in seconds. Changing a threshold is a one-line edit. Rule checks use `value = 1` and `unit = "rule"` because they have no numeric threshold. Missing or misspelled secondary keys, non-finite numbers and missing numeric event fields exit 2.
+Every threshold lives in `tools/take-checks/take-checks.toml`. Each check has one entry with `value`, `unit` and `note`. Checks with two thresholds keep both in that entry, such as C4's `value` in degrees and `follow_s` in seconds. Changing a threshold is a one-line edit. Rule checks use `value = 1` and `unit = "rule"` because they have no numeric threshold. Missing or misspelled secondary keys, a check entry that is not a table, non-finite numbers and missing numeric event fields exit 2. M2's `value` (the hazard range) must be at least its `clearance_blocks`, otherwise a hazard inside the clearance could fall outside the range, so the config exits 2.
 
 P1, P2 and P3 use 0.5 s. Thomas approved that trial on 26 Nov 2026. The other plan values remain 5 s, 30 degrees, 1 block and a 1.5 path-length ratio.
 
@@ -61,7 +61,7 @@ The first event is a `manifest` with `streams`, the names of the event streams t
 | `death`, `stall`, `wrong_result` | `stage_id`, `reason` | B4 |
 | `movement_cause` | `stage_id`, `reason` | N3 |
 | `work_plan` | `stage_id`, `lava` block coordinates, `required_blocks` | Work size |
-| `planned_path` | `stage_id`, `length_blocks` or `points` | Path |
+| `planned_path` | `stage_id`, `length_blocks` or `points` (a list of `[x, y, z]` lists) | Path |
 | `frame` | `capture_index`, `present_id` | M4 |
 | `audio` | `peak_db` | S1 |
 
@@ -107,7 +107,7 @@ M2 and M3 need four additional columns from TPM instrumentation step 2 or Barito
 | `void_distance_blocks` | Measured distance from the feet to the void, or `inf` when the dimension has no void |
 | `drop_adjacent` | `1` or `0`, whether a drop is adjacent to the player |
 
-A blank hazard cell means the scan is missing, so M2 or M3 returns `NOT EVALUATED`. The checker does not infer solidity or danger from block names. The client instrumentation must measure the hazard against the loaded world.
+A blank hazard cell means the scan is missing, so M2 or M3 returns `NOT EVALUATED`. Every other number in the tick file must be finite. A hazard distance also accepts `inf` and rejects `-inf` and `nan`. The checker does not infer solidity or danger from block names. The client instrumentation must measure the hazard against the loaded world.
 
 The Baritone harness currently logs chat, console output, take durations and audio peaks, but has no per-tick sample (`record.py:230-317`). Its later client sample should write the same column names. It can use `seconds` directly, or `time_millis` with the event file's clock. The event adapter should turn the harness's chat and console lines into `chat`, `command_typed`, `command_sent`, `failure` and `goal_reached` events.
 
@@ -117,24 +117,24 @@ MMC's stage helper prints `STAGE_START <epoch ms> <id>` and `STAGE_END <epoch ms
 
 | Id | Requirement | Implementation and data |
 | --- | --- | --- |
-| P1 | First movement, command or chat line within 0.5 s of stage start | Implemented. Needs ticks, stage boundaries and the manifest's action streams. |
+| P1 | First movement, command or chat line within 0.5 s of stage start | Implemented. Needs ticks, stage boundaries and the manifest's action streams. A chat or command event belongs to the stage named by its `stage_id`, or to the latest stage covering its time when it has none. |
 | P2 | Stop within 0.5 s of a failure line | Implemented. Needs `failure` and a matched `stage_end` for every stage. `stage_id` selects the stage at a shared boundary. |
 | P3 | Stop within 0.5 s of goal reached | Implemented. Needs `goal_reached` and a matched `stage_end` for every stage. `stage_id` selects the stage at a shared boundary. |
 | P4 | No unmarked stretch over 5 s without visible change | Implemented. A change is a new HUD element state, chat line, inventory snapshot or block change whose before and after differ. Prints marked pauses. |
-| P5 | First visible command effect within 1 s | Implemented. Compares `command_sent` with the next real visible change in the command's stage. An earlier failure stays a FAIL when a later command has an incomplete window. |
+| P5 | First visible command effect within 1 s | Implemented. Compares `command_sent` with the next real visible change in the command's stage. A chat line that starts with `/` or repeats a sent command is an echo and not an effect. An earlier failure stays a FAIL when a later command has an incomplete window. |
 | P6 | Each craft, anvil or place step stays visible for at least 0.5 s | Implemented. Needs paired, well-formed `screen_step` events. An earlier short step stays a FAIL when a later step is still open. |
 | I1 | Every command grows one visible character per tick | Implemented. Needs `command_typed` and `command_sent`. Typing must finish by the send tick. |
 | I3 | Stop, release and cancel commands use the HUD | Implemented. Needs `command_sent.source`. Leading `/`, `#` and `.` are stripped before matching stop words. |
-| I4 | Every setting change has a same-tick on-screen line | Implemented. Needs `setting_change` plus HUD or chat. A shown HUD value must match `setting_change.value`. |
+| I4 | Every setting change has a same-tick on-screen line | Implemented. Needs `setting_change` with `setting` and `value`, plus HUD or chat. A shown HUD value must match `setting_change.value`. A change without `value` is NOT EVALUATED. |
 | C4 | No turn over 30 degrees followed by 1 s without activity | Implemented from tick rotation, movement, actions and crosshair target. A follow window past the last tick sample is NOT EVALUATED, even when a later event extends the take. |
 | M5 | Crosshair holds the intended target at intent and action | Implemented. Needs `action_intent`, `action` and crosshair samples. Missing or duplicate action ids and incomplete targets are NOT EVALUATED. |
-| M1 | No rotation or speed sign flip within 3 ticks | Implemented from tick deltas. The config deadband ignores small deltas, each stage is checked separately, and speed loss while airborne is not a reversal. |
-| M2 | Moving feet keep more than 1 block clearance from nearby hazards | Implemented. Needs the three measured hazard-distance columns from step 2/3. |
+| M1 | No rotation or speed sign flip within 3 ticks | Implemented from tick deltas. The config deadband ignores small deltas, each stage is checked separately, the first sample of a stage is skipped because its delta spans the cut, and speed loss while airborne is not a reversal. |
+| M2 | Moving feet keep more than 1 block clearance from nearby hazards | Implemented. Needs the three measured hazard-distance columns from step 2/3. Only hazards within the config `value` range count, so the config rejects a range below `clearance_blocks`. |
 | M3 | Sneaking matches an adjacent drop on every tick | Implemented. Needs `drop_adjacent` from step 2/3. |
-| Path | Path length stays within 1.5 times the optimum | Implemented. Uses `planned_path` when present, otherwise the straight-line distance. An earlier failing stage stays a FAIL when a later stage is incomplete. |
+| Path | Path length stays within 1.5 times the optimum | Implemented. Uses `planned_path` when the stage has one. Without a `planned_path` stream in the manifest it falls back to the straight-line distance, which is only a fair optimum for a stage with a clear route. A stage that detours around an obstacle or returns to its start needs planner data. When the manifest declares `planned_path`, a moving stage without a plan is NOT EVALUATED. An earlier failing stage stays a FAIL when a later stage is incomplete. |
 | Work size | Scaffold stays within 2 blocks of lava and adds no more blocks than needed | Implemented. Needs `work_plan.required_blocks` and `place` or `break` on every `block_change`. |
 | N3 | Movement has input or an explanation within 1 tick | Implemented. A movement key within the configured window explains delayed motion. Command, intent and `movement_cause` events explain other motion. Pause markers, chat and attack or use do not. Emit `movement_cause` for airborne or decelerating motion that lasts beyond the window. |
-| H1 | Every HUD rectangle stays inside the screen | Implemented. Needs `hud` rectangles. |
+| H1 | Every HUD rectangle stays inside the screen | Implemented. Needs `hud` rectangles with finite coordinates and non-negative sizes, otherwise exit 2. |
 | H2 | HUD text wraps instead of truncating | Implemented. Needs a boolean `hud.truncated` on every sample. |
 | H3 | Same-tick HUD rectangles do not overlap | Implemented. Needs `hud` rectangles. |
 | H4 | All HUD samples use one GUI scale | Implemented. Needs `hud.scale`. |

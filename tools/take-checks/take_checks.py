@@ -233,6 +233,19 @@ def optional_number(row: dict[str, str], key: str) -> float | None:
     return None if value == "" else finite_float(value, f"tick column {key}")
 
 
+def hazard_distance(row: dict[str, str], key: str) -> float | None:
+    value = row.get(key, "")
+    if value == "":
+        return None
+    try:
+        result = float(value)
+    except ValueError as error:
+        raise InputError(f"tick column {key} must be numeric") from error
+    if math.isnan(result) or result == -math.inf:
+        raise InputError(f"tick column {key} must be a number or inf")
+    return result
+
+
 def optional_integer(row: dict[str, str], key: str) -> int | None:
     value = row.get(key, "")
     return None if value == "" else int(finite_float(value, f"tick column {key}"))
@@ -250,6 +263,8 @@ def load_config(path: Path) -> Config:
     for check_id, row in rows.items():
         if check_id not in CHECK_ORDER:
             raise InputError(f"{path}: unknown check entry {check_id!r}")
+        if not isinstance(row, dict):
+            raise InputError(f"{path}: [checks.{check_id}] must be a table")
         for key in ("value", "unit", "note"):
             if key not in row:
                 raise InputError(f"{path}: [checks.{check_id}] is missing {key}")
@@ -258,6 +273,8 @@ def load_config(path: Path) -> Config:
             if key not in row:
                 raise InputError(f"{path}: [checks.{check_id}] is missing {key}")
             finite_float(row[key], f"{path}: [checks.{check_id}].{key}")
+        if check_id == "M2" and float(row["value"]) < float(row["clearance_blocks"]):
+            raise InputError(f"{path}: [checks.M2].value must be at least clearance_blocks")
     return Config(dict(rows))
 
 
@@ -375,9 +392,9 @@ def load_ticks(path: Path, origin_millis: float | None) -> tuple[list[Tick], boo
                     hit_block_z=hit_z,
                     hit_entity_type=row.get("hit_entity_type", ""),
                     target_block=row.get("target_block", ""),
-                    drop_distance=optional_number(row, "drop_distance_blocks"),
-                    lava_distance=optional_number(row, "lava_distance_blocks"),
-                    void_distance=optional_number(row, "void_distance_blocks"),
+                    drop_distance=hazard_distance(row, "drop_distance_blocks"),
+                    lava_distance=hazard_distance(row, "lava_distance_blocks"),
+                    void_distance=hazard_distance(row, "void_distance_blocks"),
                     drop_adjacent=None if drop_adjacent == "" else boolean(row, "drop_adjacent"),
                 ), yaw_delta is not None, pitch_delta is not None))
             except (TypeError, ValueError) as error:
@@ -497,6 +514,8 @@ def visible_change_times(take: Take) -> list[float]:
     changes: list[float] = []
     previous = None
     last_event_signatures: dict[tuple[str, str], str] = {}
+    sent_commands = {text for text in (str(event.get("command", "")).strip()
+                                       for event in take.events_of("command_sent")) if text}
     for tick in take.ticks:
         signature = tick_signature(tick)
         if previous is not None and signature != previous:
@@ -504,7 +523,7 @@ def visible_change_times(take: Take) -> list[float]:
         previous = signature
     for event in take.events:
         if event.type == "chat":
-            if not is_command_echo(event):
+            if not is_command_echo(event, sent_commands):
                 changes.append(event.seconds)
         elif event.type == "hud":
             key = ("hud", str(event.get("element", "")))
@@ -523,9 +542,9 @@ def visible_change_times(take: Take) -> list[float]:
     return sorted(set(changes))
 
 
-def is_command_echo(event: Event) -> bool:
+def is_command_echo(event: Event, sent_commands: set[str]) -> bool:
     text = str(event.get("text", "")).strip()
-    return text.startswith("/")
+    return text.startswith("/") or text in sent_commands
 
 
 def pause_intervals(take: Take) -> list[tuple[float, float, str]]:
@@ -573,7 +592,8 @@ def check_p1(take: Take, config: Config) -> Result:
     for stage in take.stages:
         first_action: float | None = None
         for event in action_events:
-            if stage.start.seconds <= event.seconds <= stage.end_seconds:
+            if (stage.start.seconds <= event.seconds <= stage.end_seconds
+                    and matching_stage(take, event) is stage):
                 first_action = event.seconds if first_action is None else min(first_action, event.seconds)
         previous = None
         for tick in take.ticks:
@@ -781,6 +801,9 @@ def check_i4(take: Take, config: Config) -> Result:
         if not isinstance(setting, str) or not setting.strip():
             return result("I4", "NOT EVALUATED", f"setting change at {change.seconds:.2f}s has no setting name", take,
                           "setting_change.setting is missing")
+        if "value" not in change.data:
+            return result("I4", "NOT EVALUATED", f"setting change at {change.seconds:.2f}s has no value", take,
+                          "setting_change.value is missing")
         shown = False
         wrong_value = False
         for event in take.events:
@@ -790,7 +813,7 @@ def check_i4(take: Take, config: Config) -> Result:
                 values = event.get("values", {})
                 if isinstance(values, dict) and setting in values:
                     shown = True
-                    if "value" in change.data and values[setting] != change.get("value"):
+                    if values[setting] != change.get("value"):
                         wrong_value = True
                 shown = shown or setting in str(event.get("text", ""))
             elif event.type == "chat":
@@ -822,7 +845,7 @@ def check_c4(take: Take, config: Config) -> Result:
         last = run[-1]
         window_end = last.seconds + follow
         containing = next((group for group in stage_tick_groups(take)
-                           if group[0].seconds <= last.seconds <= group[-1].seconds), None)
+                           if group and group[0].seconds <= last.seconds <= group[-1].seconds), None)
         available_end = containing[-1].seconds if containing else take.ticks[-1].seconds
         if available_end < window_end:
             return result("C4", "NOT EVALUATED", f"turn ending at {last.seconds:.2f}s has no complete {follow:.2f}s follow window", take,
@@ -931,8 +954,9 @@ def check_m1(take: Take, config: Config) -> Result:
     deadband = config.value("M1", "deadband")
     flips: list[tuple[int, float]] = []
     for ticks in stage_tick_groups(take):
-        yaw = [(tick.tick, tick.yaw_delta) for tick in ticks]
-        pitch = [(tick.tick, tick.pitch_delta) for tick in ticks]
+        # The first sample's delta spans the cut from the previous stage or the take start, so it is not a turn.
+        yaw = [(tick.tick, tick.yaw_delta) for tick in ticks[1:]]
+        pitch = [(tick.tick, tick.pitch_delta) for tick in ticks[1:]]
         speed = [(current.tick, current.speed - previous.speed)
                  for previous, current in zip(ticks, ticks[1:])
                  if not (not previous.on_ground and not current.on_ground and current.speed < previous.speed)]
@@ -987,9 +1011,12 @@ def planned_length(event: Event) -> float | None:
     points = event.data.get("points")
     if not isinstance(points, list) or len(points) < 2:
         return None
-    return sum(distance(tuple(finite_float(value, f"planned_path event {event.index} point") for value in points[index - 1]),
-                        tuple(finite_float(value, f"planned_path event {event.index} point") for value in points[index]))
-               for index in range(1, len(points)))
+    positions: list[tuple[float, ...]] = []
+    for point in points:
+        if not isinstance(point, list) or len(point) != 3:
+            raise InputError(f"planned_path event {event.index} points must be [x, y, z] lists")
+        positions.append(tuple(finite_float(value, f"planned_path event {event.index} point") for value in point))
+    return sum(distance(left, right) for left, right in zip(positions, positions[1:]))
 
 
 def check_path(take: Take, config: Config) -> Result:
@@ -1010,6 +1037,11 @@ def check_path(take: Take, config: Config) -> Result:
             continue
         actual = sum(distance(left.position, right.position) for left, right in zip(samples, samples[1:]))
         plan = plans.get(stage.stage_id)
+        if plan is None and "planned_path" in take.streams:
+            if actual > 0.0 and incomplete is None:
+                incomplete = (f"stage {stage.stage_id} has no planned_path event",
+                              f"stage {stage.stage_id} moves but the declared planned_path stream has no plan for it")
+            continue
         optimum = planned_length(plan) if plan else distance(samples[0].position, samples[-1].position)
         stage_kind = "planned path" if plan else "straight line"
         if optimum is None or optimum <= 0.0:
@@ -1112,10 +1144,10 @@ def rectangle(event: Event, key: str) -> tuple[float, float, float, float] | Non
     value = event.get(key)
     if not isinstance(value, list) or len(value) != 4:
         return None
-    try:
-        return tuple(map(float, value))
-    except (TypeError, ValueError):
-        return None
+    numbers = tuple(finite_float(item, f"HUD event {event.index} {key}") for item in value)
+    if numbers[2] < 0.0 or numbers[3] < 0.0:
+        raise InputError(f"HUD event {event.index} {key} has a negative width or height")
+    return numbers
 
 
 def check_h1(take: Take, config: Config) -> Result:
