@@ -124,18 +124,6 @@ class InputOverlayLayoutTest {
     }
 
     @Test
-    void theTypedLineKeepsClearOfTheChatColumn() {
-        int chatColumn = InputOverlay.chatColumnWidth(1.0, 1.0);
-        int widest = InputOverlay.maxContentWidth(SHOWCASE_GUI_WIDTH, chatColumn);
-        assertEquals(SHOWCASE_GUI_WIDTH - 2 * 5 - chatColumn, widest);
-
-        int[] origin = InputOverlay.panelOrigin(
-                SHOWCASE_GUI_WIDTH, SHOWCASE_GUI_HEIGHT, widest, 20, Integer.MIN_VALUE, chatColumn);
-
-        assertTrue(origin[0] >= chatColumn, "typed line left " + origin[0] + " over chat " + chatColumn);
-    }
-
-    @Test
     void theChatColumnIsAsWideAsTheChatBackgroundReaches() {
         // getWidth is at most 320 and the background runs 12 pixels wider (ChatComponent.java:160-167).
         assertEquals(332, InputOverlay.chatColumnWidth(1.0, 1.0));
@@ -451,16 +439,6 @@ class InputOverlayLayoutTest {
         assertTrue(InputOverlay.textShadow(Math.nextDown(InputOverlay.HELD_SHADOW_OFF_PROGRESS)));
         assertFalse(InputOverlay.textShadow(InputOverlay.HELD_SHADOW_OFF_PROGRESS));
         assertFalse(InputOverlay.textShadow(1.0F));
-    }
-
-    @Test
-    void typedTextIsCutWithAnEllipsisWhenItDoesNotFit() {
-        ToIntFunction<String> width = text -> text.length() * 6;
-
-        // The caller adds the "> " prefix, so the cut text is what is returned.
-        assertEquals("magic", InputOverlay.fitText(width, "magic", 100));
-        assertEquals("ma…", InputOverlay.fitText(width, "magic carpet", 30));
-        assertEquals("", InputOverlay.fitText(width, "magic", 6));
     }
 
     @Test

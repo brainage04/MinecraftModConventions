@@ -1,5 +1,6 @@
 package io.github.brainage04.minecraftmodconventions;
 
+import com.mojang.blaze3d.platform.InputConstants;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
@@ -32,6 +33,10 @@ import java.util.Objects;
  * key: the crosshair's hit result must be the target, the target must be inside vanilla reach, and the
  * player's interaction-range attributes must be untouched. A test that breaks the rule fails with an
  * {@link AssertionError} naming what was wrong instead of recording something a player could not do.
+ *
+ * <p>A key or button must be released before it is pressed again, as for a player: a test that
+ * presses one it already holds fails with an {@link AssertionError} naming the key
+ * ({@link #requireReleased}).
  *
  * <p>The helpers act on the client thread themselves; a test calls them between its own steps:
  *
@@ -193,6 +198,22 @@ public final class ClientGameTestPlayerActions {
     }
 
     // The guard.
+
+    /**
+     * Fails the test when it presses {@code key} while the test input already holds it. A player
+     * releases a key or button before pressing it again. Fabric's {@code TestInputImpl.holdKey}
+     * ignores such a press, and {@code pressKey} then releases the key the earlier hold meant to
+     * keep, so a recording shows a hold that ends early or a button that never came up.
+     * {@code ClientGameTestInputMixin} calls this for every hold, press and held press of Fabric's
+     * test input, so a film that does it fails at recording time.
+     */
+    public static void requireReleased(InputConstants.Key key, boolean down) {
+        Objects.requireNonNull(key, "key");
+        if (down) {
+            throw new AssertionError("The test pressed " + key.getName()
+                    + " while it was already down: a key or button must be released before it is pressed again");
+        }
+    }
 
     /**
      * Fails the test unless the crosshair is on {@code pos}, the player is inside vanilla block reach

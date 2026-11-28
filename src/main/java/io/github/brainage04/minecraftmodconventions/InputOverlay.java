@@ -23,7 +23,7 @@ import java.util.function.ToIntFunction;
  * caps two pixels apart, W over S, A and D beside it, a space bar three caps wide, then LMB and RMB
  * with the clicks-per-second row under them, black at 100/255 with white text, lit to white at the
  * same opacity with black text, drawn without a shadow, over 100 ms. The row reads {@code 3 | 5 CPS}
- * (LMB, RMB), counting the presses of the last second as that HUD does. Shift and Ctrl come last,
+ * (LMB, RMB), counting the presses of the last second as that HUD does. Shift and CTRL come last,
  * as wide as LMB and RMB, and the space bar is labelled {@code Space} rather than drawn as a bar.
  *
  * <p>A recording is watched to see what a player did, and a client GameTest presses a key for one
@@ -32,11 +32,9 @@ import java.util.function.ToIntFunction;
  * down stays lit for as long as it is held.
  *
  * <p>Input arrives where the game receives it, not where a test sends it: {@code KeyboardHandler.keyPress}
- * ({@code KeyboardHandler.java:436} in the 26.3 sources), {@code KeyboardHandler.charTyped}
- * ({@code KeyboardHandler.java:578}) and {@code MouseHandler.onButton} ({@code MouseHandler.java:63}).
- * Fabric's client GameTest input calls exactly those three methods
- * ({@code TestInputImpl.pressOrReleaseKey}, {@code typeChar}, {@code pressOrReleaseKey}'s mouse branch),
- * so a test's presses and a player's presses look the same.
+ * ({@code KeyboardHandler.java:436} in the 26.3 sources) and {@code MouseHandler.onButton}
+ * ({@code MouseHandler.java:63}). Fabric's client GameTest input calls exactly those two methods
+ * ({@code TestInputImpl.pressOrReleaseKey}), so a test's presses and a player's presses look the same.
  *
  * <p>The overlay is drawn at the end of {@code Gui.extractRenderState} ({@code Gui.java:144-211}), after
  * the screen and its tooltips, so it stays on top of an open screen and its cursor sits over the
@@ -87,12 +85,11 @@ public final class InputOverlay {
 
     static final String SNEAK_LABEL = "Shift";
 
-    static final String SPRINT_LABEL = "Ctrl";
+    static final String SPRINT_LABEL = "CTRL";
 
     /** How long a cap takes to light or dim, as BrainageHUD's keystrokes HUD does. */
     static final long TRANSITION_NANOS = 100_000_000L;
 
-    private static final int TYPED_COLOUR = 0xFFFFD54F;
     private static final int CURSOR_FILL_COLOUR = 0xFFFFFFFF;
     private static final int CURSOR_OUTLINE_COLOUR = 0xFF000000;
 
@@ -107,6 +104,9 @@ public final class InputOverlay {
 
     /** How lit each cap is, 0 to 1, in {@link #caps} order. */
     private static final float[] PROGRESS = new float[CAP_COUNT];
+
+    /** How many presses each cap's key had at the last frame, in {@link #caps} order. */
+    private static final long[] PRESSES = new long[CAP_COUNT];
 
     private static long lastNanos;
 
@@ -145,10 +145,11 @@ public final class InputOverlay {
         enabled = value;
     }
 
-    /** Forgets every key, button and typed character, for the start of a recording. */
+    /** Forgets every key and button, for the start of a recording. */
     public static void clear() {
         STATE.clear();
         Arrays.fill(PROGRESS, 0.0F);
+        Arrays.fill(PRESSES, 0L);
         lastNanos = 0L;
     }
 
@@ -190,10 +191,6 @@ public final class InputOverlay {
         onKey(InputConstants.Type.MOUSE.getOrCreate(button), action);
     }
 
-    public static void onChar(int codepoint) {
-        STATE.typed(Character.toString(codepoint), Util.getMillis());
-    }
-
     /**
      * Draws the overlay and, with a screen open, the cursor. Call on the client thread, after the screen.
      * A title screen or a world-creation screen has no player and still has a cursor, so the player is
@@ -216,7 +213,6 @@ public final class InputOverlay {
                 chatColumnWidth(client));
         graphics.nextStratum();
         renderCaps(graphics, client, caps, origin, now, nowNanos);
-        renderTyped(graphics, client, caps, origin, now);
         if (hasFreeCursor(client)) {
             renderCursor(graphics, client);
         }
@@ -248,10 +244,10 @@ public final class InputOverlay {
     /**
      * The ten caps, in BrainageHUD's keystrokes layout: W over S, A and D beside it, a space bar
      * three caps wide, LMB and RMB, the clicks-per-second row under them (three caps wide, as
-     * {@code KeystrokesHud.java:147-148} draws it), then Shift and Ctrl. The ids select the
+     * {@code KeystrokesHud.java:147-148} draws it), then Shift and CTRL. The ids select the
      * client's key mapping in {@link #mapping}, so a rebound key still lights its cap.
      *
-     * <p>LMB, RMB, Shift and Ctrl are one width, so Shift and Ctrl sit exactly under LMB and RMB:
+     * <p>LMB, RMB, Shift and CTRL are one width, so Shift and CTRL sit exactly under LMB and RMB:
      * BrainageHUD's half-cap (31), or the widest of their labels plus {@link #SPARE_PIXEL} when that
      * is wider. Two buttons and the gap are then as wide as the space bar and the clicks row (64), so
      * every row under W/A/S/D shares both edges; a font that widens a button widens the space bar
@@ -358,7 +354,14 @@ public final class InputOverlay {
             Cap cap = caps.get(index);
             boolean counter = cap.id().equals(CPS_ID);
             // The clicks-per-second row has no key: it never lights, as BrainageHUD's (key null).
-            PROGRESS[index] = counter ? 0.0F : advance(PROGRESS[index], isLit(client, cap, now), elapsed);
+            boolean pressedAgain = false;
+            if (!counter) {
+                long presses = STATE.presses(mapping(client, cap.id()).saveString());
+                pressedAgain = presses != PRESSES[index];
+                PRESSES[index] = presses;
+            }
+            PROGRESS[index] =
+                    counter ? 0.0F : nextProgress(PROGRESS[index], isLit(client, cap, now), elapsed, pressedAgain);
             float progress = PROGRESS[index];
             String label = counter
                     ? cpsLabel(
@@ -423,6 +426,16 @@ public final class InputOverlay {
         return down ? Math.min(1.0F, progress + amount) : Math.max(0.0F, progress - amount);
     }
 
+    /**
+     * A cap's progress for the next frame. A press that arrived since the last frame, while the cap
+     * was still lit from the key's earlier release, drops the cap to dark for that frame, so two
+     * clicks inside one afterglow read as two clicks and not as one key held down. {@link #advance}
+     * alone would keep the cap lit through both.
+     */
+    static float nextProgress(float progress, boolean lit, long elapsedNanos, boolean pressedSinceLastFrame) {
+        return pressedSinceLastFrame && progress > 0.0F ? 0.0F : advance(progress, lit, elapsedNanos);
+    }
+
     /** A cap's backdrop: black at {@link #BACKDROP_OPACITY}, lit to white at the same opacity. */
     static int backdropColour(float progress) {
         return ARGB.srgbLerp(
@@ -443,25 +456,6 @@ public final class InputOverlay {
      */
     static boolean textShadow(float progress) {
         return progress < HELD_SHADOW_OFF_PROGRESS;
-    }
-
-    /** The text typed into a screen, on a line above the caps, right-aligned to the panel. */
-    private static void renderTyped(
-            GuiGraphicsExtractor graphics, Minecraft client, List<Cap> caps, int[] origin, long now) {
-        String typed = STATE.typedText(now);
-        if (typed.isEmpty()) {
-            return;
-        }
-        Font font = client.font;
-        int maxWidth = maxContentWidth(graphics.guiWidth(), chatColumnWidth(client));
-        String fitted = fitText(font::width, typed, maxWidth);
-        if (fitted.isEmpty()) {
-            return;
-        }
-        String line = "> " + fitted;
-        int x = origin[0] + panelWidth(caps) - font.width(line);
-        int y = Math.max(SCREEN_MARGIN, origin[1] - font.lineHeight - LINE_GAP);
-        graphics.text(font, line, x, y, TYPED_COLOUR, true);
     }
 
     /**
@@ -578,23 +572,5 @@ public final class InputOverlay {
     /** The chat column's right edge for the client's own chat width and scale. */
     private static int chatColumnWidth(Minecraft client) {
         return chatColumnWidth(client.options.chatWidth().get(), client.options.chatScale().get());
-    }
-
-    /** The widest the typed line may be on a GUI {@code guiWidth} wide, so it keeps clear of chat. */
-    static int maxContentWidth(int guiWidth, int chatColumnWidth) {
-        return Math.max(0, guiWidth - SCREEN_MARGIN * 2 - chatColumnWidth);
-    }
-
-    /** The typed text cut to {@code maxWidth}, with an ellipsis when it does not fit. */
-    static String fitText(ToIntFunction<String> textWidth, String text, int maxWidth) {
-        if (text.isEmpty() || textWidth.applyAsInt("> " + text) <= maxWidth) {
-            return text;
-        }
-        String suffix = "…";
-        int end = text.length();
-        while (end > 0 && textWidth.applyAsInt("> " + text.substring(0, end) + suffix) > maxWidth) {
-            end--;
-        }
-        return end == 0 ? "" : text.substring(0, end) + suffix;
     }
 }

@@ -10,7 +10,7 @@ import java.util.Set;
 
 /**
  * What the recording's keystrokes overlay shows: which keys the game received, each for a short while
- * after its release, and the text typed into a screen.
+ * after its release.
  *
  * <p>A client GameTest presses a key for a single tick, shorter than two frames of a 30 fps
  * recording, so a press that only showed while it was held would be invisible. Every press therefore
@@ -23,18 +23,13 @@ import java.util.Set;
 public final class InputOverlayState {
     /** How long a press stays lit after its release, so a one-tick click is readable at 30 fps. */
     public static final long MIN_VISIBLE_MILLIS = 400L;
-    /** How long typed text stays on screen after the last character. */
-    public static final long TYPED_VISIBLE_MILLIS = 2000L;
-    /** The most typed characters kept, so a long command does not fill the frame. */
-    public static final int MAX_TYPED_CHARS = 40;
     /** How long a click counts towards the clicks per second: BrainageHUD's {@code ClickRateTracker.WINDOW_MILLIS}. */
     public static final long CLICK_WINDOW_MILLIS = 1000L;
 
     private final Set<String> down = new HashSet<>();
     private final Map<String, Long> releasedAt = new LinkedHashMap<>();
     private final Map<String, Deque<Long>> clicks = new HashMap<>();
-    private final StringBuilder typed = new StringBuilder();
-    private long typedAt = Long.MIN_VALUE;
+    private final Map<String, Long> presses = new HashMap<>();
 
     /**
      * Records a key going down, and counts it as a click. A repeat of a key that is already down
@@ -45,8 +40,18 @@ public final class InputOverlayState {
             Deque<Long> times = clicks.computeIfAbsent(id, key -> new ArrayDeque<>());
             times.addLast(nowMillis);
             expireClicks(times, nowMillis);
+            presses.merge(id, 1L, Long::sum);
         }
         releasedAt.remove(id);
+    }
+
+    /**
+     * How many times a key has gone down since the last {@link #clear}. Unlike
+     * {@link #clicksPerSecond} it never decays, so a frame can tell that a key was pressed again
+     * since the previous frame even when the earlier press is still lit.
+     */
+    public long presses(String id) {
+        return presses.getOrDefault(id, 0L);
     }
 
     /**
@@ -83,30 +88,6 @@ public final class InputOverlayState {
         return at != null && nowMillis - at < MIN_VISIBLE_MILLIS;
     }
 
-    /** Records a character typed into a screen, for the overlay's typed-text line. */
-    public void typed(String text, long nowMillis) {
-        if (text == null || text.isEmpty()) {
-            return;
-        }
-        if (typedExpired(nowMillis)) {
-            typed.setLength(0);
-        }
-        typed.append(text);
-        if (typed.length() > MAX_TYPED_CHARS) {
-            typed.delete(0, typed.length() - MAX_TYPED_CHARS);
-        }
-        typedAt = nowMillis;
-    }
-
-    /** The text typed recently, or an empty string when nothing was typed in the last two seconds. */
-    public String typedText(long nowMillis) {
-        return typedExpired(nowMillis) ? "" : typed.toString();
-    }
-
-    private boolean typedExpired(long nowMillis) {
-        return typedAt == Long.MIN_VALUE || nowMillis - typedAt >= TYPED_VISIBLE_MILLIS;
-    }
-
     /**
      * How many times a key went down in the last {@link #CLICK_WINDOW_MILLIS}, counted as BrainageHUD's
      * {@code ClickRateTracker} does: a click stays for the whole window and is dropped once
@@ -128,12 +109,11 @@ public final class InputOverlayState {
         }
     }
 
-    /** Forgets every key, click and typed character, for the start of a recording. */
+    /** Forgets every key and click, for the start of a recording. */
     public void clear() {
         down.clear();
         releasedAt.clear();
         clicks.clear();
-        typed.setLength(0);
-        typedAt = Long.MIN_VALUE;
+        presses.clear();
     }
 }

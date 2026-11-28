@@ -127,51 +127,71 @@ class InputOverlayStateTest {
     }
 
     @Test
-    void typedTextShowsForTwoSeconds() {
-        InputOverlayState state = new InputOverlayState();
-        state.typed("m", 1000L);
-        state.typed("a", 1100L);
-
-        assertEquals("ma", state.typedText(1100L));
-        assertEquals("ma", state.typedText(1100L + InputOverlayState.TYPED_VISIBLE_MILLIS - 1));
-        assertEquals("", state.typedText(1100L + InputOverlayState.TYPED_VISIBLE_MILLIS));
-    }
-
-    @Test
-    void textTypedAfterTheLastHasExpiredShowsAlone() {
-        InputOverlayState state = new InputOverlayState();
-        state.typed("/first", 1000L);
-        long later = 1000L + InputOverlayState.TYPED_VISIBLE_MILLIS + 1000L;
-
-        state.typed("/second", later);
-
-        assertEquals("/second", state.typedText(later));
-    }
-
-    @Test
-    void typedTextKeepsTheLastFortyCharacters() {
-        InputOverlayState state = new InputOverlayState();
-        for (int index = 0; index < 50; index++) {
-            state.typed(Integer.toString(index % 10), 1000L + index);
-        }
-
-        String text = state.typedText(1050L);
-        assertEquals(InputOverlayState.MAX_TYPED_CHARS, text.length());
-        assertEquals("0123456789012345678901234567890123456789", text);
-    }
-
-    @Test
     void clearForgetsEverything() {
         InputOverlayState state = new InputOverlayState();
         state.keyDown("key.keyboard.w", 1000L);
         state.keyUp("key.keyboard.w", 1000L);
-        state.typed("x", 1000L);
 
         state.clear();
 
         assertFalse(state.isDown("key.keyboard.w"));
         assertFalse(state.keyLit("key.keyboard.w", 1000L));
-        assertEquals("", state.typedText(1000L));
+        assertEquals(0L, state.presses("key.keyboard.w"));
+    }
+
+    @Test
+    void everyPressIsCountedAndARepeatOfAHeldKeyIsNot() {
+        InputOverlayState state = new InputOverlayState();
+        state.keyDown("key.mouse.left", 1000L);
+        state.keyDown("key.mouse.left", 1100L);
+        assertEquals(1L, state.presses("key.mouse.left"));
+
+        state.keyUp("key.mouse.left", 1200L);
+        state.keyDown("key.mouse.left", 1250L);
+
+        assertEquals(2L, state.presses("key.mouse.left"));
+        assertEquals(0L, state.presses("key.mouse.right"));
+    }
+
+    @Test
+    void twoClicksInsideOneAfterglowDarkenTheCapBetweenThem() {
+        // The Telekinesis item-frame take: a left click, five ticks (250 ms) later another, each a
+        // press and a release in one tick. The afterglow is 400 ms, so the cap stays lit from the
+        // first press to 400 ms after the second unless the second press darkens it.
+        long frame = 33L;
+        long frameNanos = frame * 1_000_000L;
+        InputOverlayState state = new InputOverlayState();
+        float progress = 0.0F;
+        float darkest = 1.0F;
+        long seen = 0L;
+        for (long now = 0L; now <= 700L; now += frame) {
+            if (state.presses("key.mouse.left") == 0L) {
+                state.keyDown("key.mouse.left", now);
+                state.keyUp("key.mouse.left", now);
+            }
+            if (now >= 250L && state.presses("key.mouse.left") == 1L) {
+                state.keyDown("key.mouse.left", now);
+                state.keyUp("key.mouse.left", now);
+            }
+            boolean lit = state.isDown("key.mouse.left") || state.keyLit("key.mouse.left", now);
+            long presses = state.presses("key.mouse.left");
+            progress = InputOverlay.nextProgress(progress, lit, frameNanos, presses != seen);
+            seen = presses;
+            if (now > 100L && now < 600L) {
+                darkest = Math.min(darkest, progress);
+            }
+        }
+
+        assertEquals(0.0F, darkest, 1.0E-6F);
+    }
+
+    @Test
+    void onlyAPressThatFindsTheCapLitRestartsIt() {
+        // A first press lights the cap over the normal fade, and a cap with no new press is never
+        // restarted.
+        assertEquals(0.33F, InputOverlay.nextProgress(0.0F, true, 33_000_000L, true), 1.0E-6F);
+        assertEquals(1.0F, InputOverlay.nextProgress(1.0F, true, 33_000_000L, false), 1.0E-6F);
+        assertEquals(0.0F, InputOverlay.nextProgress(0.8F, true, 33_000_000L, true), 1.0E-6F);
     }
 
     @Test
