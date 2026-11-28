@@ -186,6 +186,40 @@ class InputOverlayStateTest {
     }
 
     @Test
+    void twoClicksFiveTicksApartShowTheCapGoingDarkBetweenThemForTheWholeFade() {
+        // A film click holds the key for two ticks (100 ms) and the next starts five ticks (250 ms)
+        // after the first. The cap is lit while the key is down and fades out over TRANSITION_NANOS
+        // after the release, so between the clicks it goes from lit to dark: a viewer sees the key
+        // go up before it goes down again.
+        long step = 10L;
+        long stepNanos = step * 1_000_000L;
+        long fadeMillis = InputOverlay.TRANSITION_NANOS / 1_000_000L;
+        InputOverlayState state = new InputOverlayState();
+        float progress = 0.0F;
+        long dimmingMillis = 0L;
+        float darkest = 1.0F;
+        for (long now = 0L; now <= 600L; now += step) {
+            if (now == 0L || now == 250L) {
+                state.keyDown("key.mouse.left", now);
+            }
+            if (now == 100L || now == 350L) {
+                state.keyUp("key.mouse.left", now);
+            }
+            boolean lit = state.isDown("key.mouse.left") || state.keyLit("key.mouse.left", now);
+            progress = InputOverlay.advance(progress, lit, stepNanos);
+            if (now > 100L && now <= 250L) {
+                darkest = Math.min(darkest, progress);
+                if (progress < 1.0F) {
+                    dimmingMillis += step;
+                }
+            }
+        }
+
+        assertEquals(0.0F, darkest, 1.0E-6F);
+        assertTrue(dimmingMillis >= fadeMillis, "dimmed for " + dimmingMillis + " ms");
+    }
+
+    @Test
     void onlyAPressThatFindsTheCapLitRestartsIt() {
         // A first press lights the cap over the normal fade, and a cap with no new press is never
         // restarted.

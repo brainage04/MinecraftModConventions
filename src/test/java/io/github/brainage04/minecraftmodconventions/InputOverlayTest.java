@@ -40,6 +40,23 @@ class InputOverlayTest {
     }
 
     @Test
+    void aReleasedKeyIsNotLitAnyMore() {
+        // A viewer must see a key go up before it goes down again: the cap is lit while the key is
+        // down, and the fade after the release is the cap's own, not a held-on lit state.
+        InputOverlay.onKey(W, InputConstants.PRESS);
+        InputOverlay.onKey(W, InputConstants.RELEASE);
+
+        assertFalse(InputOverlay.keyLit(W.getName(), Util.getMillis()));
+    }
+
+    @Test
+    void aHeldKeyStaysLitForAsLongAsItIsHeld() {
+        InputOverlay.onKey(W, InputConstants.PRESS);
+
+        assertTrue(InputOverlay.keyLit(W.getName(), Util.getMillis() + 60_000L));
+    }
+
+    @Test
     void aScreenOpeningReleasesTheKeysThatAreDownAfterTheirAfterglow() {
         InputOverlay.onKey(W, InputConstants.PRESS);
         assertTrue(InputOverlay.keyLit(W.getName(), Util.getMillis()));
