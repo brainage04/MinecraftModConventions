@@ -26,10 +26,10 @@ import java.util.function.ToIntFunction;
  * (LMB, RMB), counting the presses of the last second as that HUD does. Shift and CTRL come last,
  * as wide as LMB and RMB, and the space bar is labelled {@code Space} rather than drawn as a bar.
  *
- * <p>A recording is watched to see what a player did, and a client GameTest presses a key for one
- * tick, shorter than two frames of a 30 fps recording. A cap therefore stays lit for
- * {@link InputOverlayState#MIN_VISIBLE_MILLIS} after its release, and a key the game still holds
- * down stays lit for as long as it is held.
+ * <p>A cap is lit while its key is down and fades out over {@link #TRANSITION_NANOS} after the
+ * release, so a viewer sees a key go up before it goes down again. A client GameTest holds a key for
+ * {@link ClientGameTestPlayerActions#VISIBLE_PRESS_TICKS} to be seen: a press that is gone before the
+ * next frame is never drawn.
  *
  * <p>Input arrives where the game receives it, not where a test sends it: {@code KeyboardHandler.keyPress}
  * ({@code KeyboardHandler.java:436} in the 26.3 sources) and {@code MouseHandler.onButton}
@@ -105,9 +105,6 @@ public final class InputOverlay {
     /** How lit each cap is, 0 to 1, in {@link #caps} order. */
     private static final float[] PROGRESS = new float[CAP_COUNT];
 
-    /** How many presses each cap's key had at the last frame, in {@link #caps} order. */
-    private static final long[] PRESSES = new long[CAP_COUNT];
-
     private static long lastNanos;
 
     /** The sample the clicks-per-second row is sized from, which leaves room for two-digit counts. */
@@ -149,7 +146,6 @@ public final class InputOverlay {
     public static void clear() {
         STATE.clear();
         Arrays.fill(PROGRESS, 0.0F);
-        Arrays.fill(PRESSES, 0L);
         lastNanos = 0L;
     }
 
@@ -158,9 +154,7 @@ public final class InputOverlay {
      * {@code REPEAT}.
      *
      * <p>Every press is kept, not only the ones the game sets on a key mapping: a press with a
-     * screen open does not reach the mapping ({@code KeyboardHandler.java:568-570} in 26.3), and a
-     * one-tick press is dark on the next frame either way, so the press is what the afterglow is
-     * measured from.
+     * screen open does not reach the mapping ({@code KeyboardHandler.java:568-570} in 26.3).
      */
     public static void onKey(InputConstants.Key key, int action) {
         // Tracked while the overlay is hidden too: a release dropped then would leave its cap lit
@@ -170,20 +164,10 @@ public final class InputOverlay {
         }
         long now = Util.getMillis();
         if (action == InputConstants.RELEASE) {
-            STATE.keyUp(key.getName(), now);
+            STATE.keyUp(key.getName());
         } else {
             STATE.keyDown(key.getName(), now);
         }
-    }
-
-    /**
-     * Releases every key that is down, for a screen opening, each with the afterglow of a normal
-     * release. The game releases every mapping there without sending a release event
-     * ({@code Gui.java:263} in 26.3), so a key held at that moment would otherwise stay lit for the
-     * rest of the recording.
-     */
-    public static void releaseAll() {
-        STATE.releaseAll(Util.getMillis());
     }
 
     /** A mouse button the game received, with the same actions as {@link #onKey}. */
@@ -320,24 +304,23 @@ public final class InputOverlay {
     }
 
     /**
-     * Whether a cap is lit: the game holds its key down, the game received the key and has not
-     * received its release, or the key was released within {@link InputOverlayState#MIN_VISIBLE_MILLIS}.
-     * The mapping is read as well as the events, so a toggle key such as sneak stays lit while it is
-     * toggled on, and a key pressed with a screen open, which the game does not set on its mapping,
-     * still lights.
+     * Whether a cap is lit: the game holds its key down, or the game received the key and has not
+     * received its release. The mapping is read as well as the events, so a toggle key such as sneak
+     * stays lit while it is toggled on, and a key pressed with a screen open, which the game does not
+     * set on its mapping, still lights. A released key is not lit: the cap's own fade
+     * ({@link #TRANSITION_NANOS}, in {@link #advance}) is what a viewer sees go dark.
      */
-    private static boolean isLit(Minecraft client, Cap cap, long now) {
+    private static boolean isLit(Minecraft client, Cap cap) {
         KeyMapping mapping = mapping(client, cap.id());
-        return mapping.isDown() || keyLit(mapping.saveString(), now);
+        return mapping.isDown() || isHeld(mapping.saveString());
     }
 
     /**
-     * Whether the events the game received light a key: it is down, or it was released within
-     * {@link InputOverlayState#MIN_VISIBLE_MILLIS}. The mapping is read separately, because a toggle
-     * key such as sneak stays down while it is toggled on and no event says so.
+     * Whether the events the game received hold a key down. The mapping is read separately, because
+     * a toggle key such as sneak stays down while it is toggled on and no event says so.
      */
-    static boolean keyLit(String id, long now) {
-        return STATE.isDown(id) || STATE.keyLit(id, now);
+    static boolean isHeld(String id) {
+        return STATE.isDown(id);
     }
 
     private static void renderCaps(
@@ -354,14 +337,7 @@ public final class InputOverlay {
             Cap cap = caps.get(index);
             boolean counter = cap.id().equals(CPS_ID);
             // The clicks-per-second row has no key: it never lights, as BrainageHUD's (key null).
-            boolean pressedAgain = false;
-            if (!counter) {
-                long presses = STATE.presses(mapping(client, cap.id()).saveString());
-                pressedAgain = presses != PRESSES[index];
-                PRESSES[index] = presses;
-            }
-            PROGRESS[index] =
-                    counter ? 0.0F : nextProgress(PROGRESS[index], isLit(client, cap, now), elapsed, pressedAgain);
+            PROGRESS[index] = counter ? 0.0F : advance(PROGRESS[index], isLit(client, cap), elapsed);
             float progress = PROGRESS[index];
             String label = counter
                     ? cpsLabel(
@@ -424,16 +400,6 @@ public final class InputOverlay {
     static float advance(float progress, boolean down, long elapsedNanos) {
         float amount = Math.min(1.0F, (float) Math.max(0L, elapsedNanos) / TRANSITION_NANOS);
         return down ? Math.min(1.0F, progress + amount) : Math.max(0.0F, progress - amount);
-    }
-
-    /**
-     * A cap's progress for the next frame. A press that arrived since the last frame, while the cap
-     * was still lit from the key's earlier release, drops the cap to dark for that frame, so two
-     * clicks inside one afterglow read as two clicks and not as one key held down. {@link #advance}
-     * alone would keep the cap lit through both.
-     */
-    static float nextProgress(float progress, boolean lit, long elapsedNanos, boolean pressedSinceLastFrame) {
-        return pressedSinceLastFrame && progress > 0.0F ? 0.0F : advance(progress, lit, elapsedNanos);
     }
 
     /** A cap's backdrop: black at {@link #BACKDROP_OPACITY}, lit to white at the same opacity. */

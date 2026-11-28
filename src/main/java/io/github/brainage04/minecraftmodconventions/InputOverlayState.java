@@ -4,32 +4,27 @@ import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 
 /**
- * What the recording's keystrokes overlay shows: which keys the game received, each for a short while
- * after its release.
+ * What the recording's keystrokes overlay knows: which keys the game received going down and not yet
+ * up, and the presses of the last second for the clicks-per-second row.
  *
- * <p>A client GameTest presses a key for a single tick, shorter than two frames of a 30 fps
- * recording, so a press that only showed while it was held would be invisible. Every press therefore
- * stays lit for {@link #MIN_VISIBLE_MILLIS} after its release, and a key held longer than that stays
- * lit for as long as it is held.
+ * <p>A key is down from its press to its release and no longer. The cap's own fade
+ * ({@link InputOverlay#TRANSITION_NANOS}) is what a viewer sees after the release, so two clicks a few
+ * ticks apart read as two clicks. A client GameTest that wants a click to be seen holds its key for
+ * {@link ClientGameTestPlayerActions#VISIBLE_PRESS_TICKS}.
  *
  * <p>The class holds no game state and reads no clock: the caller passes the time, so the timing rules
  * are unit-tested without a client.
  */
 public final class InputOverlayState {
-    /** How long a press stays lit after its release, so a one-tick click is readable at 30 fps. */
-    public static final long MIN_VISIBLE_MILLIS = 400L;
     /** How long a click counts towards the clicks per second: BrainageHUD's {@code ClickRateTracker.WINDOW_MILLIS}. */
     public static final long CLICK_WINDOW_MILLIS = 1000L;
 
     private final Set<String> down = new HashSet<>();
-    private final Map<String, Long> releasedAt = new LinkedHashMap<>();
     private final Map<String, Deque<Long>> clicks = new HashMap<>();
-    private final Map<String, Long> presses = new HashMap<>();
 
     /**
      * Records a key going down, and counts it as a click. A repeat of a key that is already down
@@ -40,52 +35,17 @@ public final class InputOverlayState {
             Deque<Long> times = clicks.computeIfAbsent(id, key -> new ArrayDeque<>());
             times.addLast(nowMillis);
             expireClicks(times, nowMillis);
-            presses.merge(id, 1L, Long::sum);
         }
-        releasedAt.remove(id);
     }
 
-    /**
-     * How many times a key has gone down since the last {@link #clear}. Unlike
-     * {@link #clicksPerSecond} it never decays, so a frame can tell that a key was pressed again
-     * since the previous frame even when the earlier press is still lit.
-     */
-    public long presses(String id) {
-        return presses.getOrDefault(id, 0L);
-    }
-
-    /**
-     * Releases every key that is down, for a screen opening: the game releases every mapping there
-     * without sending a release event ({@code Gui.java:263} in 26.3), so a key held at that moment
-     * would otherwise stay lit for the rest of the recording. Each key gets the afterglow of a normal
-     * release: a click on a chat link opens the chat screen again from inside the press
-     * ({@code ClientPacketListener.java:2686-2690}), so the click's own release is ignored and the
-     * afterglow from here is the only frame the click lights.
-     */
-    public void releaseAll(long nowMillis) {
-        for (String id : down) {
-            releasedAt.put(id, nowMillis);
-        }
-        down.clear();
-    }
-
-    /** Records a key coming up; it stays lit for {@link #MIN_VISIBLE_MILLIS} more. */
-    public void keyUp(String id, long nowMillis) {
-        if (!down.remove(id)) {
-            return;
-        }
-        releasedAt.put(id, nowMillis);
+    /** Records a key coming up. */
+    public void keyUp(String id) {
+        down.remove(id);
     }
 
     /** Whether the game received this key going down and has not received its release. */
     public boolean isDown(String id) {
         return down.contains(id);
-    }
-
-    /** Whether a key was released within the visible window, so its cap stays lit. */
-    public boolean keyLit(String id, long nowMillis) {
-        Long at = releasedAt.get(id);
-        return at != null && nowMillis - at < MIN_VISIBLE_MILLIS;
     }
 
     /**
@@ -112,8 +72,6 @@ public final class InputOverlayState {
     /** Forgets every key and click, for the start of a recording. */
     public void clear() {
         down.clear();
-        releasedAt.clear();
         clicks.clear();
-        presses.clear();
     }
 }

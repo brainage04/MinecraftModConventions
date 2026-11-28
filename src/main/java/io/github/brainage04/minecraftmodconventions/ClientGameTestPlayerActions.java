@@ -2,7 +2,10 @@ package io.github.brainage04.minecraftmodconventions;
 
 import com.mojang.blaze3d.platform.InputConstants;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
+import net.minecraft.SharedConstants;
+import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.Options;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.Entity;
@@ -18,6 +21,8 @@ import net.minecraft.world.phys.Vec3;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 
 /**
  * The player actions a client GameTest may take, and the guard that keeps every one of them
@@ -62,6 +67,18 @@ public final class ClientGameTestPlayerActions {
     public static final int MINE_TIMEOUT_TICKS = 300;
     /** Ticks the client needs to send a new look direction before its crosshair is recomputed. */
     public static final int AIM_SETTLE_TICKS = 2;
+
+    /**
+     * Ticks a click holds its key so a recording shows it. The overlay's cap lights over
+     * {@link InputOverlay#TRANSITION_NANOS} (100 ms) while the key is down and dims over the same time
+     * after it, so a key held for that long reaches fully lit and then fades. A tick is
+     * {@link SharedConstants#MILLIS_PER_TICK} (50 ms, {@code SharedConstants.java:140} in 26.3), so the
+     * hold is 2 ticks, 100 ms: three frames of a 30 fps recording with the cap lit, then three more
+     * while it fades. A one-tick press is 50 ms, a frame and a half, and a client that draws one
+     * frame per tick can miss the cap lighting at all.
+     */
+    public static final int VISIBLE_PRESS_TICKS = Math.toIntExact(
+            Math.ceilDiv(TimeUnit.NANOSECONDS.toMillis(InputOverlay.TRANSITION_NANOS), SharedConstants.MILLIS_PER_TICK));
 
     private ClientGameTestPlayerActions() {
     }
@@ -179,22 +196,48 @@ public final class ClientGameTestPlayerActions {
     }
 
     /**
-     * Presses the use key once with the block under the crosshair. Fails the test when the block is not
-     * under the crosshair or is out of vanilla reach.
+     * Clicks the use key once, for {@link #VISIBLE_PRESS_TICKS}, with the block under the crosshair.
+     * Fails the test when the block is not under the crosshair or is out of vanilla reach.
      */
     public static void useOnBlock(ClientGameTestContext context, BlockPos pos) {
         Objects.requireNonNull(pos, "pos");
         requireLookingAtBlock(context, pos);
-        context.getInput().pressKey(options -> options.keyUse);
+        click(context, options -> options.keyUse);
     }
 
     /**
-     * Presses the attack key once with the entity under the crosshair. Fails the test when the entity
-     * is not under the crosshair or is out of vanilla reach.
+     * Clicks the attack key once, for {@link #VISIBLE_PRESS_TICKS}, with the entity under the
+     * crosshair. Fails the test when the entity is not under the crosshair or is out of vanilla reach.
      */
     public static void attackEntity(ClientGameTestContext context, int entityId) {
         requireLookingAtEntity(context, entityId);
-        context.getInput().pressKey(options -> options.keyAttack);
+        click(context, options -> options.keyAttack);
+    }
+
+    /**
+     * Holds a key or button for {@link #VISIBLE_PRESS_TICKS} and releases it, so the recording shows
+     * the cap light and then go dark. A film clicks with this, not with {@code pressKey}, which
+     * releases the key in the same tick it presses it, so the cap may never be drawn lit. A click on a
+     * key that is already down fails ({@link #requireReleased}).
+     */
+    public static void click(ClientGameTestContext context, Function<Options, KeyMapping> key) {
+        Objects.requireNonNull(key, "key");
+        context.getInput().holdKey(key);
+        try {
+            context.waitTicks(VISIBLE_PRESS_TICKS);
+        } finally {
+            context.getInput().releaseKey(key);
+        }
+    }
+
+    /** {@link #click} for a mouse button that has no key mapping to select it, such as a click on a chat link. */
+    public static void clickMouse(ClientGameTestContext context, int button) {
+        context.getInput().holdMouse(button);
+        try {
+            context.waitTicks(VISIBLE_PRESS_TICKS);
+        } finally {
+            context.getInput().releaseMouse(button);
+        }
     }
 
     // The guard.

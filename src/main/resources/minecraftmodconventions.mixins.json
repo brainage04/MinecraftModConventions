@@ -7,7 +7,6 @@
     "ClientGameTestInputMixin",
     "ClientPacketListenerMixin",
     "RecordingGuiGraphicsMixin",
-    "RecordingGuiMixin",
     "RecordingKeyboardHandlerMixin",
     "RecordingMinecraftMixin",
     "RecordingMouseHandlerMixin",

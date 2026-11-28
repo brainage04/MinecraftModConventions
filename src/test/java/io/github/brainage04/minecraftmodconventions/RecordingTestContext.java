@@ -21,10 +21,11 @@ import java.util.function.Supplier;
  * it counts the ticks a helper waits, records the screens it opens and runs the client work against a
  * null client, which is enough where the helper only touches the recorder's own state.
  */
-final class RecordingTestContext implements ClientGameTestContext {
+class RecordingTestContext implements ClientGameTestContext {
     private final List<Integer> waits = new ArrayList<>();
     private final List<Supplier<Screen>> screenSuppliers = new ArrayList<>();
     private int waitedTicks;
+    private TestInput input;
 
     int waitedTicks() {
         return waitedTicks;
@@ -101,7 +102,14 @@ final class RecordingTestContext implements ClientGameTestContext {
 
     @Override
     public TestInput getInput() {
-        throw new UnsupportedOperationException("getInput needs a client");
+        if (input == null) {
+            throw new UnsupportedOperationException("getInput needs a client");
+        }
+        return input;
+    }
+
+    void input(TestInput value) {
+        input = value;
     }
 
     @Override
