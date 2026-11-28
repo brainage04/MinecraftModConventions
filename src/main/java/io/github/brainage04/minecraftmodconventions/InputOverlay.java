@@ -402,6 +402,15 @@ public final class InputOverlay {
         return down ? Math.min(1.0F, progress + amount) : Math.max(0.0F, progress - amount);
     }
 
+    /**
+     * A cap's progress after one frame: the frame's state lit or dark, or flashed to full when the
+     * key's press was over before any frame drew it.
+     */
+    static float progressAfter(
+            float progress, InputOverlayState.Frame frame, boolean mappingDown, long elapsedNanos) {
+        return advance(progress, frame.lit() || mappingDown, elapsedNanos);
+    }
+
     /** A cap's backdrop: black at {@link #BACKDROP_OPACITY}, lit to white at the same opacity. */
     static int backdropColour(float progress) {
         return ARGB.srgbLerp(

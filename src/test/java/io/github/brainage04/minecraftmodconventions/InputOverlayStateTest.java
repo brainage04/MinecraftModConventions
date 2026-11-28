@@ -198,4 +198,69 @@ class InputOverlayStateTest {
 
         assertEquals(0, state.clicksPerSecond("key.mouse.left", 1000L));
     }
+
+    private static final String LEFT = "key.mouse.left";
+
+    @Test
+    void aRawPressKeyIsDrawnLitThenDarkEvenThoughItIsOverBeforeAFrame() {
+        // Fabric's pressKey holds and releases a key in one phase, before the next frame renders.
+        InputOverlayState state = new InputOverlayState();
+        state.keyDown(LEFT, 1000L);
+        state.keyUp(LEFT);
+
+        InputOverlayState.Frame first = state.frame(LEFT);
+        InputOverlayState.Frame second = state.frame(LEFT);
+        InputOverlayState.Frame third = state.frame(LEFT);
+
+        assertTrue(first.lit());
+        assertTrue(first.instant());
+        assertFalse(second.lit());
+        assertFalse(third.lit());
+    }
+
+    @Test
+    void aReleaseBetweenTwoPressesInOnePhaseIsDrawnAsADarkFrame() {
+        // Two film clicks back to back: hold, release and hold again before any frame renders.
+        InputOverlayState state = new InputOverlayState();
+        state.keyDown(LEFT, 1000L);
+        state.keyUp(LEFT);
+        state.keyDown(LEFT, 1000L);
+
+        assertTrue(state.frame(LEFT).lit());
+        assertFalse(state.frame(LEFT).lit());
+        assertTrue(state.frame(LEFT).lit());
+        assertTrue(state.frame(LEFT).lit());
+    }
+
+    @Test
+    void twoRawPressesFiveTicksApartAreTwoFlashesWithADarkCapBetween() {
+        // The Telekinesis item-frame take: pressKey, four ticks, pressKey. Frames come every 33 ms.
+        long frame = 33L;
+        InputOverlayState state = new InputOverlayState();
+        float progress = 0.0F;
+        int flashes = 0;
+        boolean darkSinceFlash = false;
+        boolean darkBetween = true;
+        for (long now = 0L; now <= 600L; now += frame) {
+            if (now == 0L || now >= 250L && now < 250L + frame) {
+                state.keyDown(LEFT, now);
+                state.keyUp(LEFT);
+            }
+            float before = progress;
+            progress = InputOverlay.progressAfter(
+                    progress, state.frame(LEFT), false, TimeUnit.MILLISECONDS.toNanos(frame));
+            if (progress == 1.0F && before < 1.0F) {
+                if (flashes > 0) {
+                    darkBetween &= darkSinceFlash;
+                }
+                flashes++;
+                darkSinceFlash = false;
+            } else if (progress == 0.0F) {
+                darkSinceFlash = true;
+            }
+        }
+
+        assertEquals(2, flashes);
+        assertTrue(darkBetween, "the cap did not go dark between the two presses");
+    }
 }

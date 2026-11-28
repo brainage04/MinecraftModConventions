@@ -12,17 +12,20 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * A key or button must be released before a client GameTest presses it again. Fabric's
- * {@code TestInputImpl.holdKey} ignores a press of a key it already holds, and {@code pressKey} then
- * releases the key the earlier hold meant to keep, so a film's cap stays lit through two clicks.
- * These tests reach the check through Fabric's own input class, as a film does.
+ * In a recording a key or button must be released before a client GameTest presses it again.
+ * Fabric's {@code TestInputImpl.holdKey} ignores a press of a key it already holds, and
+ * {@code pressKey} then releases the key the earlier hold meant to keep. Outside a recording that
+ * no-op is Fabric's documented contract and stays. These tests reach the check through Fabric's own
+ * input class, as a film does.
  */
 class ClientGameTestInputGuardTest {
     private static final InputConstants.Key LEFT_BUTTON =
             InputConstants.Type.MOUSE.getOrCreate(InputConstants.MOUSE_BUTTON_LEFT);
 
     @Test
-    void holdingAButtonThatIsAlreadyDownFailsAndNamesTheButton() throws ReflectiveOperationException {
+    void inARecordingHoldingAButtonThatIsAlreadyDownFailsAndNamesTheButton() throws ReflectiveOperationException {
+        boolean before = ClientGameTestPlayerActions.strictHolds;
+        ClientGameTestPlayerActions.strictHolds = true;
         Set<InputConstants.Key> down = keysDown();
         down.add(LEFT_BUTTON);
         try {
@@ -33,18 +36,41 @@ class ClientGameTestInputGuardTest {
             assertTrue(failure.getMessage().contains("released"), failure.getMessage());
         } finally {
             down.remove(LEFT_BUTTON);
+            ClientGameTestPlayerActions.strictHolds = before;
         }
     }
 
     @Test
-    void aButtonThatIsUpPassesTheCheck() throws ReflectiveOperationException {
-        // The press goes on to Fabric's own thread check, which a unit test fails: reaching it shows
-        // the guard let the press through.
-        assertFalse(keysDown().contains(LEFT_BUTTON));
+    void outsideARecordingHoldingAButtonThatIsAlreadyDownStaysAFabricNoOp() throws ReflectiveOperationException {
+        // The hold goes on to Fabric's own thread check, which a unit test fails: reaching it shows
+        // the guard let the hold through.
+        boolean before = ClientGameTestPlayerActions.strictHolds;
+        ClientGameTestPlayerActions.strictHolds = false;
+        Set<InputConstants.Key> down = keysDown();
+        down.add(LEFT_BUTTON);
+        try {
+            assertThrows(
+                    IllegalStateException.class,
+                    () -> new TestInputImpl(new RecordingTestContext()).holdKey(LEFT_BUTTON));
+        } finally {
+            down.remove(LEFT_BUTTON);
+            ClientGameTestPlayerActions.strictHolds = before;
+        }
+    }
 
-        assertThrows(
-                IllegalStateException.class,
-                () -> new TestInputImpl(new RecordingTestContext()).holdKey(LEFT_BUTTON));
+    @Test
+    void aButtonThatIsUpPassesTheCheckInARecording() throws ReflectiveOperationException {
+        boolean before = ClientGameTestPlayerActions.strictHolds;
+        ClientGameTestPlayerActions.strictHolds = true;
+        try {
+            assertFalse(keysDown().contains(LEFT_BUTTON));
+
+            assertThrows(
+                    IllegalStateException.class,
+                    () -> new TestInputImpl(new RecordingTestContext()).holdKey(LEFT_BUTTON));
+        } finally {
+            ClientGameTestPlayerActions.strictHolds = before;
+        }
     }
 
     @SuppressWarnings("unchecked")

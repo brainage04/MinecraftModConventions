@@ -150,8 +150,6 @@ class InputOverlayLayoutTest {
 
     @Test
     void theSprintCapIsInCapitalsLikeLmbAndRmb() {
-        // The shortened sprint label reads in capitals like the abbreviations LMB and RMB (owner,
-        // 28 Nov 2026); Shift keeps its mixed case.
         assertEquals("CTRL", InputOverlay.SPRINT_LABEL);
         assertEquals("CTRL", cap(InputOverlay.caps(FONT_WIDTH), "sprint").label());
         assertEquals("Shift", cap(InputOverlay.caps(FONT_WIDTH), "sneak").label());

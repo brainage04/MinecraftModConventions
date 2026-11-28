@@ -80,6 +80,30 @@ public final class ClientGameTestPlayerActions {
     public static final int VISIBLE_PRESS_TICKS = Math.toIntExact(
             Math.ceilDiv(TimeUnit.NANOSECONDS.toMillis(InputOverlay.TRANSITION_NANOS), SharedConstants.MILLIS_PER_TICK));
 
+    /**
+     * The recording's capture rate, 30 frames a second by default. The Gradle plugin's
+     * {@code ClientGameTestOptions.DEFAULT_CAPTURE_FPS} holds the same number in a module this one
+     * cannot depend on.
+     */
+    private static final int CAPTURE_FPS = 30;
+
+    /**
+     * Ticks a click stays released before it returns, so the next click starts from a drawn dark cap:
+     * one frame to draw the release plus the cap's fade ({@link InputOverlay#TRANSITION_NANOS}), over
+     * {@link SharedConstants#MILLIS_PER_TICK}. At 30 frames a second that is 34 + 100 ms, 3 ticks.
+     */
+    public static final int RELEASED_GAP_TICKS = Math.toIntExact(Math.ceilDiv(
+            Math.ceilDiv(TimeUnit.SECONDS.toMillis(1), CAPTURE_FPS)
+                    + TimeUnit.NANOSECONDS.toMillis(InputOverlay.TRANSITION_NANOS),
+            SharedConstants.MILLIS_PER_TICK));
+
+    /**
+     * Whether a press of a key the test input already holds fails the test. On for a recording, where
+     * the release before the next press has to be drawn; off elsewhere, where Fabric's
+     * {@code TestInput.holdKey} is documented to do nothing for a key already held.
+     */
+    static boolean strictHolds = ClientGameTestRecordingSession.isEnabled();
+
     private ClientGameTestPlayerActions() {
     }
 

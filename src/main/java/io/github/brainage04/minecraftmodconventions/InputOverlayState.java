@@ -48,6 +48,14 @@ public final class InputOverlayState {
         return down.contains(id);
     }
 
+    /** What one frame draws for a key: whether the cap is lit, and whether it flashes to full. */
+    public record Frame(boolean lit, boolean instant, boolean queued) {}
+
+    /** The state the next frame draws for a key. */
+    public Frame frame(String id) {
+        return new Frame(down.contains(id), false, false);
+    }
+
     /**
      * How many times a key went down in the last {@link #CLICK_WINDOW_MILLIS}, counted as BrainageHUD's
      * {@code ClickRateTracker} does: a click stays for the whole window and is dropped once
