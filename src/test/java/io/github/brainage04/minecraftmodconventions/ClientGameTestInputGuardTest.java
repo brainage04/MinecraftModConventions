@@ -1,0 +1,56 @@
+package io.github.brainage04.minecraftmodconventions;
+
+import com.mojang.blaze3d.platform.InputConstants;
+import net.fabricmc.fabric.impl.client.gametest.TestInputImpl;
+import org.junit.jupiter.api.Test;
+
+import java.lang.reflect.Field;
+import java.util.Set;
+
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+/**
+ * A key or button must be released before a client GameTest presses it again. Fabric's
+ * {@code TestInputImpl.holdKey} ignores a press of a key it already holds, and {@code pressKey} then
+ * releases the key the earlier hold meant to keep, so a film's cap stays lit through two clicks.
+ * These tests reach the check through Fabric's own input class, as a film does.
+ */
+class ClientGameTestInputGuardTest {
+    private static final InputConstants.Key LEFT_BUTTON =
+            InputConstants.Type.MOUSE.getOrCreate(InputConstants.MOUSE_BUTTON_LEFT);
+
+    @Test
+    void holdingAButtonThatIsAlreadyDownFailsAndNamesTheButton() throws ReflectiveOperationException {
+        Set<InputConstants.Key> down = keysDown();
+        down.add(LEFT_BUTTON);
+        try {
+            AssertionError failure = assertThrows(
+                    AssertionError.class, () -> new TestInputImpl(new RecordingTestContext()).holdKey(LEFT_BUTTON));
+
+            assertTrue(failure.getMessage().contains(LEFT_BUTTON.getName()), failure.getMessage());
+            assertTrue(failure.getMessage().contains("released"), failure.getMessage());
+        } finally {
+            down.remove(LEFT_BUTTON);
+        }
+    }
+
+    @Test
+    void aButtonThatIsUpPassesTheCheck() throws ReflectiveOperationException {
+        // The press goes on to Fabric's own thread check, which a unit test fails: reaching it shows
+        // the guard let the press through.
+        assertFalse(keysDown().contains(LEFT_BUTTON));
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> new TestInputImpl(new RecordingTestContext()).holdKey(LEFT_BUTTON));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Set<InputConstants.Key> keysDown() throws ReflectiveOperationException {
+        Field field = TestInputImpl.class.getDeclaredField("KEYS_DOWN");
+        field.setAccessible(true);
+        return (Set<InputConstants.Key>) field.get(null);
+    }
+}

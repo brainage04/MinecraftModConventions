@@ -27,7 +27,7 @@ class InputOverlayLayoutTest {
      * label is its digits at 6 each plus 32 for the {@code " | "} and {@code " CPS"} around them.
      */
     private static final ToIntFunction<String> FONT_WIDTH = label -> switch (label) {
-        case "Ctrl" -> 19;
+        case "CTRL" -> 24;
         case "Shift" -> 23;
         case "Space" -> 30;
         case "LMB", "RMB" -> 18;
@@ -156,15 +156,24 @@ class InputOverlayLayoutTest {
                 List.of("forward", "left", "back", "right", "jump", "attack", "use", "cps", "sneak", "sprint"),
                 ids);
         assertEquals(
-                List.of("W", "A", "S", "D", "Space", "LMB", "RMB", "0 | 0 CPS", "Shift", "Ctrl"),
+                List.of("W", "A", "S", "D", "Space", "LMB", "RMB", "0 | 0 CPS", "Shift", "CTRL"),
                 InputOverlay.caps(FONT_WIDTH).stream().map(InputOverlay.Cap::label).toList());
+    }
+
+    @Test
+    void theSprintCapIsInCapitalsLikeLmbAndRmb() {
+        // The shortened sprint label reads in capitals like the abbreviations LMB and RMB (owner,
+        // 28 Nov 2026); Shift keeps its mixed case.
+        assertEquals("CTRL", InputOverlay.SPRINT_LABEL);
+        assertEquals("CTRL", cap(InputOverlay.caps(FONT_WIDTH), "sprint").label());
+        assertEquals("Shift", cap(InputOverlay.caps(FONT_WIDTH), "sneak").label());
     }
 
     @Test
     void theCapsSitInBrainageHudsKeystrokesLayout() {
         // KeystrokesHud: 20-pixel caps two pixels apart, W over S, A and D beside it, a space bar
         // three caps wide, then LMB and RMB, then the clicks-per-second row (KeystrokesHud.java:45-148).
-        // Shift and Ctrl follow, as wide as LMB and RMB. Shift is 23 pixels wide, ink and shadow
+        // Shift and CTRL follow, as wide as LMB and RMB. Shift is 23 pixels wide, ink and shadow
         // included, so the four buttons keep the half-cap's 31 and every row ends at 64.
         int size = InputOverlay.KEY_SIZE;
         int pad = InputOverlay.KEY_PADDING;
@@ -183,7 +192,7 @@ class InputOverlayLayoutTest {
                 caps.get(6));
         assertEquals(new InputOverlay.Cap("cps", "0 | 0 CPS", 0, (size + pad) * 4, space, size), caps.get(7));
         assertEquals(new InputOverlay.Cap("sneak", "Shift", 0, (size + pad) * 5, button, size), caps.get(8));
-        assertEquals(new InputOverlay.Cap("sprint", "Ctrl", button + pad, (size + pad) * 5, button, size),
+        assertEquals(new InputOverlay.Cap("sprint", "CTRL", button + pad, (size + pad) * 5, button, size),
                 caps.get(9));
     }
 
@@ -204,9 +213,9 @@ class InputOverlayLayoutTest {
 
     @Test
     void theFourButtonsStayEquallyWideInAWideFont() {
-        // The widest label of the four sets the width of all four, so Shift and Ctrl never drift
+        // The widest label of the four sets the width of all four, so Shift and CTRL never drift
         // from LMB and RMB.
-        ToIntFunction<String> wide = label -> label.equals("Ctrl") ? 50 : 18;
+        ToIntFunction<String> wide = label -> label.equals("CTRL") ? 50 : 18;
         List<InputOverlay.Cap> caps = InputOverlay.caps(wide);
 
         int width = cap(caps, "sprint").width();
@@ -221,7 +230,7 @@ class InputOverlayLayoutTest {
         // BrainageHUD's buttons are 31 wide, so two buttons and the gap are as wide as the space bar
         // and the clicks-per-second row (KeystrokesHud.java:107-148). A font that widens a button
         // widens the whole column with it, so the right edge stays straight.
-        ToIntFunction<String> wide = label -> label.equals("Ctrl") ? 50 : 18;
+        ToIntFunction<String> wide = label -> label.equals("CTRL") ? 50 : 18;
         for (ToIntFunction<String> font : List.<ToIntFunction<String>>of(FONT_WIDTH, wide)) {
             List<InputOverlay.Cap> caps = InputOverlay.caps(font);
             int rightEdge = InputOverlay.panelWidth(caps);
@@ -263,8 +272,8 @@ class InputOverlayLayoutTest {
         // width / 2 - labelWidth / 2 (KeystrokesHud.java:224-225) gives the same 7.
         assertEquals(7, InputOverlay.labelX(20, 6));
         assertEquals(20 / 2 - 6 / 2, InputOverlay.labelX(20, 6));
-        // Ctrl (19), Shift (23) and LMB (18) in a 31-pixel button: the odd pixel goes to the right.
-        assertEquals(6, InputOverlay.labelX(31, 19));
+        // CTRL (24), Shift (23) and LMB (18) in a 31-pixel button: the odd pixel goes to the right.
+        assertEquals(3, InputOverlay.labelX(31, 24));
         assertEquals(4, InputOverlay.labelX(31, 23));
         assertEquals(6, InputOverlay.labelX(31, 18));
         // A label wider than its cap spills evenly, rounding toward the left.

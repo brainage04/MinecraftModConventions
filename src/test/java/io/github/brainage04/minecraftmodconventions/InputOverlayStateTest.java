@@ -2,6 +2,11 @@ package io.github.brainage04.minecraftmodconventions;
 
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.util.List;
+import java.util.Locale;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -101,6 +106,24 @@ class InputOverlayStateTest {
         state.keyDown("key.mouse.left", 1100L);
 
         assertEquals(2, state.clicksPerSecond("key.mouse.left", 1100L));
+    }
+
+    @Test
+    void theOverlayKeepsNoTypedText() {
+        // The chat box already shows what a player types, so the overlay draws no second copy of it
+        // (owner, 28 Nov 2026): nothing in the overlay or its state records a typed character.
+        for (Class<?> type : List.of(InputOverlayState.class, InputOverlay.class)) {
+            for (Method method : type.getDeclaredMethods()) {
+                assertFalse(typedTextName(method.getName()), type.getSimpleName() + "." + method.getName());
+            }
+            for (Field field : type.getDeclaredFields()) {
+                assertFalse(typedTextName(field.getName()), type.getSimpleName() + "." + field.getName());
+            }
+        }
+    }
+
+    private static boolean typedTextName(String name) {
+        return name.toLowerCase(Locale.ROOT).contains("typed") || name.equals("onChar");
     }
 
     @Test
