@@ -155,7 +155,7 @@ public final class ClientGameTestCommands {
         double[] point = chatCommandScreenPoint(context, command);
         context.getInput().setCursorPos(point[0], point[1]);
         context.waitTicks(settleTicks);
-        ClientGameTestPlayerActions.clickMouse(context, InputConstants.MOUSE_BUTTON_LEFT);
+        context.getInput().pressMouse(InputConstants.MOUSE_BUTTON_LEFT);
     }
 
     /** The window position, in pixels, of the centre of the chat text that runs this command. */

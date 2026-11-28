@@ -27,9 +27,10 @@ import java.util.function.ToIntFunction;
  * as wide as LMB and RMB, and the space bar is labelled {@code Space} rather than drawn as a bar.
  *
  * <p>A cap is lit while its key is down and fades out over {@link #TRANSITION_NANOS} after the
- * release, so a viewer sees a key go up before it goes down again. A client GameTest holds a key for
- * {@link ClientGameTestPlayerActions#VISIBLE_PRESS_TICKS} to be seen: a press that is gone before the
- * next frame is never drawn.
+ * release, so a viewer sees a key go up before it goes down again. A client GameTest presses and
+ * releases a key in one phase, before any frame renders, so {@link InputOverlayState} keeps each press
+ * and release until a frame has drawn it: every press lights the cap for a frame and every release
+ * darkens it for one.
  *
  * <p>Input arrives where the game receives it, not where a test sends it: {@code KeyboardHandler.keyPress}
  * ({@code KeyboardHandler.java:436} in the 26.3 sources) and {@code MouseHandler.onButton}
@@ -303,24 +304,9 @@ public final class InputOverlay {
         };
     }
 
-    /**
-     * Whether a cap is lit: the game holds its key down, or the game received the key and has not
-     * received its release. The mapping is read as well as the events, so a toggle key such as sneak
-     * stays lit while it is toggled on, and a key pressed with a screen open, which the game does not
-     * set on its mapping, still lights. A released key is not lit: the cap's own fade
-     * ({@link #TRANSITION_NANOS}, in {@link #advance}) is what a viewer sees go dark.
-     */
-    private static boolean isLit(Minecraft client, Cap cap) {
-        KeyMapping mapping = mapping(client, cap.id());
-        return mapping.isDown() || isHeld(mapping.saveString());
-    }
-
-    /**
-     * Whether the events the game received hold a key down. The mapping is read separately, because
-     * a toggle key such as sneak stays down while it is toggled on and no event says so.
-     */
-    static boolean isHeld(String id) {
-        return STATE.isDown(id);
+    /** What the next frame draws for a key, from the presses and releases the game received. */
+    static InputOverlayState.Frame frame(String id) {
+        return STATE.frame(id);
     }
 
     private static void renderCaps(
@@ -337,7 +323,13 @@ public final class InputOverlay {
             Cap cap = caps.get(index);
             boolean counter = cap.id().equals(CPS_ID);
             // The clicks-per-second row has no key: it never lights, as BrainageHUD's (key null).
-            PROGRESS[index] = counter ? 0.0F : advance(PROGRESS[index], isLit(client, cap), elapsed);
+            if (counter) {
+                PROGRESS[index] = 0.0F;
+            } else {
+                KeyMapping mapping = mapping(client, cap.id());
+                PROGRESS[index] = progressAfter(
+                        PROGRESS[index], frame(mapping.saveString()), mapping.isDown(), elapsed);
+            }
             float progress = PROGRESS[index];
             String label = counter
                     ? cpsLabel(
@@ -403,12 +395,18 @@ public final class InputOverlay {
     }
 
     /**
-     * A cap's progress after one frame: the frame's state lit or dark, or flashed to full when the
-     * key's press was over before any frame drew it.
+     * A cap's progress after one frame. A press that was over before any frame drew it flashes the
+     * cap to full, and the releases that follow fade it over {@link #TRANSITION_NANOS}. The key's
+     * mapping decides the frame only when no undrawn press or release is waiting, so a toggle key
+     * such as sneak stays lit while it is toggled on and no event says so, and a click that follows
+     * at once cannot hide the dark frame of the release before it.
      */
     static float progressAfter(
             float progress, InputOverlayState.Frame frame, boolean mappingDown, long elapsedNanos) {
-        return advance(progress, frame.lit() || mappingDown, elapsedNanos);
+        if (frame.instant()) {
+            return 1.0F;
+        }
+        return advance(progress, frame.lit() || !frame.queued() && mappingDown, elapsedNanos);
     }
 
     /** A cap's backdrop: black at {@link #BACKDROP_OPACITY}, lit to white at the same opacity. */

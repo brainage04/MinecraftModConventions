@@ -10,7 +10,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * The overlay's own event handling, without a client: a press is kept whether or not a screen had
- * the keyboard, and a cap is held only from its press to its release.
+ * the keyboard, and each press and release is drawn by a frame.
  */
 class InputOverlayTest {
     private static final InputConstants.Key W = InputConstants.Type.KEYBOARD.getOrCreate(InputConstants.KEY_W);
@@ -27,30 +27,36 @@ class InputOverlayTest {
     }
 
     @Test
-    void aReleasedKeyIsNotHeldAnyMore() {
+    void aPressAndReleaseInOnePhaseIsDrawnLitThenDark() {
         // A viewer must see a key go up before it goes down again: the cap is lit while the key is
         // down, and the fade after the release is the cap's own, not a held-on lit state.
         InputOverlay.onKey(W, InputConstants.PRESS);
         InputOverlay.onKey(W, InputConstants.RELEASE);
 
-        assertFalse(InputOverlay.isHeld(W.getName()));
+        assertTrue(InputOverlay.frame(W.getName()).lit());
+        assertFalse(InputOverlay.frame(W.getName()).lit());
+        assertFalse(InputOverlay.frame(W.getName()).lit());
     }
 
     @Test
-    void aHeldKeyStaysHeldForAsLongAsItIsDown() {
+    void aHeldKeyStaysLitForAsLongAsItIsDown() {
         InputOverlay.onKey(W, InputConstants.PRESS);
         InputOverlay.onKey(W, InputConstants.REPEAT);
 
-        assertTrue(InputOverlay.isHeld(W.getName()));
+        for (int frame = 0; frame < 10; frame++) {
+            assertTrue(InputOverlay.frame(W.getName()).lit());
+        }
     }
 
     @Test
-    void aKeyReleasedWhileTheOverlayIsHiddenIsNotHeldOnceShown() {
+    void aKeyReleasedWhileTheOverlayIsHiddenIsDarkOnceShown() {
         InputOverlay.onKey(W, InputConstants.PRESS);
         InputOverlay.setEnabled(false);
         InputOverlay.onKey(W, InputConstants.RELEASE);
         InputOverlay.setEnabled(true);
 
-        assertFalse(InputOverlay.isHeld(W.getName()));
+        assertTrue(InputOverlay.frame(W.getName()).lit());
+        assertFalse(InputOverlay.frame(W.getName()).lit());
+        assertFalse(InputOverlay.frame(W.getName()).lit());
     }
 }

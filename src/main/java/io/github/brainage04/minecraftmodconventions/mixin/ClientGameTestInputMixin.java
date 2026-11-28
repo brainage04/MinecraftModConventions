@@ -13,10 +13,11 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import java.util.Set;
 
 /**
- * Fails a client GameTest that presses a key or button its test input already holds. Every hold,
- * press and timed hold of Fabric's {@code TestInputImpl} ends in {@code holdKey(Key)}, which adds the
- * key to {@code KEYS_DOWN} and sends the press only when the key was not there already; a second
- * press is dropped without a word, and a {@code pressKey} on top of a hold releases it.
+ * Fails a recorded client GameTest that presses a key or button its test input already holds. Every
+ * hold, press and timed hold of Fabric's {@code TestInputImpl} ends in {@code holdKey(Key)}, which adds
+ * the key to {@code KEYS_DOWN} and sends the press only when the key was not there already; a second
+ * press is dropped without a word, and a {@code pressKey} on top of a hold releases it. Outside a
+ * recording the call does nothing ({@link ClientGameTestPlayerActions#checkHold}).
  */
 @Mixin(TestInputImpl.class)
 abstract class ClientGameTestInputMixin {
@@ -26,6 +27,6 @@ abstract class ClientGameTestInputMixin {
 
     @Inject(method = "holdKey(Lcom/mojang/blaze3d/platform/InputConstants$Key;)V", at = @At("HEAD"))
     private void requireKeyReleased(InputConstants.Key key, CallbackInfo callback) {
-        ClientGameTestPlayerActions.requireReleased(key, KEYS_DOWN.contains(key));
+        ClientGameTestPlayerActions.checkHold(key, KEYS_DOWN.contains(key));
     }
 }

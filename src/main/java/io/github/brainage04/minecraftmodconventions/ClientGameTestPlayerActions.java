@@ -39,9 +39,9 @@ import java.util.function.Function;
  * player's interaction-range attributes must be untouched. A test that breaks the rule fails with an
  * {@link AssertionError} naming what was wrong instead of recording something a player could not do.
  *
- * <p>A key or button must be released before it is pressed again, as for a player: a test that
- * presses one it already holds fails with an {@link AssertionError} naming the key
- * ({@link #requireReleased}).
+ * <p>In a recording a key or button must be released before it is pressed again, as for a player: a
+ * test that presses one it already holds fails with an {@link AssertionError} naming the key
+ * ({@link #checkHold}).
  *
  * <p>The helpers act on the client thread themselves; a test calls them between its own steps:
  *
@@ -69,13 +69,11 @@ public final class ClientGameTestPlayerActions {
     public static final int AIM_SETTLE_TICKS = 2;
 
     /**
-     * Ticks a click holds its key so a recording shows it. The overlay's cap lights over
+     * Ticks a click holds its key, so the cap reaches fully lit. The overlay's cap lights over
      * {@link InputOverlay#TRANSITION_NANOS} (100 ms) while the key is down and dims over the same time
-     * after it, so a key held for that long reaches fully lit and then fades. A tick is
-     * {@link SharedConstants#MILLIS_PER_TICK} (50 ms, {@code SharedConstants.java:140} in 26.3), so the
-     * hold is 2 ticks, 100 ms: three frames of a 30 fps recording with the cap lit, then three more
-     * while it fades. A one-tick press is 50 ms, a frame and a half, and a client that draws one
-     * frame per tick can miss the cap lighting at all.
+     * after it. A tick is {@link SharedConstants#MILLIS_PER_TICK} (50 ms, {@code SharedConstants.java:140}
+     * in 26.3), so the hold is 2 ticks, 100 ms: three frames of a 30 fps recording with the cap lit,
+     * then three more while it fades.
      */
     public static final int VISIBLE_PRESS_TICKS = Math.toIntExact(
             Math.ceilDiv(TimeUnit.NANOSECONDS.toMillis(InputOverlay.TRANSITION_NANOS), SharedConstants.MILLIS_PER_TICK));
@@ -220,29 +218,38 @@ public final class ClientGameTestPlayerActions {
     }
 
     /**
-     * Clicks the use key once, for {@link #VISIBLE_PRESS_TICKS}, with the block under the crosshair.
-     * Fails the test when the block is not under the crosshair or is out of vanilla reach.
+     * Presses the use key once with the block under the crosshair. Fails the test when the block is not
+     * under the crosshair or is out of vanilla reach.
      */
     public static void useOnBlock(ClientGameTestContext context, BlockPos pos) {
         Objects.requireNonNull(pos, "pos");
         requireLookingAtBlock(context, pos);
-        click(context, options -> options.keyUse);
+        context.getInput().pressKey(options -> options.keyUse);
     }
 
     /**
-     * Clicks the attack key once, for {@link #VISIBLE_PRESS_TICKS}, with the entity under the
-     * crosshair. Fails the test when the entity is not under the crosshair or is out of vanilla reach.
+     * Presses the attack key once with the entity under the crosshair. Fails the test when the entity
+     * is not under the crosshair or is out of vanilla reach.
+     *
+     * <p>The press is momentary on purpose: a key held across ticks goes on to break whichever block
+     * is under the crosshair once the target dies or moves ({@code Minecraft.java:1599-1605},
+     * {@code MultiPlayerGameMode.java:283-284}). The overlay draws a momentary press.
      */
     public static void attackEntity(ClientGameTestContext context, int entityId) {
         requireLookingAtEntity(context, entityId);
-        click(context, options -> options.keyAttack);
+        context.getInput().pressKey(options -> options.keyAttack);
     }
 
     /**
-     * Holds a key or button for {@link #VISIBLE_PRESS_TICKS} and releases it, so the recording shows
-     * the cap light and then go dark. A film clicks with this, not with {@code pressKey}, which
-     * releases the key in the same tick it presses it, so the cap may never be drawn lit. A click on a
-     * key that is already down fails ({@link #requireReleased}).
+     * Holds a key or button for {@link #VISIBLE_PRESS_TICKS}, releases it and waits
+     * {@link #RELEASED_GAP_TICKS}, so the recording shows the cap light, go dark and stay dark before
+     * the next click. A click on a key that is already down fails in a recording
+     * ({@link #requireReleased}).
+     *
+     * <p>Do not use it to attack or use what is under the crosshair: a key held across ticks goes on
+     * to break the block behind a target that dies or moves ({@code Minecraft.java:1599-1605},
+     * {@code MultiPlayerGameMode.java:283-284}). {@link #attackEntity} and {@link #useOnBlock} press
+     * momentarily, and the overlay draws that too. Use it where holding is harmless.
      */
     public static void click(ClientGameTestContext context, Function<Options, KeyMapping> key) {
         Objects.requireNonNull(key, "key");
@@ -252,9 +259,10 @@ public final class ClientGameTestPlayerActions {
         } finally {
             context.getInput().releaseKey(key);
         }
+        context.waitTicks(RELEASED_GAP_TICKS);
     }
 
-    /** {@link #click} for a mouse button that has no key mapping to select it, such as a click on a chat link. */
+    /** {@link #click} for a mouse button that has no key mapping to select it. */
     public static void clickMouse(ClientGameTestContext context, int button) {
         context.getInput().holdMouse(button);
         try {
@@ -262,17 +270,28 @@ public final class ClientGameTestPlayerActions {
         } finally {
             context.getInput().releaseMouse(button);
         }
+        context.waitTicks(RELEASED_GAP_TICKS);
     }
 
     // The guard.
+
+    /**
+     * Called for every hold, press and held press of Fabric's test input, from
+     * {@code ClientGameTestInputMixin}. In a recording it fails the test that presses a key the test
+     * input already holds ({@link #requireReleased}). Elsewhere it does nothing, because Fabric's
+     * {@code TestInput.holdKey} is documented to do nothing for a key already held.
+     */
+    public static void checkHold(InputConstants.Key key, boolean down) {
+        if (strictHolds) {
+            requireReleased(key, down);
+        }
+    }
 
     /**
      * Fails the test when it presses {@code key} while the test input already holds it. A player
      * releases a key or button before pressing it again. Fabric's {@code TestInputImpl.holdKey}
      * ignores such a press, and {@code pressKey} then releases the key the earlier hold meant to
      * keep, so a recording shows a hold that ends early or a button that never came up.
-     * {@code ClientGameTestInputMixin} calls this for every hold, press and held press of Fabric's
-     * test input, so a film that does it fails at recording time.
      */
     public static void requireReleased(InputConstants.Key key, boolean down) {
         Objects.requireNonNull(key, "key");
